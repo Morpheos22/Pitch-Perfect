@@ -18,8 +18,9 @@ export default function SignUpPage() {
             footerActionLink: "text-primary hover:text-primary/80",
           },
         }}
-        afterSignInUrl="/dashboard"
-        afterSignUpUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+        signInFallbackRedirectUrl="/dashboard"
+        forceRedirectUrl="/dashboard"
       />
     </Card>
   );

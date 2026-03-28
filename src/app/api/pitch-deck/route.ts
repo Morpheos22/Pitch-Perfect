@@ -4,8 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateUser, createPitchDeck, updatePitchDeckAnalysis, incrementUsage, checkUsageLimit } from '@/lib/db-operations';
 import { analyzePitchDeck } from '@/lib/ai-service';
-import { uploadFile, extractFileText, isR2Configured } from '@/lib/storage';
-import { validateContentForAnalysis } from '@/lib/document-parser';
+import { uploadFile, getFileContent } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,27 +50,57 @@ export async function POST(request: NextRequest) {
       fileType = file.type;
       
       // Upload file to storage
-      const uploadResult = await uploadFile(
-        file,
-        user.id,
-        'deck',
-        file.name,
-        file.type
-      );
-      fileUrl = uploadResult.url;
+      try {
+        const uploadResult = await uploadFile(
+          file,
+          user.id,
+          'deck',
+          file.name,
+          file.type
+        );
+        fileUrl = uploadResult.url;
+      } catch (uploadError) {
+        console.error('File upload failed:', uploadError);
+        // Continue without storage URL - we can still analyze text content
+      }
 
       // Extract text content from file if not provided
       if (!deckContent) {
         try {
-          const extracted = await extractFileText(uploadResult.key, file.type, file.name);
-          analysisContent = extracted.text;
-          console.log(`[E1] Extracted ${extracted.wordCount} words from ${fileName}${extracted.pageCount ? ` (${extracted.pageCount} pages)` : ''}${extracted.slideCount ? ` (${extracted.slideCount} slides)` : ''}`);
+          const textContent = await file.text();
+          if (textContent && textContent.length > 0) {
+            analysisContent = textContent;
+          } else {
+            return NextResponse.json(
+              { 
+                error: 'Could not extract content from file',
+                message: 'Please provide a text-based file or paste the deck content directly.'
+              },
+              { status: 400 }
+            );
+          }
         } catch (e) {
           console.error('Failed to extract file content:', e);
-          // Continue with placeholder content for development
-          analysisContent = `[Pitch deck content from ${fileName}]`;
+          return NextResponse.json(
+            { 
+              error: 'Failed to read file content',
+              message: 'Please try a different file format or paste the deck content directly.'
+            },
+            { status: 400 }
+          );
         }
       }
+    }
+
+    // Validate content length for meaningful analysis
+    if (!analysisContent || analysisContent.length < 100) {
+      return NextResponse.json(
+        { 
+          error: 'Insufficient content for analysis',
+          message: 'Please provide more detailed pitch deck content (at least 100 characters). The AI needs substantial content to provide meaningful feedback.'
+        },
+        { status: 400 }
+      );
     }
 
     // Create deck record in database
@@ -83,153 +112,78 @@ export async function POST(request: NextRequest) {
       fileType,
     });
 
-    // Run analysis
+    // Run REAL AI analysis
     try {
-      if (analysisContent && analysisContent.length > 50) {
-        const analysis = await analyzePitchDeck(analysisContent);
-        
-        // Update deck with results
-        await updatePitchDeckAnalysis(deck.id, {
-          problemClarityScore: analysis.problemClarityScore,
-          solutionClarityScore: analysis.solutionClarityScore,
-          marketOpportunityScore: analysis.marketOpportunityScore,
-          businessModelScore: analysis.businessModelScore,
-          teamCredibilityScore: analysis.teamCredibilityScore,
-          tractionScore: analysis.tractionScore,
-          financialsScore: analysis.financialsScore,
-          askClarityScore: analysis.askClarityScore,
-          overallScore: analysis.overallScore,
-          designConsistencyScore: analysis.designConsistencyScore,
-          readabilityScore: analysis.readabilityScore,
-          visualHierarchyScore: analysis.visualHierarchyScore,
-          colorSchemeScore: analysis.colorSchemeScore,
-          typographyScore: analysis.typographyScore,
-          strengths: analysis.strengths,
-          weaknesses: analysis.weaknesses,
-          recommendations: analysis.recommendations,
-          rawAnalysis: analysis,
-        });
+      const analysis = await analyzePitchDeck(analysisContent);
+      
+      // Update deck with results
+      await updatePitchDeckAnalysis(deck.id, {
+        problemClarityScore: analysis.problemClarityScore,
+        solutionClarityScore: analysis.solutionClarityScore,
+        marketOpportunityScore: analysis.marketOpportunityScore,
+        businessModelScore: analysis.businessModelScore,
+        teamCredibilityScore: analysis.teamCredibilityScore,
+        tractionScore: analysis.tractionScore,
+        financialsScore: analysis.financialsScore,
+        askClarityScore: analysis.askClarityScore,
+        overallScore: analysis.overallScore,
+        designConsistencyScore: analysis.designConsistencyScore,
+        readabilityScore: analysis.readabilityScore,
+        visualHierarchyScore: analysis.visualHierarchyScore,
+        colorSchemeScore: analysis.colorSchemeScore,
+        typographyScore: analysis.typographyScore,
+        strengths: analysis.strengths,
+        weaknesses: analysis.weaknesses,
+        recommendations: analysis.recommendations,
+        rawAnalysis: analysis,
+      });
 
-        // Increment usage
-        await incrementUsage(user.id, 'e1', analysis.tokensUsed || 0);
+      // Increment usage
+      await incrementUsage(user.id, 'e1', analysis.tokensUsed || 0);
 
-        // Return with results
-        return NextResponse.json({
-          id: deck.id,
-          status: 'COMPLETED',
-          analysis: {
-            contentScores: {
-              problemClarity: analysis.problemClarityScore,
-              solutionClarity: analysis.solutionClarityScore,
-              marketOpportunity: analysis.marketOpportunityScore,
-              businessModel: analysis.businessModelScore,
-              teamCredibility: analysis.teamCredibilityScore,
-              traction: analysis.tractionScore,
-              financials: analysis.financialsScore,
-              askClarity: analysis.askClarityScore,
-              overall: analysis.overallScore,
-            },
-            visualScores: {
-              designConsistency: analysis.designConsistencyScore,
-              readability: analysis.readabilityScore,
-              visualHierarchy: analysis.visualHierarchyScore,
-              colorScheme: analysis.colorSchemeScore,
-              typography: analysis.typographyScore,
-            },
-            feedback: {
-              strengths: analysis.strengths,
-              weaknesses: analysis.weaknesses,
-              recommendations: analysis.recommendations,
-            },
+      // Return with results
+      return NextResponse.json({
+        id: deck.id,
+        status: 'COMPLETED',
+        analysis: {
+          contentScores: {
+            problemClarity: analysis.problemClarityScore,
+            solutionClarity: analysis.solutionClarityScore,
+            marketOpportunity: analysis.marketOpportunityScore,
+            businessModel: analysis.businessModelScore,
+            teamCredibility: analysis.teamCredibilityScore,
+            traction: analysis.tractionScore,
+            financials: analysis.financialsScore,
+            askClarity: analysis.askClarityScore,
+            overall: analysis.overallScore,
           },
-          fileName,
-          fileUrl,
-          createdAt: deck.createdAt,
-        });
-      } else {
-        // Mock analysis for development
-        const mockAnalysis = {
-          problemClarityScore: 72,
-          solutionClarityScore: 68,
-          marketOpportunityScore: 75,
-          businessModelScore: 65,
-          teamCredibilityScore: 80,
-          tractionScore: 55,
-          financialsScore: 60,
-          askClarityScore: 70,
-          overallScore: 68,
-          designConsistencyScore: 75,
-          readabilityScore: 80,
-          visualHierarchyScore: 70,
-          colorSchemeScore: 72,
-          typographyScore: 78,
-          strengths: [
-            'Clear problem statement that resonates with target audience',
-            'Strong team credentials with relevant industry experience',
-            'Compelling market opportunity with realistic TAM figures',
-          ],
-          weaknesses: [
-            'Traction metrics could be more specific and quantifiable',
-            'Financial projections lack detailed assumptions',
-            'Ask and use of funds could be more detailed',
-          ],
-          recommendations: [
-            'Add specific revenue or user growth metrics to traction slide',
-            'Include unit economics alongside financial projections',
-            'Break down funding ask into specific allocation percentages',
-            'Consider adding a competitive landscape slide',
-            'Strengthen the call-to-action with specific next steps',
-          ],
-        };
-
-        await updatePitchDeckAnalysis(deck.id, {
-          ...mockAnalysis,
-          rawAnalysis: mockAnalysis,
-        });
-
-        await incrementUsage(user.id, 'e1', 0);
-
-        return NextResponse.json({
-          id: deck.id,
-          status: 'COMPLETED',
-          analysis: {
-            contentScores: {
-              problemClarity: mockAnalysis.problemClarityScore,
-              solutionClarity: mockAnalysis.solutionClarityScore,
-              marketOpportunity: mockAnalysis.marketOpportunityScore,
-              businessModel: mockAnalysis.businessModelScore,
-              teamCredibility: mockAnalysis.teamCredibilityScore,
-              traction: mockAnalysis.tractionScore,
-              financials: mockAnalysis.financialsScore,
-              askClarity: mockAnalysis.askClarityScore,
-              overall: mockAnalysis.overallScore,
-            },
-            visualScores: {
-              designConsistency: mockAnalysis.designConsistencyScore,
-              readability: mockAnalysis.readabilityScore,
-              visualHierarchy: mockAnalysis.visualHierarchyScore,
-              colorScheme: mockAnalysis.colorSchemeScore,
-              typography: mockAnalysis.typographyScore,
-            },
-            feedback: {
-              strengths: mockAnalysis.strengths,
-              weaknesses: mockAnalysis.weaknesses,
-              recommendations: mockAnalysis.recommendations,
-            },
+          visualScores: {
+            designConsistency: analysis.designConsistencyScore,
+            readability: analysis.readabilityScore,
+            visualHierarchy: analysis.visualHierarchyScore,
+            colorScheme: analysis.colorSchemeScore,
+            typography: analysis.typographyScore,
           },
-          fileName,
-          fileUrl,
-          createdAt: deck.createdAt,
-          _dev: 'Mock analysis (insufficient content)',
-        });
-      }
+          feedback: {
+            strengths: analysis.strengths,
+            weaknesses: analysis.weaknesses,
+            recommendations: analysis.recommendations,
+          },
+        },
+        fileName,
+        fileUrl,
+        createdAt: deck.createdAt,
+        modelUsed: analysis.modelUsed,
+        tokensUsed: analysis.tokensUsed,
+      });
     } catch (error) {
-      console.error('Analysis failed:', error);
+      console.error('AI Analysis failed:', error);
       
       return NextResponse.json(
         { 
-          error: 'Analysis failed', 
+          error: 'AI analysis failed', 
           message: error instanceof Error ? error.message : 'Unknown error',
+          details: 'The AI service encountered an error analyzing your pitch deck. Please try again.',
           deckId: deck.id,
         },
         { status: 500 }

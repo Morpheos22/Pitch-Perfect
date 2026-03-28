@@ -1,83 +1,26 @@
-// AI Service Layer for PitchCoach AI
-// Single provider: Z.ai GLM Models (Latest Flagship)
-// GLM-5.1 for text analysis (decks, scripts) - Latest flagship
-// GLM-4.1V-Thinking for video/image analysis - Latest vision with reasoning
-
-import { writeFileSync } from 'fs';
-import { join } from 'path';
+// Multi-Model AI Service for Pitch Perfect
+// Supports: Claude (Anthropic), Gemini (Google), GLM (Z-AI)
+// Model selection based on task type and cost optimization
 
 // ============================================
-// Z.AI SDK INITIALIZATION
+// TYPE DEFINITIONS
 // ============================================
 
-type ZAIInstance = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>;
+export type AIProvider = 'claude' | 'gemini' | 'glm';
+export type AITask = 'deck-analysis' | 'script-analysis' | 'video-analysis' | 'full-session';
 
-let zaiInstance: ZAIInstance | null = null;
-let configCreated = false;
-
-function createZaiConfig(): boolean {
-  if (configCreated) return true;
-  
-  const apiKey = process.env.ZAI_API_KEY;
-  if (!apiKey) {
-    console.error('[ZAI] ZAI_API_KEY environment variable not set');
-    return false;
-  }
-  
-  const config = {
-    baseUrl: process.env.ZAI_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: apiKey,
-  };
-  
-  const configJson = JSON.stringify(config);
-  
-  // On Vercel/serverless, only /tmp is writable
-  if (!process.env.HOME || process.env.HOME === '/') {
-    process.env.HOME = '/tmp';
-  }
-  
-  const cwd = process.cwd();
-  const homeDir = process.env.HOME;
-  
-  const locations = [
-    join(cwd, '.z-ai-config'),
-    join(homeDir, '.z-ai-config'),
-  ];
-  
-  console.log('[ZAI] Current working directory:', cwd);
-  console.log('[ZAI] Home directory:', homeDir);
-  
-  let success = false;
-  for (const loc of locations) {
-    try {
-      writeFileSync(loc, configJson);
-      console.log('[ZAI] Config created at:', loc);
-      success = true;
-    } catch (e) {
-      const err = e as Error;
-      console.log('[ZAI] Failed to write at', loc, '-', err.message);
-    }
-  }
-  
-  if (success) {
-    configCreated = true;
-  }
-  
-  return success;
+export interface AIConfig {
+  provider: AIProvider;
+  model: string;
+  maxTokens?: number;
+  temperature?: number;
 }
 
-async function getZai() {
-  if (!zaiInstance) {
-    const configOk = createZaiConfig();
-    
-    if (!configOk) {
-      throw new Error('Failed to create ZAI config file. Ensure ZAI_API_KEY is set.');
-    }
-    
-    const { default: ZAI } = await import('z-ai-web-dev-sdk');
-    zaiInstance = await ZAI.create();
-  }
-  return zaiInstance;
+export interface AIModelMapping {
+  'deck-analysis': AIConfig;
+  'script-analysis': AIConfig;
+  'video-analysis': AIConfig;
+  'full-session': AIConfig;
 }
 
 // ============================================
@@ -85,21 +28,251 @@ async function getZai() {
 // ============================================
 
 export const AI_MODELS = {
-  // Z.ai GLM Models - Text Analysis (Latest Flagship)
-  GLM_TEXT: 'glm-5.1',              // Latest flagship text model (E1, E2)
+  // Claude models via Anthropic
+  CLAUDE_SONNET: 'claude-sonnet-4-20250514',
+  CLAUDE_OPUS: 'claude-opus-4-20250514',
   
-  // Z.ai GLM Models - Vision Analysis (Latest Flagship)
-  GLM_VISION: 'glm-4.1v-thinking',  // Latest vision model with thinking (E3)
-  GLM_VISION_PRO: 'glm-4.1v-thinking', // Deep video analysis with thinking (E4)
+  // Gemini models via Google
+  GEMINI_PRO: 'gemini-1.5-pro',
+  GEMINI_FLASH: 'gemini-2.0-flash',
+  GEMINI_PRO_VISION: 'gemini-1.5-pro-vision',
+  
+  // GLM models via Z-AI
+  GLM_4_PLUS: 'glm-4-plus',
+  GLM_4V_FLASH: 'glm-4v-flash',
+  GLM_4V_PLUS: 'glm-4v-plus',
 } as const;
 
-const AI_MODELS_LIST = Object.values(AI_MODELS);
+// Task-to-model mapping for optimal performance/cost
+export const TASK_MODEL_MAPPING: AIModelMapping = {
+  'deck-analysis': {
+    provider: 'claude',
+    model: AI_MODELS.CLAUDE_SONNET,
+    maxTokens: 4096,
+    temperature: 0.3,
+  },
+  'script-analysis': {
+    provider: 'claude',
+    model: AI_MODELS.CLAUDE_SONNET,
+    maxTokens: 4096,
+    temperature: 0.4,
+  },
+  'video-analysis': {
+    provider: 'gemini',
+    model: AI_MODELS.GEMINI_PRO_VISION,
+    maxTokens: 8192,
+    temperature: 0.3,
+  },
+  'full-session': {
+    provider: 'gemini',
+    model: AI_MODELS.GEMINI_PRO,
+    maxTokens: 16384,
+    temperature: 0.3,
+  },
+};
 
 // ============================================
-// PITCH DECK ANALYSIS (E1)
+// PROVIDER CLIENTS
+// ============================================
+
+// Claude (Anthropic) Client
+async function callClaude(
+  systemPrompt: string,
+  userPrompt: string,
+  config: AIConfig
+): Promise<{ content: string; tokensUsed: number }> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: config.model,
+      max_tokens: config.maxTokens || 4096,
+      temperature: config.temperature || 0.3,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userPrompt }
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Claude API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.content[0]?.text || '';
+  
+  return {
+    content,
+    tokensUsed: data.usage?.input_tokens + data.usage?.output_tokens || 0,
+  };
+}
+
+// Gemini (Google) Client
+async function callGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  config: AIConfig,
+  videoUrl?: string
+): Promise<{ content: string; tokensUsed: number }> {
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  
+  // Build contents array
+  const contents: Array<{ role: string; parts: Array<{ text?: string; videoMetadata?: { videoUri: string } }> }> = [];
+  
+  const parts: Array<{ text?: string; videoMetadata?: { videoUri: string } }> = [];
+  
+  if (videoUrl) {
+    // Video analysis - Gemini supports video via file URI
+    parts.push({ videoMetadata: { videoUri: videoUrl } });
+  }
+  
+  parts.push({ text: `${systemPrompt}\n\n${userPrompt}` });
+  contents.push({ role: 'user', parts });
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents,
+        generationConfig: {
+          maxOutputTokens: config.maxTokens || 8192,
+          temperature: config.temperature || 0.3,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  return {
+    content,
+    tokensUsed: data.usageMetadata?.totalTokenCount || 0,
+  };
+}
+
+// GLM (Z-AI) Client
+async function callGLM(
+  systemPrompt: string,
+  userPrompt: string,
+  config: AIConfig,
+  videoUrl?: string
+): Promise<{ content: string; tokensUsed: number }> {
+  // Dynamic import for Z-AI SDK
+  const ZAI = (await import('z-ai-web-dev-sdk')).default;
+  const zai = await ZAI.create();
+
+  if (videoUrl && config.model.includes('4v')) {
+    // Vision model for video
+    const response = await zai.chat.completions.createVision({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: systemPrompt },
+            { type: 'text', text: userPrompt },
+            { type: 'video_url', video_url: { url: videoUrl } }
+          ]
+        }
+      ],
+      thinking: { type: 'disabled' },
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+    return {
+      content,
+      tokensUsed: response.usage?.totalTokens || 0,
+    };
+  } else {
+    // Text model
+    const response = await zai.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: config.temperature || 0.3,
+      maxTokens: config.maxTokens || 4096,
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+    return {
+      content,
+      tokensUsed: response.usage?.totalTokens || 0,
+    };
+  }
+}
+
+// ============================================
+// UNIFIED AI CALL ROUTER
+// ============================================
+
+export async function callAI(
+  task: AITask,
+  systemPrompt: string,
+  userPrompt: string,
+  options?: {
+    provider?: AIProvider;
+    videoUrl?: string;
+    overrideConfig?: Partial<AIConfig>;
+  }
+): Promise<{ content: string; tokensUsed: number; provider: AIProvider; model: string }> {
+  // Get default config for task
+  const defaultConfig = TASK_MODEL_MAPPING[task];
+  
+  // Apply overrides
+  const config: AIConfig = {
+    ...defaultConfig,
+    ...options?.overrideConfig,
+    provider: options?.provider || defaultConfig.provider,
+  };
+
+  let result: { content: string; tokensUsed: number };
+
+  // Route to appropriate provider
+  switch (config.provider) {
+    case 'claude':
+      result = await callClaude(systemPrompt, userPrompt, config);
+      break;
+    case 'gemini':
+      result = await callGemini(systemPrompt, userPrompt, config, options?.videoUrl);
+      break;
+    case 'glm':
+      result = await callGLM(systemPrompt, userPrompt, config, options?.videoUrl);
+      break;
+    default:
+      throw new Error(`Unknown AI provider: ${config.provider}`);
+  }
+
+  return {
+    ...result,
+    provider: config.provider,
+    model: config.model,
+  };
+}
+
+// ============================================
+// PITCH DECK ANALYSIS (E1) - CLAUDE
 // ============================================
 
 export interface DeckAnalysisResult {
+  // Content Scores (0-100)
   problemClarityScore: number;
   solutionClarityScore: number;
   marketOpportunityScore: number;
@@ -110,18 +283,22 @@ export interface DeckAnalysisResult {
   askClarityScore: number;
   overallScore: number;
   
+  // Visual Audit Scores (0-100)
   designConsistencyScore: number;
   readabilityScore: number;
   visualHierarchyScore: number;
   colorSchemeScore: number;
   typographyScore: number;
   
+  // Feedback
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
   
+  // Metadata
   tokensUsed?: number;
-  modelUsed?: string;
+  provider?: AIProvider;
+  model?: string;
 }
 
 export async function analyzePitchDeck(deckContent: string): Promise<DeckAnalysisResult> {
@@ -174,38 +351,30 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "recommendations": ["<specific actionable recommendation 1>", "<specific actionable recommendation 2>", "<specific actionable recommendation 3>", "<specific actionable recommendation 4>", "<specific actionable recommendation 5>"]
 }`;
 
-  const zai = await getZai();
-  const response = await zai.chat.completions.create({
-    model: AI_MODELS.GLM_TEXT,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature: 0.3,
-  });
+  const result = await callAI('deck-analysis', systemPrompt, userPrompt);
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI');
+  try {
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+    const analysis = JSON.parse(jsonMatch[0]) as DeckAnalysisResult;
+    analysis.tokensUsed = result.tokensUsed;
+    analysis.provider = result.provider;
+    analysis.model = result.model;
+    return analysis;
+  } catch (e) {
+    console.error('Failed to parse AI response:', result.content);
+    throw new Error('Failed to parse AI analysis response');
   }
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('Failed to parse AI response:', content);
-    throw new Error('No JSON found in response');
-  }
-  
-  const result = JSON.parse(jsonMatch[0]) as DeckAnalysisResult;
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_TEXT;
-  return result;
 }
 
 // ============================================
-// SCRIPT ANALYSIS (E2)
+// SCRIPT ANALYSIS (E2) - CLAUDE
 // ============================================
 
 export interface ScriptAnalysisResult {
+  // 5-Element Scoring (0-100)
   hookScore: number;
   problemScore: number;
   solutionScore: number;
@@ -213,9 +382,11 @@ export interface ScriptAnalysisResult {
   ctaScore: number;
   overallScore: number;
   
+  // Script Metrics
   wordCount: number;
   estimatedDuration: number;
   
+  // Feedback
   improvements: {
     hook: string[];
     problem: string[];
@@ -226,8 +397,10 @@ export interface ScriptAnalysisResult {
   rewrittenScript: string;
   alternativeHooks: string[];
   
+  // Metadata
   tokensUsed?: number;
-  modelUsed?: string;
+  provider?: AIProvider;
+  model?: string;
 }
 
 export async function analyzePitchScript(
@@ -305,40 +478,30 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "alternativeHooks": ["<alternative opening hook 1>", "<alternative opening hook 2>", "<alternative opening hook 3>"]
 }`;
 
-  const zai = await getZai();
-  const response = await zai.chat.completions.create({
-    model: AI_MODELS.GLM_TEXT,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature: 0.4,
-  });
+  const result = await callAI('script-analysis', systemPrompt, userPrompt);
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI');
+  try {
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+    const analysis = JSON.parse(jsonMatch[0]) as ScriptAnalysisResult;
+    analysis.tokensUsed = result.tokensUsed;
+    analysis.provider = result.provider;
+    analysis.model = result.model;
+    return analysis;
+  } catch (e) {
+    console.error('Failed to parse AI response:', result.content);
+    throw new Error('Failed to parse AI analysis response');
   }
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('Failed to parse AI response:', content);
-    throw new Error('No JSON found in response');
-  }
-  
-  const result = JSON.parse(jsonMatch[0]) as ScriptAnalysisResult;
-  result.wordCount = scriptText.split(/\s+/).filter(Boolean).length;
-  result.estimatedDuration = Math.round(result.wordCount / 2.5);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_TEXT;
-  return result;
 }
 
 // ============================================
-// VIDEO ANALYSIS (E3) - Short videos <3 min
+// VIDEO ANALYSIS (E3) - GEMINI + CLAUDE
 // ============================================
 
 export interface VideoAnalysisResult {
+  // Delivery Scores (0-100)
   paceScore: number;
   clarityScore: number;
   fillerWordScore: number;
@@ -346,16 +509,19 @@ export interface VideoAnalysisResult {
   confidenceScore: number;
   overallDeliveryScore: number;
   
+  // Body Language Scores (0-100)
   eyeContactScore: number;
   facialExpressionScore: number;
   gestureScore: number;
   postureScore: number;
   overallBodyLanguageScore: number;
   
+  // Metrics
   wordsPerMinute: number;
   fillerWordCount: number;
   fillerWords: Record<string, number>;
   
+  // Feedback
   deliveryFeedback: string;
   bodyLanguageFeedback: string;
   keyMoments: Array<{
@@ -364,17 +530,30 @@ export interface VideoAnalysisResult {
     type: 'positive' | 'improvement';
   }>;
   
+  // Coaching Drills
+  coachingDrills: Array<{
+    title: string;
+    description: string;
+    targetArea: string;
+  }>;
+  
+  // Transcript
   transcript: string;
   
+  // Metadata
   tokensUsed?: number;
-  modelUsed?: string;
+  provider?: AIProvider;
+  model?: string;
 }
 
 export async function analyzePitchVideo(
   videoUrl: string,
   duration: number
 ): Promise<VideoAnalysisResult> {
-  const systemPrompt = `You are an expert public speaking and presentation coach with expertise in analyzing video recordings of pitches. You have trained executives at Fortune 500 companies and coached TED speakers.
+  // Step 1: Use Gemini for video analysis
+  const geminiPrompt = `Analyze this elevator pitch video recording.
+
+Video Duration: ${duration} seconds
 
 Analyze the video for DELIVERY and BODY LANGUAGE:
 
@@ -391,19 +570,7 @@ BODY LANGUAGE CRITERIA (0-100):
 3. Gestures: Natural, purposeful hand movements, not fidgeting
 4. Posture: Open, upright, confident stance, not slouching or crossing arms
 
-Identify KEY MOMENTS with timestamps:
-- Strong moments (effective phrases, good gestures, engaging segments)
-- Moments needing improvement (filler words, loss of eye contact, unclear statements)
-
-Provide the full transcript of what was said.
-Respond ONLY in valid JSON format without any markdown formatting.`;
-
-  const userPrompt = `Analyze this elevator pitch video recording.
-
-Video URL: ${videoUrl}
-Duration: ${duration} seconds
-
-Provide your analysis as a JSON object with this EXACT structure (no markdown, just pure JSON):
+Provide your analysis as a JSON object with this EXACT structure:
 {
   "paceScore": <number 0-100>,
   "clarityScore": <number 0-100>,
@@ -419,8 +586,6 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "wordsPerMinute": <number>,
   "fillerWordCount": <total number of filler words>,
   "fillerWords": {"um": <count>, "uh": <count>, "like": <count>, "you know": <count>},
-  "deliveryFeedback": "<detailed paragraph about delivery strengths and improvements>",
-  "bodyLanguageFeedback": "<detailed paragraph about body language strengths and improvements>",
   "keyMoments": [
     {"timestamp": "0:15", "description": "<what happened>", "type": "positive"},
     {"timestamp": "0:32", "description": "<what happened>", "type": "improvement"}
@@ -428,44 +593,80 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "transcript": "<full transcript of what was said>"
 }`;
 
-  const zai = await getZai();
-  const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: systemPrompt },
-          { type: 'text', text: userPrompt },
-          { type: 'video_url', video_url: { url: videoUrl } }
-        ]
-      }
-    ],
-    thinking: { type: 'disabled' },
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI');
-  }
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('Failed to parse AI response:', content);
-    throw new Error('No JSON found in response');
-  }
+  const geminiResult = await callAI('video-analysis', '', geminiPrompt, { videoUrl });
   
-  const result = JSON.parse(jsonMatch[0]) as VideoAnalysisResult;
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION;
-  return result;
+  let videoData: Partial<VideoAnalysisResult>;
+  try {
+    const jsonMatch = geminiResult.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in Gemini response');
+    }
+    videoData = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    console.error('Failed to parse Gemini response:', geminiResult.content);
+    throw new Error('Failed to parse video analysis response');
+  }
+
+  // Step 2: Use Claude to synthesize coaching narrative
+  const claudePrompt = `You are an expert public speaking coach. Based on this video analysis data, create personalized coaching feedback.
+
+Video Analysis Data:
+${JSON.stringify(videoData, null, 2)}
+
+Provide:
+1. A detailed delivery feedback paragraph
+2. A detailed body language feedback paragraph  
+3. THREE personalized coaching drills targeting the weakest areas
+
+Respond as JSON:
+{
+  "deliveryFeedback": "<detailed paragraph about delivery strengths and improvements>",
+  "bodyLanguageFeedback": "<detailed paragraph about body language strengths and improvements>",
+  "coachingDrills": [
+    {"title": "<drill name>", "description": "<how to do it>", "targetArea": "<pace|eye contact|gestures|etc>"},
+    {"title": "<drill name>", "description": "<how to do it>", "targetArea": "<area>"},
+    {"title": "<drill name>", "description": "<how to do it>", "targetArea": "<area>"}
+  ]
+}`;
+
+  const claudeResult = await callAI('script-analysis', '', claudePrompt, { provider: 'claude' });
+  
+  let coachingData: Pick<VideoAnalysisResult, 'deliveryFeedback' | 'bodyLanguageFeedback' | 'coachingDrills'>;
+  try {
+    const jsonMatch = claudeResult.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in Claude response');
+    }
+    coachingData = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    console.error('Failed to parse Claude response:', claudeResult.content);
+    // Fallback coaching data
+    coachingData = {
+      deliveryFeedback: 'Focus on maintaining a steady pace and reducing filler words.',
+      bodyLanguageFeedback: 'Work on maintaining consistent eye contact with the camera.',
+      coachingDrills: [
+        { title: 'Mirror Practice', description: 'Practice your pitch in front of a mirror for 5 minutes daily', targetArea: 'body language' },
+        { title: 'Pause and Breathe', description: 'Replace filler words with strategic pauses', targetArea: 'delivery' },
+        { title: 'Record and Review', description: 'Record yourself and watch it back to identify patterns', targetArea: 'general' },
+      ],
+    };
+  }
+
+  return {
+    ...videoData as VideoAnalysisResult,
+    ...coachingData,
+    tokensUsed: geminiResult.tokensUsed + claudeResult.tokensUsed,
+    provider: 'gemini',
+    model: AI_MODELS.GEMINI_PRO_VISION,
+  };
 }
 
 // ============================================
-// FULL PITCH SESSION ANALYSIS (E4) - Long videos
+// FULL PITCH SESSION ANALYSIS (E4) - GEMINI + CLAUDE
 // ============================================
 
 export interface FullPitchAnalysisResult {
+  // 6-Dimension Investor Readiness Scores (0-100)
   problemSolutionFit: number;
   marketOpportunity: number;
   businessModelViability: number;
@@ -474,8 +675,10 @@ export interface FullPitchAnalysisResult {
   deliveryPresence: number;
   overallReadinessScore: number;
   
+  // Investor Readiness Level
   investorReadinessLevel: 'NOT_READY' | 'NEEDS_WORK' | 'INVESTOR_READY' | 'HIGHLY_PREPARED';
   
+  // Detailed Scores
   contentScores: {
     problemClarity: number;
     solutionDifferentiation: number;
@@ -495,27 +698,33 @@ export interface FullPitchAnalysisResult {
     handlingQuestions: number;
   };
   
+  // Feedback
   strengths: string[];
   weaknesses: string[];
   investorConcerns: string[];
   recommendedActions: string[];
   
+  // Q&A Preparation
   anticipatedQuestions: Array<{
     question: string;
     suggestedAnswer: string;
     difficulty: 'easy' | 'medium' | 'hard';
   }>;
   
+  // Competitive Context
   competitiveAnalysis: {
     percentileVsPeers: number;
     standoutElements: string[];
     commonMistakes: string[];
   };
   
+  // Transcript
   transcript: string;
   
+  // Metadata
   tokensUsed?: number;
-  modelUsed?: string;
+  provider?: AIProvider;
+  model?: string;
 }
 
 export async function analyzeFullPitchSession(
@@ -625,97 +834,22 @@ Provide your comprehensive analysis as a JSON object with this EXACT structure (
   "transcript": "<full transcript of the presentation>"
 }`;
 
-  const zai = await getZai();
-  const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION_PRO,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: systemPrompt },
-          { type: 'text', text: userPrompt },
-          { type: 'video_url', video_url: { url: videoUrl } }
-        ]
-      }
-    ],
-    thinking: { type: 'disabled' },
-  });
+  const result = await callAI('full-session', systemPrompt, userPrompt, { videoUrl });
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI');
+  try {
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in response');
+    }
+    const analysis = JSON.parse(jsonMatch[0]) as FullPitchAnalysisResult;
+    analysis.tokensUsed = result.tokensUsed;
+    analysis.provider = result.provider;
+    analysis.model = result.model;
+    return analysis;
+  } catch (e) {
+    console.error('Failed to parse AI response:', result.content);
+    throw new Error('Failed to parse full pitch analysis response');
   }
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('Failed to parse AI response:', content);
-    throw new Error('No JSON found in response');
-  }
-  
-  const result = JSON.parse(jsonMatch[0]) as FullPitchAnalysisResult;
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION_PRO;
-  return result;
-}
-
-// ============================================
-// IMAGE ANALYSIS (for deck screenshots)
-// ============================================
-
-export interface ImageAnalysisResult {
-  description: string;
-  visualElements: string[];
-  designQuality: number;
-  readability: number;
-  suggestions: string[];
-  tokensUsed?: number;
-  modelUsed?: string;
-}
-
-export async function analyzeImage(imageUrl: string): Promise<ImageAnalysisResult> {
-  const prompt = `Analyze this pitch deck slide image. Provide feedback on:
-1. Design quality (0-100)
-2. Readability (0-100)
-3. Key visual elements present
-4. Specific improvement suggestions
-
-Respond as JSON: {
-  "description": "<brief description>",
-  "visualElements": ["<element 1>", "<element 2>"],
-  "designQuality": <0-100>,
-  "readability": <0-100>,
-  "suggestions": ["<suggestion 1>", "<suggestion 2>"]
-}`;
-
-  const zai = await getZai();
-  const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: imageUrl } }
-        ]
-      }
-    ],
-    thinking: { type: 'disabled' },
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI');
-  }
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('No JSON found in response');
-  }
-  
-  const result = JSON.parse(jsonMatch[0]) as ImageAnalysisResult;
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION;
-  return result;
 }
 
 // ============================================
@@ -724,37 +858,45 @@ Respond as JSON: {
 
 export async function checkAIServiceHealth(): Promise<{ 
   status: string; 
-  models: string[]; 
-  message?: string; 
-  configFound?: boolean;
-  glm?: { status: string; message?: string };
+  providers: Array<{ name: string; status: string }>;
 }> {
-  const results = {
-    glm: { status: 'unknown', message: '' },
-  };
+  const providers: Array<{ name: string; status: string }> = [];
   
+  // Check Claude
   try {
-    const zai = await getZai();
-    const response = await zai.chat.completions.create({
-      model: AI_MODELS.GLM_TEXT,
-      messages: [{ role: 'user', content: 'Say "ok"' }],
-    });
-    
-    const content = response.choices[0]?.message?.content;
-    if (content?.toLowerCase().includes('ok')) {
-      results.glm = { status: 'healthy', message: `GLM-5.1 responding` };
+    if (process.env.ANTHROPIC_API_KEY) {
+      providers.push({ name: 'Claude (Anthropic)', status: 'configured' });
     } else {
-      results.glm = { status: 'degraded', message: `Unexpected response: ${content}` };
+      providers.push({ name: 'Claude (Anthropic)', status: 'not configured' });
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    results.glm = { status: 'unhealthy', message: errorMessage };
+  } catch (e) {
+    providers.push({ name: 'Claude (Anthropic)', status: 'error' });
   }
   
-  return {
-    status: results.glm.status === 'healthy' ? 'healthy' : 'unhealthy',
-    models: AI_MODELS_LIST,
-    configFound: true,
-    glm: results.glm,
-  };
+  // Check Gemini
+  try {
+    if (process.env.GOOGLE_AI_API_KEY) {
+      providers.push({ name: 'Gemini (Google)', status: 'configured' });
+    } else {
+      providers.push({ name: 'Gemini (Google)', status: 'not configured' });
+    }
+  } catch (e) {
+    providers.push({ name: 'Gemini (Google)', status: 'error' });
+  }
+  
+  // Check GLM (Z-AI)
+  try {
+    const ZAI = (await import('z-ai-web-dev-sdk')).default;
+    const zai = await ZAI.create();
+    if (zai) {
+      providers.push({ name: 'GLM (Z-AI)', status: 'configured' });
+    }
+  } catch (e) {
+    providers.push({ name: 'GLM (Z-AI)', status: 'not configured' });
+  }
+  
+  const configuredCount = providers.filter(p => p.status === 'configured').length;
+  const status = configuredCount >= 2 ? 'healthy' : configuredCount >= 1 ? 'degraded' : 'unhealthy';
+  
+  return { status, providers };
 }

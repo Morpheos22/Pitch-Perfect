@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 
 // Sync Clerk user with database
 // SECURITY: Uses auth() to get authenticated user - NEVER trust client input for userId
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     const avatarUrl = clerkUser.imageUrl;
 
     // Upsert user using trusted clerkId from session
-    const user = await db.user.upsert({
+    const user = await prisma.user.upsert({
       where: { clerkId },
       update: {
         email,
@@ -53,23 +53,23 @@ export async function POST(request: NextRequest) {
     });
 
     // Ensure subscription exists
-    const existingSubscription = await db.subscription.findUnique({
+    const existingSubscription = await prisma.subscription.findUnique({
       where: { userId: user.id },
     });
 
     if (!existingSubscription) {
-      await db.subscription.create({
+      await prisma.subscription.create({
         data: { userId: user.id },
       });
     }
 
     // Ensure usage record exists
-    const existingUsage = await db.usage.findUnique({
+    const existingUsage = await prisma.usage.findUnique({
       where: { userId: user.id },
     });
 
     if (!existingUsage) {
-      await db.usage.create({
+      await prisma.usage.create({
         data: { userId: user.id },
       });
     }
@@ -96,7 +96,7 @@ export async function GET() {
       );
     }
 
-    const user = await db.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { clerkId },
       include: {
         subscription: true,

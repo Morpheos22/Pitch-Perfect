@@ -13,13 +13,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Build the response based on type filter
-    const response: {
-      decks?: Awaited<ReturnType<typeof prisma.pitchDeck.findMany>>;
-      scripts?: Awaited<ReturnType<typeof prisma.pitchScript.findMany>>;
-      videos?: Awaited<ReturnType<typeof prisma.pitchVideo.findMany>>;
-      fullSessions?: Awaited<ReturnType<typeof prisma.fullPitchSession.findMany>>;
-    } = {};
+    // Build the response with explicit types
+    const response: Record<string, unknown[]> = {};
 
     // Fetch data based on type
     if (!type || type === 'deck') {

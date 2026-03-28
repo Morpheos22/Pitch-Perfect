@@ -1,299 +1,169 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/lib/db";
-import { analyzeFullPitchSession, DeckAnalysisResult } from "@/lib/ai-service";
-import { generatePresignedDownloadUrl, uploadFile, extractFileText, isR2Configured } from "@/lib/storage";
+import { prisma } from "@/lib/db";
+import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult } from "@/lib/ai-service";
 
 // E4: Full Pitch Session API
-// Comprehensive analysis combining deck and 30-min video
-// Uses GLM-4V-Plus for deep video analysis (up to 30 minutes)
-// SECURITY: Uses auth() to get authenticated user - NEVER trust client input for userId
+// Comprehensive analysis combining deck and 30-min video using REAL AI
 
 export async function POST(request: NextRequest) {
   try {
-    // SECURITY: Get authenticated user from session
     const { userId: clerkId } = await auth();
 
     if (!clerkId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get internal user ID from database
-    const user = await db.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     const formData = await request.formData();
-    
-    // Input options - can provide videoId (from /api/video), videoUrl, or r2Key
-    const videoId = formData.get("videoId") as string;
-    let videoUrl = formData.get("videoUrl") as string;
-    const r2Key = formData.get("r2Key") as string;
-    const duration = parseInt(formData.get("duration") as string) || 1800; // Default 30 min
-    
-    // Deck options - can provide deckId (existing deck), file, or text content
-    const deckId = formData.get("deckId") as string;
-    const deckFile = formData.get("deck") as File | null;
+    const videoUrl = formData.get("videoUrl") as string;
+    const videoFile = formData.get("video") as File;
     const deckContent = formData.get("deckContent") as string;
+    const durationStr = formData.get("duration") as string;
+    const videoId = formData.get("videoId") as string;
+    const existingDeckId = formData.get("deckId") as string;
+    
+    // Parse duration (default to 15 minutes if not provided)
+    const duration = durationStr ? parseInt(durationStr, 10) : 900;
 
-    // Validate - need video and optionally deck
-    if (!videoId && !videoUrl && !r2Key) {
+    // Must have video URL
+    if (!videoUrl && !videoFile) {
       return NextResponse.json(
-        { error: "Video is required. Provide videoId, videoUrl, or r2Key." },
+        { error: "Video URL or video file required" },
         { status: 400 }
       );
     }
 
-    // Variables to track
-    let finalVideoUrl = videoUrl;
-    let videoRecord = null;
-    let deckAnalysis: DeckAnalysisResult | undefined;
-    let deckRecord = null;
-    let fileName: string | undefined;
-    let deckR2Key: string | undefined;
-
-    // ========================================
-    // HANDLE VIDEO
-    // ========================================
+    let analysisVideoUrl = videoUrl;
     
-    if (videoId && !finalVideoUrl) {
-      // Look up video from database
-      videoRecord = await db.pitchVideo.findFirst({
-        where: { id: videoId, userId: user.id },
-      });
-      
-      if (!videoRecord) {
-        return NextResponse.json(
-          { error: "Video not found" },
-          { status: 404 }
-        );
-      }
-      
-      // Generate presigned URL for AI to access
-      if (videoRecord.r2Key && isR2Configured()) {
-        finalVideoUrl = await generatePresignedDownloadUrl(videoRecord.r2Key);
-      } else if (videoRecord.fileUrl) {
-        finalVideoUrl = videoRecord.fileUrl;
-      }
-    } else if (r2Key && !finalVideoUrl && isR2Configured()) {
-      // Generate presigned URL from R2 key
-      finalVideoUrl = await generatePresignedDownloadUrl(r2Key);
+    if (videoFile && !videoUrl) {
+      return NextResponse.json(
+        { 
+          error: "Video file upload requires storage configuration",
+          message: "Please provide a video URL instead, or configure video storage (Cloudflare Stream/R2/S3).",
+        },
+        { status: 400 }
+      );
     }
 
-    if (!finalVideoUrl) {
+    // Validate duration for full pitch
+    if (duration < 180) {
       return NextResponse.json(
-        { error: "Could not generate video URL for analysis" },
+        { 
+          error: "Video too short for full pitch analysis",
+          message: "Full pitch sessions should be at least 3 minutes. For shorter pitches, use the Live Pitch Coach.",
+          suggestedEndpoint: "/api/coach/live"
+        },
+        { status: 400 }
+      );
+    }
+
+    if (duration > 3600) {
+      return NextResponse.json(
+        { error: "Video too long. Maximum duration is 60 minutes." },
+        { status: 400 }
+      );
+    }
+
+    // Get deck analysis if provided
+    let deckAnalysis: DeckAnalysisResult | undefined;
+    
+    if (existingDeckId) {
+      const existingDeck = await prisma.pitchDeck.findFirst({
+        where: { id: existingDeckId, userId: user.id },
+      });
+      
+      if (existingDeck && existingDeck.rawAnalysis) {
+        deckAnalysis = existingDeck.rawAnalysis as unknown as DeckAnalysisResult;
+      }
+    }
+
+    // Run REAL AI full pitch analysis
+    let analysis: FullPitchAnalysisResult;
+    try {
+      analysis = await analyzeFullPitchSession(analysisVideoUrl!, duration, deckAnalysis);
+    } catch (aiError) {
+      console.error("AI full pitch analysis failed:", aiError);
+      const errorMessage = aiError instanceof Error ? aiError.message : "Unknown AI error";
+      return NextResponse.json(
+        { 
+          error: "AI analysis failed", 
+          message: errorMessage,
+          details: "The AI service encountered an error analyzing your pitch session. Ensure the video URL is publicly accessible."
+        },
         { status: 500 }
       );
     }
 
-    // ========================================
-    // HANDLE DECK (OPTIONAL)
-    // ========================================
-    
-    if (deckId) {
-      // Use existing deck analysis
-      deckRecord = await db.pitchDeck.findFirst({
-        where: { id: deckId, userId: user.id },
-      });
-      
-      if (deckRecord && deckRecord.rawAnalysis) {
-        deckAnalysis = deckRecord.rawAnalysis as DeckAnalysisResult;
-      }
-    } else if (deckFile) {
-      // Upload and parse new deck
-      fileName = deckFile.name;
-      
-      // Validate file type
-      const allowedTypes = [
-        "application/pdf",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-      ];
-      const ext = deckFile.name.toLowerCase().split('.').pop();
-      
-      if (!allowedTypes.includes(deckFile.type) && !['pdf', 'ppt', 'pptx'].includes(ext || '')) {
-        return NextResponse.json(
-          { error: "Invalid deck file type. Please upload a PDF or PPTX file." },
-          { status: 400 }
-        );
-      }
-      
-      // Upload to R2
-      const uploadResult = await uploadFile(
-        deckFile,
-        user.id,
-        'deck',
-        deckFile.name,
-        deckFile.type
-      );
-      deckR2Key = uploadResult.key;
-      
-      // Extract text content
-      let extractedContent = deckContent;
-      if (!extractedContent) {
-        try {
-          const extracted = await extractFileText(uploadResult.key, deckFile.type, deckFile.name);
-          extractedContent = extracted.text;
-          console.log(`[E4] Extracted ${extracted.wordCount} words from deck ${deckFile.name}`);
-        } catch (e) {
-          console.error('[E4] Failed to extract deck content:', e);
-          extractedContent = `[Deck content from ${deckFile.name}]`;
-        }
-      }
-      
-      // Create deck record
-      deckRecord = await db.pitchDeck.create({
-        data: {
-          userId: user.id,
-          fileName: deckFile.name,
-          fileUrl: uploadResult.url,
-          fileSize: uploadResult.fileSize,
-          fileType: deckFile.type,
-          status: 'PROCESSING',
-        },
-      });
-      
-      // Note: We don't run separate deck analysis here - 
-      // it will be combined with video in analyzeFullPitchSession
-    }
-
-    // ========================================
-    // CREATE SESSION RECORD
-    // ========================================
-    
-    const session = await db.fullPitchSession.create({
+    // Store analysis in database
+    const savedSession = await prisma.fullPitchSession.create({
       data: {
         userId: user.id,
-        pitchDeckId: deckRecord?.id,
-        fileName: fileName,
-        r2Key: r2Key || videoRecord?.r2Key,
-        videoUrl: finalVideoUrl,
+        videoUrl: analysisVideoUrl || "",
+        videoId: videoId || `full-${Date.now()}`,
         duration: duration,
-        status: 'PROCESSING',
+        status: "COMPLETED",
+        pitchDeckId: existingDeckId || null,
+        problemSolutionFit: analysis.problemSolutionFit,
+        marketOpportunity: analysis.marketOpportunity,
+        businessModelViability: analysis.businessModelViability,
+        teamCredibility: analysis.teamCredibility,
+        tractionMilestones: analysis.tractionMilestones,
+        deliveryPresence: analysis.deliveryPresence,
+        overallReadinessScore: analysis.overallReadinessScore,
+        investorReadinessLevel: analysis.investorReadinessLevel as any,
+        contentScores: analysis.contentScores,
+        deliveryScores: analysis.deliveryScores,
+        strengths: analysis.strengths,
+        weaknesses: analysis.weaknesses,
+        investorConcerns: analysis.investorConcerns,
+        recommendedActions: analysis.recommendedActions,
+        anticipatedQuestions: analysis.anticipatedQuestions,
+        competitiveAnalysis: analysis.competitiveAnalysis,
+        transcript: analysis.transcript,
+        analyzedAt: new Date(),
       },
     });
 
-    // ========================================
-    // RUN AI ANALYSIS
-    // ========================================
-    
-    try {
-      console.log(`[E4] Starting full pitch analysis for session ${session.id}`);
-      console.log(`[E4] Video URL: ${finalVideoUrl}, Duration: ${duration}s`);
-      
-      const analysis = await analyzeFullPitchSession(
-        finalVideoUrl,
-        duration,
-        deckAnalysis
-      );
-
-      // ========================================
-      // UPDATE RECORDS WITH RESULTS
-      // ========================================
-      
-      await db.fullPitchSession.update({
-        where: { id: session.id },
-        data: {
-          status: 'COMPLETED',
-          problemSolutionFit: analysis.problemSolutionFit,
-          marketOpportunity: analysis.marketOpportunity,
-          businessModelViability: analysis.businessModelViability,
-          teamCredibility: analysis.teamCredibility,
-          tractionMilestones: analysis.tractionMilestones,
-          deliveryPresence: analysis.deliveryPresence,
-          overallReadinessScore: analysis.overallReadinessScore,
-          investorReadinessLevel: analysis.investorReadinessLevel,
-          contentScores: analysis.contentScores,
-          deliveryScores: analysis.deliveryScores,
-          strengths: analysis.strengths,
-          weaknesses: analysis.weaknesses,
-          investorConcerns: analysis.investorConcerns,
-          recommendedActions: analysis.recommendedActions,
-          competitiveAnalysis: analysis.competitiveAnalysis,
-          anticipatedQuestions: analysis.anticipatedQuestions,
-          transcript: analysis.transcript,
-          analyzedAt: new Date(),
-        },
-      });
-
-      // Update video record if exists
-      if (videoRecord) {
-        await db.pitchVideo.update({
-          where: { id: videoRecord.id },
-          data: { status: 'COMPLETED' },
-        });
-      }
-
-      // Return comprehensive results
-      return NextResponse.json({
-        success: true,
-        data: {
-          id: session.id,
-          status: 'COMPLETED',
-          investorReadinessLevel: analysis.investorReadinessLevel,
-          overallScore: analysis.overallReadinessScore,
-          dimensionScores: {
-            problemSolutionFit: analysis.problemSolutionFit,
-            marketOpportunity: analysis.marketOpportunity,
-            businessModelViability: analysis.businessModelViability,
-            teamCredibility: analysis.teamCredibility,
-            tractionMilestones: analysis.tractionMilestones,
-            deliveryPresence: analysis.deliveryPresence,
-          },
-          contentBreakdown: analysis.contentScores,
-          deliveryBreakdown: analysis.deliveryScores,
-          strengths: analysis.strengths,
-          weaknesses: analysis.weaknesses,
-          investorConcerns: analysis.investorConcerns,
-          recommendedActions: analysis.recommendedActions,
-          anticipatedQuestions: analysis.anticipatedQuestions,
-          competitiveAnalysis: analysis.competitiveAnalysis,
-          transcript: analysis.transcript,
-          tokensUsed: analysis.tokensUsed,
-        },
-      });
-    } catch (analysisError) {
-      console.error("[E4] Full pitch analysis failed:", analysisError);
-      
-      // Update session status to failed
-      await db.fullPitchSession.update({
-        where: { id: session.id },
-        data: { status: 'FAILED' },
-      });
-      
-      // Update video status if exists
-      if (videoRecord) {
-        await db.pitchVideo.update({
-          where: { id: videoRecord.id },
-          data: { status: 'FAILED' },
-        });
-      }
-      
-      return NextResponse.json(
-        { 
-          error: "Full pitch analysis failed", 
-          message: analysisError instanceof Error ? analysisError.message : "Unknown error",
-          sessionId: session.id,
-        },
-        { status: 500 }
-      );
-    }
+    // Return real result
+    return NextResponse.json({
+      success: true,
+      data: {
+        overallReadinessScore: analysis.overallReadinessScore,
+        investorReadinessLevel: analysis.investorReadinessLevel,
+        problemSolutionFit: analysis.problemSolutionFit,
+        marketOpportunity: analysis.marketOpportunity,
+        businessModelViability: analysis.businessModelViability,
+        teamCredibility: analysis.teamCredibility,
+        tractionMilestones: analysis.tractionMilestones,
+        deliveryPresence: analysis.deliveryPresence,
+        contentScores: analysis.contentScores,
+        deliveryScores: analysis.deliveryScores,
+        strengths: analysis.strengths,
+        weaknesses: analysis.weaknesses,
+        investorConcerns: analysis.investorConcerns,
+        recommendedActions: analysis.recommendedActions,
+        anticipatedQuestions: analysis.anticipatedQuestions,
+        competitiveAnalysis: analysis.competitiveAnalysis,
+        transcript: analysis.transcript,
+        tokensUsed: analysis.tokensUsed,
+      },
+      id: savedSession.id,
+      modelUsed: analysis.modelUsed,
+    });
   } catch (error) {
     console.error("Full session analysis error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to analyze full session", message: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to analyze full session", message: errorMessage },
       { status: 500 }
     );
   }
@@ -301,75 +171,25 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    // SECURITY: Get authenticated user from session
     const { userId: clerkId } = await auth();
 
     if (!clerkId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get internal user ID from database
-    const user = await db.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("id");
-
-    if (sessionId) {
-      // Get specific session
-      const session = await db.fullPitchSession.findFirst({
-        where: { id: sessionId, userId: user.id },
-        include: {
-          pitchDeck: {
-            select: {
-              id: true,
-              fileName: true,
-              overallScore: true,
-              createdAt: true,
-            },
-          },
-        },
-      });
-
-      if (!session) {
-        return NextResponse.json(
-          { error: "Session not found" },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: session,
-      });
-    }
-
-    // Get all sessions
-    const sessions = await db.fullPitchSession.findMany({
+    const sessions = await prisma.fullPitchSession.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
-      include: {
-        pitchDeck: {
-          select: {
-            id: true,
-            fileName: true,
-            overallScore: true,
-          },
-        },
-      },
     });
 
     return NextResponse.json({

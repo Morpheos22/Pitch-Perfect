@@ -33,7 +33,7 @@ export function Navbar() {
                       pathname.startsWith("/history");
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-[#E2E8F0] bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <nav className="container mx-auto flex h-16 items-center justify-between px-4">
         <Logo />
 
@@ -45,8 +45,8 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "text-sm font-medium transition-colors hover:text-[#4ECDC4]",
-                  pathname === item.href ? "text-[#4ECDC4]" : "text-[#718096]"
+                  "text-sm font-medium transition-colors hover:text-primary",
+                  pathname === item.href ? "text-primary" : "text-muted-foreground"
                 )}
               >
                 {item.label}
@@ -60,8 +60,8 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "text-sm font-medium transition-colors hover:text-[#4ECDC4]",
-                  pathname === item.href ? "text-[#4ECDC4]" : "text-[#718096]"
+                  "text-sm font-medium transition-colors hover:text-primary",
+                  pathname === item.href ? "text-primary" : "text-muted-foreground"
                 )}
               >
                 {item.label}
@@ -75,10 +75,10 @@ export function Navbar() {
           
           <SignedOut>
             <div className="hidden md:flex items-center gap-2">
-              <Button variant="ghost" asChild className="text-[#718096] hover:text-[#2D3748]">
+              <Button variant="ghost" asChild>
                 <Link href="/sign-in">Log in</Link>
               </Button>
-              <Button asChild className="bg-[#FF6B6B] hover:bg-[#E85555] text-white">
+              <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 <Link href="/sign-up">Get started</Link>
               </Button>
             </div>
@@ -88,7 +88,6 @@ export function Navbar() {
             <UserButton afterSignOutUrl="/" appearance={{
               elements: {
                 avatarBox: "h-9 w-9",
-                userButtonTrigger: "focus:shadow-none",
               },
             }} />
           </SignedIn>
@@ -97,7 +96,7 @@ export function Navbar() {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden text-[#718096]"
+            className="md:hidden"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -107,24 +106,24 @@ export function Navbar() {
 
       {/* Mobile Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-[#E2E8F0] bg-white">
+        <div className="md:hidden border-t border-border bg-background">
           <div className="container mx-auto px-4 py-4 space-y-3">
             <SignedOut>
               {publicNavItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block py-2 text-sm font-medium text-[#718096] hover:text-[#4ECDC4]"
+                  className="block py-2 text-sm font-medium text-muted-foreground hover:text-primary"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {item.label}
                 </Link>
               ))}
-              <div className="flex flex-col gap-2 pt-4 border-t border-[#E2E8F0]">
-                <Button variant="ghost" asChild className="w-full justify-start text-[#718096]">
+              <div className="flex flex-col gap-2 pt-4 border-t border-border">
+                <Button variant="ghost" asChild className="w-full justify-start">
                   <Link href="/sign-in">Log in</Link>
                 </Button>
-                <Button asChild className="w-full bg-[#FF6B6B] hover:bg-[#E85555] text-white">
+                <Button asChild className="w-full bg-primary hover:bg-primary/90">
                   <Link href="/sign-up">Get started</Link>
                 </Button>
               </div>
@@ -135,7 +134,7 @@ export function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block py-2 text-sm font-medium text-[#718096] hover:text-[#4ECDC4]"
+                  className="block py-2 text-sm font-medium text-muted-foreground hover:text-primary"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {item.label}

@@ -30,9 +30,8 @@ export function Logo({ size = "md", showText = true, className = "", href = "/" 
         priority
       />
       {showText && (
-        <span className={`font-bold ${text} font-heading`}>
-          <span className="text-[#2D3748]">Pitch</span>
-          <span className="text-[#4ECDC4]">Perfect</span>
+        <span className={`font-bold ${text} text-primary`}>
+          Pitch<span className="text-secondary">Perfect</span>
         </span>
       )}
     </Link>

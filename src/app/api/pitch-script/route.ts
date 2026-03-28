@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateUser, createPitchScript, updatePitchScriptAnalysis, incrementUsage, checkUsageLimit } from '@/lib/db-operations';
 import { analyzePitchScript } from '@/lib/ai-service';
-import { uploadFile, extractFileText } from '@/lib/storage';
+import { uploadFile, getFileContent } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,9 +69,7 @@ export async function POST(request: NextRequest) {
       // Extract text content from file if not provided
       if (!scriptText) {
         try {
-          const extracted = await extractFileText(uploadResult.key, mimeType, file.name);
-          analysisContent = extracted.text;
-          console.log(`[E2] Extracted ${extracted.wordCount} words from ${fileName}`);
+          analysisContent = await getFileContent(uploadResult.url, mimeType);
         } catch (e) {
           console.error('Failed to extract file content:', e);
           analysisContent = `[Script content from ${fileName}]`;
@@ -145,77 +143,15 @@ export async function POST(request: NextRequest) {
           createdAt: script.createdAt,
         });
       } else {
-        // Mock analysis for development
-        const mockAnalysis = {
-          hookScore: 65,
-          problemScore: 70,
-          solutionScore: 75,
-          credibilityScore: 60,
-          ctaScore: 55,
-          overallScore: 65,
-          wordCount: analysisContent.split(/\s+/).length,
-          estimatedDuration: Math.floor(analysisContent.split(/\s+/).length / 2.5),
-          improvements: {
-            hook: [
-              'Start with a surprising statistic or bold statement instead of a generic introduction',
-              'Consider opening with a question that immediately engages your audience',
-            ],
-            problem: [
-              'Make the problem more specific and quantifiable',
-              'Add an emotional hook to make the problem feel more urgent',
-            ],
-            solution: [
-              'Be more specific about how your solution works',
-              'Clearly differentiate from existing alternatives',
-            ],
-            credibility: [
-              'Add a specific metric or achievement that demonstrates traction',
-              'Mention relevant team experience or expertise',
-            ],
-            cta: [
-              'Make your ask more specific (amount, timeline, next step)',
-              'Create urgency by mentioning current momentum or opportunity',
-            ],
+        // Insufficient content - return error instead of mock
+        return NextResponse.json(
+          { 
+            error: 'Insufficient content for analysis',
+            message: 'Please provide more detailed script content (at least 20 characters).',
+            scriptId: script.id,
           },
-          rewrittenScript: `Did you know that 90% of startups fail because they can't clearly communicate their value? I'm [Name], founder of [Company], and we're changing that.\n\n[Specific problem] costs businesses $X billion annually. Our solution [brief description] has already helped [X customers] save [specific metric]. With [relevant experience], our team is uniquely positioned to capture this $Y billion market.\n\nWe're raising $Z to [specific milestone]. Would you be open to a 15-minute call to learn more?`,
-          alternativeHooks: [
-            '"What if I told you that [surprising insight about the problem]?"',
-            '"In the next 60 seconds, I\'ll show you how we\'re [key benefit]..."',
-            '"[Impressive statistic]. That\'s why we built [Company]."',
-          ],
-        };
-
-        await updatePitchScriptAnalysis(script.id, {
-          ...mockAnalysis,
-          improvements: mockAnalysis.improvements as unknown as object,
-        });
-
-        await incrementUsage(user.id, 'e2', 0);
-
-        return NextResponse.json({
-          id: script.id,
-          status: 'COMPLETED',
-          analysis: {
-            scores: {
-              hook: mockAnalysis.hookScore,
-              problem: mockAnalysis.problemScore,
-              solution: mockAnalysis.solutionScore,
-              credibility: mockAnalysis.credibilityScore,
-              cta: mockAnalysis.ctaScore,
-              overall: mockAnalysis.overallScore,
-            },
-            metrics: mockAnalysis.metrics,
-            improvements: mockAnalysis.improvements,
-            rewrittenScript: mockAnalysis.rewrittenScript,
-            alternativeHooks: mockAnalysis.alternativeHooks,
-          },
-          inputType,
-          fileName,
-          fileUrl,
-          targetAudience,
-          createdAt: script.createdAt,
-          _dev: 'Mock analysis (insufficient content)',
-        });
+          { status: 400 }
+        );
       }
     } catch (error) {
       console.error('Script analysis failed:', error);

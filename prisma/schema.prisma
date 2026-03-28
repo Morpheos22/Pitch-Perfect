@@ -247,18 +247,12 @@ model PitchVideo {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Video Info - supports both R2 and Cloudflare Stream
-  fileName     String?  // Original filename
-  fileUrl      String?  // Public URL or R2 URL
-  r2Key        String?  // R2 storage key for direct access
-  videoUrl     String?  // Cloudflare Stream URL (legacy/optional)
-  videoId      String?  // Cloudflare Stream ID (legacy/optional)
+  // Video Info
+  videoUrl     String // Cloudflare Stream URL
+  videoId      String // Cloudflare Stream ID
   thumbnailUrl String?
-  duration     Int      @default(0) // in seconds (max 180 for E3)
+  duration     Int // in seconds (max 180 for E3)
   fileSize     Int? // in bytes
-
-  // Video Type
-  type String @default("LIVE") // LIVE or FULL (for E3 or E4)
 
   // Analysis Results
   status AnalysisStatus @default(PENDING)
@@ -287,7 +281,6 @@ model PitchVideo {
   deliveryFeedback     String? // Detailed feedback on delivery
   bodyLanguageFeedback String? // Detailed feedback on body language
   keyMoments           Json? // Timestamps of notable moments
-  analysis             Json? // Full analysis result
 
   // Transcript
   transcript               String? // Full transcript
@@ -315,14 +308,11 @@ model FullPitchSession {
   pitchDeckId String?
   pitchDeck   PitchDeck? @relation(fields: [pitchDeckId], references: [id])
 
-  // Video Info - supports both R2 and Cloudflare Stream
-  fileName     String?  // Original filename
-  fileUrl      String?  // Public URL or R2 URL
-  r2Key        String?  // R2 storage key for direct access
-  videoUrl     String?  // Cloudflare Stream URL (legacy/optional)
-  videoId      String?  // Cloudflare Stream ID (legacy/optional)
+  // Video Info
+  videoUrl     String // Cloudflare Stream URL
+  videoId      String // Cloudflare Stream ID
   thumbnailUrl String?
-  duration     Int      @default(0) // in seconds (up to 1800 for E4)
+  duration     Int // in seconds (up to 1800 for E4)
   fileSize     Int?
 
   // Analysis Results
