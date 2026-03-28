@@ -1,0 +1,493 @@
+// PitchCoach AI - Prisma Schema
+// Database: PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id          String  @id @default(cuid())
+  clerkId     String  @unique // Clerk authentication ID
+  email       String  @unique
+  firstName   String?
+  lastName    String?
+  avatarUrl   String?
+  linkedinUrl String?
+
+  // Subscription & Billing
+  subscription Subscription?
+  usage        Usage?
+
+  // Coaching Data
+  pitchDecks   PitchDeck[]
+  pitchScripts PitchScript[]
+  pitchVideos  PitchVideo[]
+  fullSessions FullPitchSession[]
+
+  // Zoho Integration
+  zohoContactId String? // Zoho CRM Contact ID
+  zohoAccountId String? // Zoho CRM Account ID (for B2B)
+
+  // Timestamps
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastActiveAt DateTime?
+
+  @@map("users")
+}
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Plan Details
+  plan   PlanType           @default(FREE)
+  status SubscriptionStatus @default(ACTIVE)
+
+  // Stripe Integration (Global/US)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  stripePriceId        String?
+
+  // Paystack Integration (African Markets)
+  paystackCustomerId     String?    // Paystack customer code
+  paystackSubscriptionId String?    // Paystack subscription code
+  paystackPlanCode       String?    // Paystack plan code
+  paystackEmailToken     String?    // For verification
+
+  // Billing Cycle
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+
+  // Credits (for pay-per-use)
+  creditsRemaining Int @default(0)
+  creditsUsed      Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  INCOMPLETE
+  TRIALING
+}
+
+model Usage {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Monthly Usage Tracking
+  month DateTime @default(now()) // Track by month
+
+  // Module Usage Counts
+  e1DeckAnalyses        Int @default(0)
+  e2ScriptCoachSessions Int @default(0)
+  e3LivePitchSessions   Int @default(0)
+  e4FullPitchSessions   Int @default(0)
+
+  // AI Token Usage (for cost tracking)
+  claudeTokensUsed Int @default(0)
+  geminiTokensUsed Int @default(0)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("usage")
+}
+
+// ============================================
+// E1: PITCH DECK ANALYSER
+// ============================================
+
+model PitchDeck {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // File Info
+  fileName   String
+  fileUrl    String // R2 storage URL
+  fileSize   Int // in bytes
+  fileType   String // pdf, pptx
+  slideCount Int?
+
+  // Analysis Results
+  status AnalysisStatus @default(PENDING)
+
+  // Content Scoring (0-100)
+  problemClarityScore    Int?
+  solutionClarityScore   Int?
+  marketOpportunityScore Int?
+  businessModelScore     Int?
+  teamCredibilityScore   Int?
+  tractionScore          Int?
+  financialsScore        Int?
+  askClarityScore        Int?
+  overallScore           Int?
+
+  // Visual Audit
+  designConsistencyScore Int?
+  readabilityScore       Int?
+  visualHierarchyScore   Int?
+  colorSchemeScore       Int?
+  typographyScore        Int?
+
+  // AI Feedback
+  strengths       String[] // Array of strength points
+  weaknesses      String[] // Array of improvement areas
+  recommendations String[] // Actionable recommendations
+
+  // Raw AI Response (for debugging/reprocessing)
+  rawAnalysis Json?
+
+  // Relations
+  fullSessions FullPitchSession[]
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@map("pitch_decks")
+}
+
+// ============================================
+// E2: ELEVATOR PITCH SCRIPT COACH
+// ============================================
+
+model PitchScript {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Input
+  inputType    ScriptInputType // text, pdf, docx
+  inputText    String? // Direct text input
+  inputFileUrl String? // R2 URL for uploaded file
+  fileName     String?
+
+  // Target Audience
+  targetAudience String? // investor, customer, partner, etc.
+  pitchDuration  Int? // Target duration in seconds
+
+  // Analysis Results
+  status AnalysisStatus @default(PENDING)
+
+  // 5-Element Scoring (0-100)
+  hookScore        Int? // Opening hook effectiveness
+  problemScore     Int? // Problem articulation
+  solutionScore    Int? // Solution clarity
+  credibilityScore Int? // Team/traction credibility
+  ctaScore         Int? // Call-to-action clarity
+  overallScore     Int?
+
+  // Script Metrics
+  wordCount         Int?
+  estimatedDuration Int? // in seconds
+
+  // AI Feedback
+  improvements     Json? // Structured improvement suggestions
+  rewrittenScript  String? // AI-rewritten version
+  alternativeHooks String[] // Alternative opening options
+
+  // Iteration Tracking
+  version        Int     @default(1)
+  parentScriptId String? // For tracking iterations
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@map("pitch_scripts")
+}
+
+enum ScriptInputType {
+  TEXT
+  PDF
+  DOCX
+}
+
+// ============================================
+// E3: LIVE ELEVATOR PITCH (VIDEO)
+// ============================================
+
+model PitchVideo {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Video Info - supports both R2 and Cloudflare Stream
+  fileName     String?  // Original filename
+  fileUrl      String?  // Public URL or R2 URL
+  r2Key        String?  // R2 storage key for direct access
+  videoUrl     String?  // Cloudflare Stream URL (legacy/optional)
+  videoId      String?  // Cloudflare Stream ID (legacy/optional)
+  thumbnailUrl String?
+  duration     Int      @default(0) // in seconds (max 180 for E3)
+  fileSize     Int? // in bytes
+
+  // Video Type
+  type String @default("LIVE") // LIVE or FULL (for E3 or E4)
+
+  // Analysis Results
+  status AnalysisStatus @default(PENDING)
+
+  // Delivery Scores (0-100)
+  paceScore            Int? // Speaking pace appropriateness
+  clarityScore         Int? // Speech clarity
+  fillerWordScore      Int? // Filler word usage (lower = more fillers)
+  energyScore          Int? // Energy and enthusiasm
+  confidenceScore      Int? // Perceived confidence
+  overallDeliveryScore Int?
+
+  // Body Language Scores (0-100)
+  eyeContactScore          Int?
+  facialExpressionScore    Int?
+  gestureScore             Int?
+  postureScore             Int?
+  overallBodyLanguageScore Int?
+
+  // Metrics
+  wordsPerMinute  Int?
+  fillerWordCount Int?
+  fillerWords     Json? // { "um": 5, "uh": 3, "like": 2 }
+
+  // AI Feedback
+  deliveryFeedback     String? // Detailed feedback on delivery
+  bodyLanguageFeedback String? // Detailed feedback on body language
+  keyMoments           Json? // Timestamps of notable moments
+  analysis             Json? // Full analysis result
+
+  // Transcript
+  transcript               String? // Full transcript
+  transcriptWithTimestamps Json? // Word-level timestamps
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@map("pitch_videos")
+}
+
+// ============================================
+// E4: FULL PITCH SESSION (30-MIN VIDEO + DECK)
+// ============================================
+
+model FullPitchSession {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Associated Deck (optional)
+  pitchDeckId String?
+  pitchDeck   PitchDeck? @relation(fields: [pitchDeckId], references: [id])
+
+  // Video Info - supports both R2 and Cloudflare Stream
+  fileName     String?  // Original filename
+  fileUrl      String?  // Public URL or R2 URL
+  r2Key        String?  // R2 storage key for direct access
+  videoUrl     String?  // Cloudflare Stream URL (legacy/optional)
+  videoId      String?  // Cloudflare Stream ID (legacy/optional)
+  thumbnailUrl String?
+  duration     Int      @default(0) // in seconds (up to 1800 for E4)
+  fileSize     Int?
+
+  // Analysis Results
+  status AnalysisStatus @default(PENDING)
+
+  // 6-Dimension Investor Readiness Scores (0-100)
+  problemSolutionFit     Int?
+  marketOpportunity      Int?
+  businessModelViability Int?
+  teamCredibility        Int?
+  tractionMilestones     Int?
+  deliveryPresence       Int?
+  overallReadinessScore  Int?
+
+  // Investor Readiness Level
+  investorReadinessLevel InvestorReadinessLevel?
+
+  // Detailed Sub-Scores
+  contentScores  Json? // Detailed content breakdown
+  deliveryScores Json? // Detailed delivery breakdown
+
+  // AI Feedback
+  strengths          String[]
+  weaknesses         String[]
+  investorConcerns   String[] // Likely investor concerns
+  recommendedActions String[] // Priority action items
+
+  // Competitive Context
+  competitiveAnalysis Json? // How this pitch compares
+
+  // Q&A Preparation (AI-generated likely questions)
+  anticipatedQuestions Json? // [{ question: "...", suggestedAnswer: "..." }]
+
+  // Transcript
+  transcript               String?
+  transcriptWithTimestamps Json?
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@map("full_pitch_sessions")
+}
+
+enum InvestorReadinessLevel {
+  NOT_READY // 0-40
+  NEEDS_WORK // 41-60
+  INVESTOR_READY // 61-80
+  HIGHLY_PREPARED // 81-100
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// BILLING & TRANSACTIONS
+// ============================================
+
+model Transaction {
+  id     String @id @default(cuid())
+  userId String
+
+  // Transaction Details
+  type     TransactionType
+  amount   Int // in smallest currency unit (cents, kobo, etc.)
+  currency String          @default("usd")
+
+  // Payment Provider
+  provider PaymentProvider @default(STRIPE)
+
+  // Stripe
+  stripePaymentIntentId String?
+  stripeInvoiceId       String?
+
+  // Paystack
+  paystackReference String?    // Paystack transaction reference
+  paystackAccessCode String?   // Paystack access code for verification
+
+  // Credits
+  creditsAdded Int @default(0)
+
+  // Module Access
+  moduleAccess ModuleAccess?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([provider])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  SUBSCRIPTION
+  ONE_TIME
+  CREDIT_PURCHASE
+  REFUND
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYSTACK
+}
+
+model ModuleAccess {
+  id            String      @id @default(cuid())
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+
+  // Which modules are unlocked
+  e1Access Boolean @default(false)
+  e2Access Boolean @default(false)
+  e3Access Boolean @default(false)
+  e4Access Boolean @default(false)
+
+  // Usage limits
+  e1Limit Int?
+  e2Limit Int?
+  e3Limit Int?
+  e4Limit Int?
+
+  // Current usage
+  e1Used Int @default(0)
+  e2Used Int @default(0)
+  e3Used Int @default(0)
+  e4Used Int @default(0)
+
+  // Expiry
+  expiresAt DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  @@map("module_access")
+}
+
+// ============================================
+// ZOHO INTEGRATION TRACKING
+// ============================================
+
+model ZohoSyncLog {
+  id     String  @id @default(cuid())
+  userId String?
+
+  // Sync Details
+  entityType String // Contact, Account, Deal, etc.
+  entityId   String // Zoho entity ID
+  action     String // create, update, delete
+  status     String // success, failed
+
+  // Request/Response
+  requestData  Json?
+  responseData Json?
+  errorMessage String?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@map("zoho_sync_logs")
+}
