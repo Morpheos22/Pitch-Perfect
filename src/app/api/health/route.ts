@@ -2,25 +2,27 @@ import { NextResponse } from 'next/server';
 import { checkAIServiceHealth } from '@/lib/ai-service';
 import { prisma } from '@/lib/db';
 
+interface HealthChecks {
+  api: { status: string; timestamp: string };
+  database: { status: string; message: string };
+  ai: {
+    status: string;
+    message: string;
+    configFound: boolean;
+    glm: { status: string; message?: string };
+  };
+}
+
 export async function GET() {
   const startTime = Date.now();
-  
-  const checks = {
-    api: { status: string; timestamp: string };
-    database: { status: string; message: string };
-    ai: { 
-      status: string; 
-      message: string; 
-      configFound: boolean; 
-      glm: { status: string; message?: string };
-    };
-  } = {
+
+  const checks: HealthChecks = {
     api: { status: 'checking', timestamp: new Date().toISOString() },
     database: { status: 'checking', message: '' },
-    ai: { 
-      status: 'checking', 
-      message: '', 
-      configFound: false, 
+    ai: {
+      status: 'checking',
+      message: '',
+      configFound: false,
       glm: { status: 'unknown' },
     },
   };
@@ -68,9 +70,9 @@ export async function GET() {
   // Determine overall status
   const allHealthy = Object.values(checks).every(c => c.status === 'ok' || c.status === 'healthy');
   const anyUnhealthy = Object.values(checks).some(c => c.status === 'unhealthy');
-  
+
   const overallStatus = allHealthy ? 'healthy' : (anyUnhealthy ? 'unhealthy' : 'degraded');
-  
+
   const responseTime = Date.now() - startTime;
 
   return NextResponse.json({

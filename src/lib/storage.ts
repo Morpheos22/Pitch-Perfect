@@ -200,7 +200,7 @@ export async function generatePresignedUploadUrl(
   }
 
   const key = generateFileKey(userId, type, fileName);
-  
+
   // In production, you'd use AWS SDK to generate a presigned URL
   // For now, return the key for server-side upload
   const endpoint = getR2Endpoint();
@@ -211,6 +211,21 @@ export async function generatePresignedUploadUrl(
     key,
     publicUrl: getR2FileUrl(key),
   };
+}
+
+export async function generatePresignedDownloadUrl(
+  key: string,
+  expiresIn = 3600 // 1 hour
+): Promise<{ downloadUrl: string }> {
+  if (!isR2Configured()) {
+    throw new Error('Cloudflare R2 is not configured.');
+  }
+
+  // In production, you'd use AWS SDK to generate a presigned URL
+  // For now, return the public URL
+  const downloadUrl = getR2FileUrl(key);
+
+  return { downloadUrl };
 }
 
 // ============================================

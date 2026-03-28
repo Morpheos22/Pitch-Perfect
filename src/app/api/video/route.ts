@@ -4,9 +4,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { db } from '@/lib/db';
-import { 
-  generatePresignedUploadUrl, 
+import { prisma as db } from '@/lib/db';
+import {
+  generatePresignedUploadUrl,
   generatePresignedDownloadUrl,
   isR2Configured,
   validateFileType,
