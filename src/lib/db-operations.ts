@@ -3,11 +3,7 @@
 
 import { prisma } from './db';
 import { auth } from '@clerk/nextjs/server';
-import type { AnalysisStatus, PlanType } from '@prisma/client';
-
-// ============================================
-// USER OPERATIONS
-// ============================================
+import type { AnalysisStatus, InvestorReadinessLevel, PlanType } from '@prisma/client';
 
 export async function getOrCreateUser() {
   const { userId } = await auth();
@@ -80,7 +76,7 @@ export async function createUser(data: {
 
 export type ModuleType = 'e1' | 'e2' | 'e3' | 'e4';
 
-const MODULE_FIELD_MAP: Record<ModuleType, keyof typeof import('@prisma/client').Usage.prototype> = {
+const MODULE_FIELD_MAP: Record<ModuleType, string> = {
   e1: 'e1DeckAnalyses',
   e2: 'e2ScriptCoachSessions',
   e3: 'e3LivePitchSessions',

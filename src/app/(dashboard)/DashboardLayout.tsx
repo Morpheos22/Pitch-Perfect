@@ -30,7 +30,6 @@ import {
 import { useState } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useClerk, useUser } from "@clerk/nextjs";
-import { useUserSync } from "@/hooks/useUserSync";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -102,9 +101,6 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useUser();
   const { signOut } = useClerk();
-  
-  // Sync user to database on first load
-  useUserSync();
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -188,7 +184,7 @@ export default function DashboardLayout({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-destructive focus:text-destructive"
-                  onClick={() => signOut({ redirectUrl: "/" })}
+                  onClick={() => signOut()}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   Log out

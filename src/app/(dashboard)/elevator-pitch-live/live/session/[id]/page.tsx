@@ -1,68 +1,94 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import {
-  Download,
-  Share2,
-  ArrowRight,
-  ChevronLeft,
+import { 
+  Download, 
+  Share2, 
+  ArrowRight, 
+  ChevronLeft, 
   CheckCircle,
   AlertTriangle,
   Video,
   Mic,
   Play,
-  MessageSquare,
-  Loader2
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
-interface VideoSession {
-  id: string;
-  fileName: string;
-  fileUrl: string;
-  r2Key: string;
-  duration: number;
-  status: string;
-  type: string;
-  createdAt: string;
-  
-  // Scores
-  paceScore: number;
-  clarityScore: number;
-  fillerWordScore: number;
-  energyScore: number;
-  confidenceScore: number;
-  overallDeliveryScore: number;
-  eyeContactScore: number;
-  facialExpressionScore: number;
-  gestureScore: number;
-  postureScore: number;
-  overallBodyLanguageScore: number;
-  
-  // Metrics
-  wordsPerMinute: number;
-  fillerWordCount: number;
-  fillerWords: Record<string, number>;
-  
-  // Feedback
-  deliveryFeedback: string;
-  bodyLanguageFeedback: string;
-  keyMoments: Array<{
-    timestamp: string;
-    description: string;
-    type: 'positive' | 'improvement';
-  }>;
-  
-  // Transcript
-  transcript: string;
-  analysis: object;
-}
+const reportData = {
+  sessionName: "Live Pitch — Practice 1",
+  date: "March 24, 2026 at 4:15 PM",
+  recordingMode: "video",
+  duration: "2 min 18 sec",
+  sessionNumber: 2,
+  totalSessions: 3,
+  overallScore: 71,
+  overallLabel: "Building confidence",
+  executiveSummary: "Your delivery shows genuine enthusiasm for your subject matter. The pacing is generally good, though you tend to speed up during the technical explanation. Eye contact is strong when you're comfortable, but drops during transitions. Your gestures support your message well. Focus on maintaining steady pacing and consistent eye contact throughout.",
+  strengths: [
+    "Strong opening hook with confident eye contact",
+    "Gestures effectively emphasize key points",
+    "Clear articulation of the problem statement",
+  ],
+  priorityActions: [
+    "Slow down during the solution explanation — you're rushing through the technical details",
+    "Maintain eye contact during transitions between slides/topics",
+    "Add a brief pause before your ask to create anticipation",
+  ],
+  vocalScores: [
+    { name: "Pacing", score: 68, feedback: "Generally good pace, but speeds up noticeably during the technical section. Aim for consistent timing throughout." },
+    { name: "Clarity", score: 78, feedback: "Clear articulation with good enunciation. A few words were clipped at the end of sentences." },
+    { name: "Energy", score: 82, feedback: "Strong energy and enthusiasm. Your passion for the subject comes through clearly." },
+    { name: "Confidence", score: 72, feedback: "Confident overall, but nervousness shows during transitions. Practice smooth transitions between sections." },
+  ],
+  bodyLanguageScores: [
+    { name: "Eye Contact", score: 65, feedback: "Strong when directly addressing the audience, but drops during slide transitions. Practice looking at the camera when moving between topics." },
+    { name: "Posture", score: 75, feedback: "Generally upright and open posture. Occasional leaning forward when excited — stay centered." },
+    { name: "Gestures", score: 80, feedback: "Natural, purposeful gestures that support your message. Well done on avoiding fidgeting." },
+  ],
+  coachingDrills: [
+    {
+      name: "Mirror Drill",
+      target: "Eye Contact",
+      steps: [
+        "Set up a mirror at eye level or use your camera as a mirror",
+        "Practice your full pitch while maintaining constant eye contact with your reflection",
+        "Focus especially on transitions — don't look away when moving between points",
+        "Repeat 3 times daily for a week",
+      ],
+      why: "This builds the muscle memory needed to maintain eye contact even during transitions.",
+    },
+    {
+      name: "Tempo Tap",
+      target: "Pacing",
+      steps: [
+        "Set a metronome to 100 BPM (beats per minute)",
+        "Practice speaking one word per beat during your technical explanation",
+        "Gradually increase to your natural speaking pace while staying rhythmic",
+        "Record yourself and compare before/after pacing",
+      ],
+      why: "This helps you internalize a steady pace and recognize when you're speeding up.",
+    },
+    {
+      name: "Power Pause",
+      target: "Confidence",
+      steps: [
+        "Identify 3 key moments in your pitch where you'll pause for effect",
+        "Practice taking a full 2-second pause at each moment",
+        "During the pause, take a breath and make deliberate eye contact",
+        "Resume speaking with renewed energy after each pause",
+      ],
+      why: "Strategic pauses demonstrate confidence and give your audience time to absorb key points.",
+    },
+  ],
+};
 
 function getScoreColor(score: number) {
   if (score >= 70) return "text-secondary";
@@ -70,108 +96,9 @@ function getScoreColor(score: number) {
   return "text-destructive";
 }
 
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
 export default function LiveSessionPage() {
   const router = useRouter();
-  const params = useParams();
-  const videoId = params.id as string;
-  
-  const [session, setSession] = useState<VideoSession | null>(null);
-  const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
-
-  useEffect(() => {
-    fetchSession();
-  }, [videoId]);
-
-  const fetchSession = async () => {
-    try {
-      const response = await fetch(`/api/video?videoId=${videoId}`);
-      const data = await response.json();
-      
-      if (response.ok && data.videoId) {
-        // Fetch full analysis from coach/live endpoint
-        const analysisRes = await fetch(`/api/coach/live?videoId=${videoId}`);
-        const analysisData = await analysisRes.json();
-        
-        if (analysisRes.ok && analysisData.data) {
-          setSession({
-            id: videoId,
-            fileName: '',
-            fileUrl: data.downloadUrl || '',
-            r2Key: '',
-            duration: analysisData.data.metrics?.duration || 0,
-            status: 'COMPLETED',
-            type: 'LIVE',
-            createdAt: new Date().toISOString(),
-            paceScore: analysisData.data.deliveryScores?.pace || 0,
-            clarityScore: analysisData.data.deliveryScores?.clarity || 0,
-            fillerWordScore: analysisData.data.deliveryScores?.fillerWords || 0,
-            energyScore: analysisData.data.deliveryScores?.energy || 0,
-            confidenceScore: analysisData.data.deliveryScores?.confidence || 0,
-            overallDeliveryScore: analysisData.data.overallDeliveryScore || 0,
-            eyeContactScore: analysisData.data.bodyLanguageScores?.eyeContact || 0,
-            facialExpressionScore: analysisData.data.bodyLanguageScores?.facialExpression || 0,
-            gestureScore: analysisData.data.bodyLanguageScores?.gestures || 0,
-            postureScore: analysisData.data.bodyLanguageScores?.posture || 0,
-            overallBodyLanguageScore: analysisData.data.overallBodyLanguageScore || 0,
-            wordsPerMinute: analysisData.data.metrics?.wordsPerMinute || 0,
-            fillerWordCount: analysisData.data.metrics?.fillerWordCount || 0,
-            fillerWords: analysisData.data.fillerWords || {},
-            deliveryFeedback: analysisData.data.deliveryFeedback || '',
-            bodyLanguageFeedback: analysisData.data.bodyLanguageFeedback || '',
-            keyMoments: analysisData.data.keyMoments || [],
-            transcript: analysisData.data.transcript || '',
-            analysis: analysisData.data,
-          });
-        } else {
-          // If analysis not ready, show basic info
-          setSession({
-            id: videoId,
-            fileName: '',
-            fileUrl: data.downloadUrl || '',
-            r2Key: '',
-            duration: 0,
-            status: data.status || 'PENDING',
-            type: 'LIVE',
-            createdAt: new Date().toISOString(),
-            paceScore: 0,
-            clarityScore: 0,
-            fillerWordScore: 0,
-            energyScore: 0,
-            confidenceScore: 0,
-            overallDeliveryScore: 0,
-            eyeContactScore: 0,
-            facialExpressionScore: 0,
-            gestureScore: 0,
-            postureScore: 0,
-            overallBodyLanguageScore: 0,
-            wordsPerMinute: 0,
-            fillerWordCount: 0,
-            fillerWords: {},
-            deliveryFeedback: '',
-            bodyLanguageFeedback: '',
-            keyMoments: [],
-            transcript: '',
-            analysis: {},
-          });
-        }
-      } else {
-        toast.error("Session not found");
-        router.push("/elevator-pitch-live/new");
-      }
-    } catch (error) {
-      console.error("Failed to fetch session:", error);
-      toast.error("Failed to load session");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDownload = () => toast.success("Report PDF downloaded");
   const handleShare = () => {
@@ -179,72 +106,17 @@ export default function LiveSessionPage() {
     toast.success("Link copied to clipboard");
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-semibold">Session not found</h2>
-        <p className="text-muted-foreground mt-2">This recording session doesn't exist or has been deleted.</p>
-        <Button onClick={() => router.push("/elevator-pitch-live/new")} className="mt-4">
-          Record New Pitch
-        </Button>
-      </div>
-    );
-  }
-
-  // If analysis is still processing
-  if (session.status === "PENDING" || session.status === "PROCESSING") {
-    return (
-      <div className="max-w-md mx-auto text-center py-12">
-        <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold">Analysis In Progress</h2>
-        <p className="text-muted-foreground mt-2">
-          Your pitch recording is being analyzed. This typically takes 1-3 minutes.
-        </p>
-        <Button onClick={() => fetchSession()} variant="outline" className="mt-4">
-          Check Again
-        </Button>
-      </div>
-    );
-  }
-
-  const vocalScores = [
-    { name: "Pacing", score: session.paceScore },
-    { name: "Clarity", score: session.clarityScore },
-    { name: "Filler Words", score: session.fillerWordScore },
-    { name: "Energy", score: session.energyScore },
-    { name: "Confidence", score: session.confidenceScore },
-  ];
-
-  const bodyLanguageScores = [
-    { name: "Eye Contact", score: session.eyeContactScore },
-    { name: "Facial Expression", score: session.facialExpressionScore },
-    { name: "Gestures", score: session.gestureScore },
-    { name: "Posture", score: session.postureScore },
-  ];
-
-  const overallScore = Math.round((session.overallDeliveryScore + session.overallBodyLanguageScore) / 2);
-
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-8">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
+      <div className="flex items-start justify-between">
         <div>
           <Button variant="ghost" size="sm" onClick={() => router.push("/elevator-pitch-live/new")} className="mb-2">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
-          <h1 className="text-2xl font-bold">Live Pitch Analysis</h1>
-          <p className="text-muted-foreground">
-            {session.createdAt ? new Date(session.createdAt).toLocaleDateString() : "Recent session"}
-          </p>
+          <h1 className="text-2xl font-bold">{reportData.sessionName}</h1>
+          <p className="text-muted-foreground">{reportData.date}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleShare}>
@@ -264,13 +136,12 @@ export default function LiveSessionPage() {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-6">
               <Badge variant="secondary" className="flex items-center gap-1">
-                <Video className="h-3 w-3" />
-                Video
+                {reportData.recordingMode === "video" ? <Video className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+                {reportData.recordingMode === "video" ? "Video" : "Audio"}
               </Badge>
-              <span className="text-sm">{formatDuration(session.duration)}</span>
-              <span className="text-sm">{session.wordsPerMinute} WPM</span>
+              <span className="text-sm">{reportData.duration}</span>
             </div>
-            <Badge variant="secondary">{session.fillerWordCount} filler words</Badge>
+            <Badge variant="secondary">Session {reportData.sessionNumber} of {reportData.totalSessions}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -278,158 +149,141 @@ export default function LiveSessionPage() {
       {/* Overall Score */}
       <Card>
         <CardContent className="py-8 text-center">
-          <div className="flex items-center justify-center gap-8">
+          <div className="flex items-center justify-center gap-6">
             <div className="text-center">
-              <div className={`text-5xl font-bold ${getScoreColor(overallScore)}`}>
-                {overallScore}
+              <div className={`text-6xl font-bold ${getScoreColor(reportData.overallScore)}`}>
+                {reportData.overallScore}
               </div>
-              <p className="text-lg font-medium mt-2">Overall Score</p>
-            </div>
-            <div className="w-px h-20 bg-border" />
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <div className={`text-2xl font-bold ${getScoreColor(session.overallDeliveryScore)}`}>
-                  {session.overallDeliveryScore}
-                </div>
-                <p className="text-sm text-muted-foreground">Delivery</p>
-              </div>
-              <div>
-                <div className={`text-2xl font-bold ${getScoreColor(session.overallBodyLanguageScore)}`}>
-                  {session.overallBodyLanguageScore}
-                </div>
-                <p className="text-sm text-muted-foreground">Body Language</p>
-              </div>
+              <p className="text-lg font-medium mt-2">{reportData.overallLabel}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Delivery Feedback */}
-      {session.deliveryFeedback && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Delivery Feedback</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">{session.deliveryFeedback}</p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Executive Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Executive Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">{reportData.executiveSummary}</p>
+        </CardContent>
+      </Card>
 
-      {/* Vocal Delivery Scores */}
+      {/* Strengths */}
+      <Card className="border-secondary/30 bg-secondary/5">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-secondary" />
+            What Is Working
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2">
+            {reportData.strengths.map((strength, index) => (
+              <li key={index} className="flex items-start gap-2">
+                <CheckCircle className="h-4 w-4 text-secondary shrink-0 mt-0.5" />
+                <span>{strength}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      {/* Priority Actions */}
+      <Card className="border-yellow-500/30 bg-yellow-500/5">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            Your Top 3 Actions Before Next Recording
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="space-y-3">
+            {reportData.priorityActions.map((action, index) => (
+              <li key={index} className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-yellow-500 text-yellow-950 flex items-center justify-center text-sm font-medium">
+                  {index + 1}
+                </span>
+                <span>{action}</span>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
+
+      {/* Vocal Delivery */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Vocal Delivery</CardTitle>
           <CardDescription>How you sound to your audience</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {vocalScores.map((item) => (
-            <div key={item.name} className="space-y-1">
+        <CardContent className="space-y-6">
+          {reportData.vocalScores.map((item) => (
+            <div key={item.name} className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{item.name}</span>
                 <span className={`text-xl font-bold ${getScoreColor(item.score)}`}>{item.score}</span>
               </div>
               <Progress value={item.score} className="h-2" />
+              <p className="text-sm text-muted-foreground">{item.feedback}</p>
             </div>
           ))}
         </CardContent>
       </Card>
 
-      {/* Body Language Scores */}
+      {/* Body Language */}
+      {reportData.recordingMode === "video" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Body Language</CardTitle>
+            <CardDescription>How you present physically</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {reportData.bodyLanguageScores.map((item) => (
+              <div key={item.name} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{item.name}</span>
+                  <span className={`text-xl font-bold ${getScoreColor(item.score)}`}>{item.score}</span>
+                </div>
+                <Progress value={item.score} className="h-2" />
+                <p className="text-sm text-muted-foreground">{item.feedback}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Coaching Drills */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Body Language</CardTitle>
-          <CardDescription>How you present physically</CardDescription>
+          <CardTitle className="text-lg">Practice Drills for Your Next Session</CardTitle>
+          <CardDescription>Targeted exercises for your weakest areas</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {bodyLanguageScores.map((item) => (
-            <div key={item.name} className="space-y-1">
+        <CardContent className="space-y-6">
+          {reportData.coachingDrills.map((drill, index) => (
+            <div key={drill.name} className="p-4 bg-muted/50 rounded-lg space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-medium">{item.name}</span>
-                <span className={`text-xl font-bold ${getScoreColor(item.score)}`}>{item.score}</span>
+                <h4 className="font-semibold">{drill.name}</h4>
+                <Badge variant="outline">for {drill.target}</Badge>
               </div>
-              <Progress value={item.score} className="h-2" />
+              <ol className="space-y-2 text-sm">
+                {drill.steps.map((step, stepIndex) => (
+                  <li key={stepIndex} className="flex gap-2">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
+                      {stepIndex + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+              <p className="text-xs text-muted-foreground italic">
+                <strong>Why this helps:</strong> {drill.why}
+              </p>
             </div>
           ))}
         </CardContent>
       </Card>
-
-      {/* Body Language Feedback */}
-      {session.bodyLanguageFeedback && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Body Language Feedback</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">{session.bodyLanguageFeedback}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filler Words */}
-      {session.fillerWords && Object.keys(session.fillerWords).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Filler Words Detected</CardTitle>
-            <CardDescription>Words to reduce for clearer delivery</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries(session.fillerWords).map(([word, count]) => (
-                <Badge key={word} variant="outline" className="text-sm">
-                  "{word}" × {count}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Key Moments */}
-      {session.keyMoments && session.keyMoments.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Key Moments</CardTitle>
-            <CardDescription>Notable moments in your pitch</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {session.keyMoments.map((moment, index) => (
-                <div 
-                  key={index}
-                  className={`flex items-start gap-3 p-3 rounded-lg ${
-                    moment.type === 'positive' ? 'bg-secondary/10' : 'bg-yellow-500/10'
-                  }`}
-                >
-                  {moment.type === 'positive' ? (
-                    <CheckCircle className="h-5 w-5 text-secondary shrink-0" />
-                  ) : (
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0" />
-                  )}
-                  <div>
-                    <span className="text-xs font-mono text-muted-foreground">{moment.timestamp}</span>
-                    <p className="text-sm">{moment.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Transcript */}
-      {session.transcript && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Transcript</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="p-4 rounded-lg bg-muted/50 max-h-96 overflow-y-auto">
-              <p className="text-sm whitespace-pre-wrap">{session.transcript}</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Notes */}
       <Card>
@@ -438,7 +292,7 @@ export default function LiveSessionPage() {
         </CardHeader>
         <CardContent>
           <Textarea
-            placeholder="Add your notes for this session..."
+            placeholder="Add your notes here..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             maxLength={1000}

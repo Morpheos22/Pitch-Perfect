@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,94 +25,87 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
-interface DeckSession {
-  id: string;
-  fileName: string;
-  overallScore: number | null;
-  status: string;
-  createdAt: string;
-  analyzedAt: string | null;
-}
+const mockSessions = [
+  {
+    id: "1",
+    name: "Series A Deck v2.3",
+    score: 78,
+    previousScore: 72,
+    change: 6,
+    date: "2024-01-20T14:30:00Z",
+    status: "completed",
+    cycle: 1,
+  },
+  {
+    id: "2",
+    name: "Series A Deck v2.2",
+    score: 72,
+    previousScore: 68,
+    change: 4,
+    date: "2024-01-15T10:00:00Z",
+    status: "completed",
+    cycle: 1,
+  },
+  {
+    id: "3",
+    name: "Series A Deck v2.1",
+    score: 68,
+    previousScore: null,
+    change: null,
+    date: "2024-01-10T09:15:00Z",
+    status: "completed",
+    cycle: 1,
+  },
+  {
+    id: "4",
+    name: "Seed Deck Final",
+    score: 85,
+    previousScore: 80,
+    change: 5,
+    date: "2023-12-05T16:45:00Z",
+    status: "completed",
+    cycle: 2,
+  },
+  {
+    id: "5",
+    name: "Seed Deck v3",
+    score: 80,
+    previousScore: 75,
+    change: 5,
+    date: "2023-12-01T11:30:00Z",
+    status: "completed",
+    cycle: 1,
+  },
+];
 
-interface DeckHistoryResponse {
-  success: boolean;
-  data: {
-    decks?: DeckSession[];
-  };
-  counts: {
-    decks: number;
-  };
-  pagination: {
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
+const scoreProgression = [
+  { date: "Dec 1", score: 75 },
+  { date: "Dec 5", score: 80 },
+  { date: "Jan 10", score: 68 },
+  { date: "Jan 15", score: 72 },
+  { date: "Jan 20", score: 78 },
+];
 
 export default function DeckHistoryPage() {
-  const [sessions, setSessions] = useState<DeckSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("date");
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [offset, setOffset] = useState(0);
-  const limit = 10;
 
-  useEffect(() => {
-    const fetchDeckHistory = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/history?type=deck&limit=${limit}&offset=${offset}`);
-        const data: DeckHistoryResponse = await response.json();
-
-        if (!data.success) {
-          throw new Error("Failed to fetch deck history");
-        }
-
-        setSessions(data.data.decks || []);
-        setTotalCount(data.counts.decks);
-        setHasMore(data.pagination.hasMore);
-        setError(null);
-      } catch (err) {
-        console.error("Failed to fetch deck history:", err);
-        setError("Failed to load deck history. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDeckHistory();
-  }, [offset]);
-
-  const filteredSessions = sessions.filter((session) =>
-    session.fileName.toLowerCase().includes(search.toLowerCase())
+  const filteredSessions = mockSessions.filter((session) =>
+    session.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const sortedSessions = [...filteredSessions].sort((a, b) => {
     if (sortBy === "date") {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
     }
     if (sortBy === "score") {
-      return (b.overallScore || 0) - (a.overallScore || 0);
+      return b.score - a.score;
     }
     return 0;
-  });
-
-  // Calculate score changes
-  const sessionsWithChanges = sortedSessions.map((session, index) => {
-    const previousSession = sortedSessions[index + 1];
-    const previousScore = previousSession?.overallScore;
-    const change = previousScore !== null && previousScore !== undefined && session.overallScore !== null
-      ? session.overallScore - previousScore
-      : null;
-    return { ...session, previousScore, change };
   });
 
   const toggleSelection = (id: string) => {
@@ -127,16 +120,6 @@ export default function DeckHistoryPage() {
     if (change < 0) return <TrendingDown className="w-4 h-4 text-destructive" />;
     return <Minus className="w-4 h-4 text-muted-foreground" />;
   };
-
-  // Prepare chart data
-  const scoreProgression = [...sessionsWithChanges]
-    .reverse()
-    .filter(s => s.overallScore !== null)
-    .slice(-5)
-    .map(s => ({
-      date: new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      score: s.overallScore || 0
-    }));
 
   return (
     <div className="space-y-6">
@@ -159,31 +142,29 @@ export default function DeckHistoryPage() {
       </div>
 
       {/* Score Progression Chart */}
-      {scoreProgression.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Score Progression</CardTitle>
-            <CardDescription>Your deck scores over time</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-40 flex items-end justify-between gap-4 px-4">
-              {scoreProgression.map((item, index) => {
-                const height = (item.score / 100) * 100;
-                return (
-                  <div key={index} className="flex flex-col items-center gap-2 flex-1">
-                    <span className="text-sm font-medium">{item.score}</span>
-                    <div
-                      className="w-full bg-gradient-to-t from-primary to-accent rounded-t-sm transition-all"
-                      style={{ height: `${height}%`, minHeight: "20px" }}
-                    />
-                    <span className="text-xs text-muted-foreground">{item.date}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Score Progression</CardTitle>
+          <CardDescription>Your deck scores over time</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-40 flex items-end justify-between gap-4 px-4">
+            {scoreProgression.map((item, index) => {
+              const height = (item.score / 100) * 100;
+              return (
+                <div key={index} className="flex flex-col items-center gap-2 flex-1">
+                  <span className="text-sm font-medium">{item.score}</span>
+                  <div
+                    className="w-full bg-gradient-to-t from-primary to-accent rounded-t-sm transition-all"
+                    style={{ height: `${height}%`, minHeight: "20px" }}
+                  />
+                  <span className="text-xs text-muted-foreground">{item.date}</span>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
@@ -208,163 +189,99 @@ export default function DeckHistoryPage() {
         </Select>
       </div>
 
-      {/* Loading State */}
-      {loading && (
-        <Card>
-          <CardContent className="py-12">
-            <div className="flex flex-col items-center justify-center gap-2">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-muted-foreground">Loading your deck analyses...</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Error State */}
-      {error && !loading && (
-        <Card className="border-destructive">
-          <CardContent className="py-8">
-            <p className="text-destructive text-center">{error}</p>
-            <div className="flex justify-center mt-4">
-              <Button onClick={() => window.location.reload()}>Retry</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && sessions.length === 0 && (
-        <Card>
-          <CardContent className="py-12">
-            <div className="flex flex-col items-center justify-center gap-4 text-center">
-              <Presentation className="h-12 w-12 text-muted-foreground" />
-              <div>
-                <h3 className="font-semibold">No deck analyses yet</h3>
-                <p className="text-muted-foreground text-sm mt-1">
-                  Upload your first pitch deck to get started
-                </p>
-              </div>
-              <Link href="/pitch-deck-analyser">
-                <Button>Analyze a Deck</Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Session List */}
-      {!loading && !error && sessions.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Sessions</CardTitle>
-                <CardDescription>{totalCount} analysis session{totalCount !== 1 ? 's' : ''}</CardDescription>
-              </div>
-              {selectedSessions.length === 2 && (
-                <Link href={`/pitch-deck-analyser/compare/${selectedSessions[0]}/${selectedSessions[1]}`}>
-                  <Button size="sm" className="gap-2">
-                    Compare Selected
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </Link>
-              )}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Sessions</CardTitle>
+              <CardDescription>{sortedSessions.length} analysis sessions</CardDescription>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {sessionsWithChanges.map((session) => (
-                <div
-                  key={session.id}
-                  className={`flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
-                    selectedSessions.includes(session.id) ? "bg-primary/5" : ""
-                  }`}
-                  onClick={() => toggleSelection(session.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedSessions.includes(session.id)
-                          ? "border-primary bg-primary"
-                          : "border-muted-foreground/30"
-                      }`}
-                    >
-                      {selectedSessions.includes(session.id) && (
-                        <svg className="w-3 h-3 text-primary-foreground" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{session.fileName}</p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(session.createdAt).toLocaleDateString()}
-                        <Badge variant="outline" className="text-xs">
-                          {session.status}
-                        </Badge>
-                      </p>
-                    </div>
+            {selectedSessions.length === 2 && (
+              <Link href={`/pitch-deck-analyser/compare/${selectedSessions[0]}/${selectedSessions[1]}`}>
+                <Button size="sm" className="gap-2">
+                  Compare Selected
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y">
+            {sortedSessions.map((session) => (
+              <div
+                key={session.id}
+                className={`flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
+                  selectedSessions.includes(session.id) ? "bg-primary/5" : ""
+                }`}
+                onClick={() => toggleSelection(session.id)}
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                      selectedSessions.includes(session.id)
+                        ? "border-primary bg-primary"
+                        : "border-muted-foreground/30"
+                    }`}
+                  >
+                    {selectedSessions.includes(session.id) && (
+                      <svg className="w-3 h-3 text-primary-foreground" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      {getChangeIcon(session.change)}
-                      {session.change !== null && (
-                        <span className={`text-sm ${session.change > 0 ? "text-accent" : session.change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                          {session.change > 0 ? "+" : ""}{session.change}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xl font-bold">
-                        {session.overallScore !== null ? session.overallScore : "—"}
-                      </p>
-                      {session.overallScore !== null && (
-                        <p className="text-xs text-muted-foreground">/ 100</p>
-                      )}
-                    </div>
-                    <Link href={`/pitch-deck-analyser/session/${session.id}`} onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon">
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </Link>
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{session.name}</p>
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(session.date).toLocaleDateString()}
+                      <Badge variant="outline" className="text-xs">Cycle {session.cycle}</Badge>
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    {getChangeIcon(session.change)}
+                    {session.change !== null && (
+                      <span className={`text-sm ${session.change > 0 ? "text-accent" : session.change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                        {session.change > 0 ? "+" : ""}{session.change}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold">{session.score}</p>
+                    <p className="text-xs text-muted-foreground">/ 100</p>
+                  </div>
+                  <Link href={`/pitch-deck-analyser/session/${session.id}`}>
+                    <Button variant="ghost" size="icon">
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Pagination */}
-      {!loading && !error && sessions.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Showing {sessions.length} of {totalCount} sessions
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - limit))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!hasMore}
-              onClick={() => setOffset(offset + limit)}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Showing {sortedSessions.length} of {mockSessions.length} sessions
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="icon" disabled>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="icon" disabled>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -20,8 +20,9 @@ export default function SignInPage() {
             identityPreviewEditButton: "text-primary hover:text-primary/80",
           },
         }}
-        afterSignInUrl="/dashboard"
-        afterSignUpUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+        signUpFallbackRedirectUrl="/dashboard"
+        forceRedirectUrl="/dashboard"
       />
     </Card>
   );
