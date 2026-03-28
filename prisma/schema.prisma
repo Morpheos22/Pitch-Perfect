@@ -24,6 +24,12 @@ model User {
   avatarUrl   String?
   linkedinUrl String?
 
+  // Onboarding
+  country             String?
+  primaryUseCase      String?
+  onboardingCompleted Boolean @default(false)
+  emailVerified       Boolean @default(false)
+
   // Subscription & Billing
   subscription Subscription?
   usage        Usage?
@@ -253,6 +259,11 @@ model PitchVideo {
   thumbnailUrl String?
   duration     Int // in seconds (max 180 for E3)
   fileSize     Int? // in bytes
+
+  // R2 Storage (for direct uploads)
+  fileName String?
+  r2Key    String?
+  type     String? // 'LIVE' or 'FULL'
 
   // Analysis Results
   status AnalysisStatus @default(PENDING)
