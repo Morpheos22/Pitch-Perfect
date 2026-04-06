@@ -12,7 +12,7 @@ import { toast } from "sonner";
 export default function LiveRecordingReviewPage() {
   const router = useRouter();
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
-  
+
   const [sessionName, setSessionName] = useState("Live Pitch");
   const [recordingMode, setRecordingMode] = useState<"video" | "audio">("video");
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
@@ -26,13 +26,9 @@ export default function LiveRecordingReviewPage() {
     const url = sessionStorage.getItem("recordingUrl");
     const dur = parseInt(sessionStorage.getItem("recordingDuration") || "0");
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionName(name);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecordingMode(mode);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecordingUrl(url);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDuration(dur);
   }, []);
 
@@ -42,17 +38,86 @@ export default function LiveRecordingReviewPage() {
     return `${mins} min ${secs} sec`;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!recordingUrl) {
+      toast.error("No recording available");
+      return;
+    }
+
     setIsSubmitting(true);
-    // Simulate upload
-    setTimeout(() => {
-      toast.success("Recording submitted for analysis");
-      router.push("/elevator-pitch-live/live/session/demo-live");
-    }, 2000);
+
+    try {
+      // Step 1: Convert blob URL to a File
+      const response = await fetch(recordingUrl);
+      const blob = await response.blob();
+
+      const mimeType = recordingMode === "video" ? "video/webm" : "audio/webm";
+      const extension = recordingMode === "video" ? "webm" : "webm";
+      const fileName = `${sessionName.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}.${extension}`;
+
+      const file = new File([blob], fileName, { type: mimeType });
+
+      // Step 2: Upload to WorkDrive via POST /api/video
+      const videoFormData = new FormData();
+      videoFormData.append("video", file);
+      videoFormData.append("type", "live");
+
+      const videoRes = await fetch("/api/video", {
+        method: "POST",
+        body: videoFormData,
+      });
+
+      if (!videoRes.ok) {
+        const videoError = await videoRes.json();
+        throw new Error(videoError.error || "Failed to upload video");
+      }
+
+      const videoData = await videoRes.json();
+      const { videoId, downloadUrl } = videoData;
+
+      // Step 3: Trigger analysis via POST /api/coach/live
+      const analysisFormData = new FormData();
+      analysisFormData.append("videoUrl", downloadUrl);
+      analysisFormData.append("duration", duration.toString());
+      analysisFormData.append("videoId", videoId);
+
+      const analysisRes = await fetch("/api/coach/live", {
+        method: "POST",
+        body: analysisFormData,
+      });
+
+      if (!analysisRes.ok) {
+        const analysisError = await analysisRes.json();
+        if (analysisRes.status === 403) {
+          toast.error("Usage limit reached. Please upgrade your plan.");
+          router.push("/pricing");
+          return;
+        }
+        throw new Error(analysisError.error || "Analysis failed");
+      }
+
+      const analysisData = await analysisRes.json();
+      const sessionId = analysisData.id;
+
+      toast.success("Recording submitted for analysis!");
+
+      // Clean up sessionStorage
+      if (recordingUrl) {
+        URL.revokeObjectURL(recordingUrl);
+        sessionStorage.removeItem("recordingUrl");
+      }
+
+      // Navigate to the session page
+      router.push(`/elevator-pitch-live/live/session/${sessionId}`);
+    } catch (error) {
+      console.error("Submit error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to submit recording");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleRerecord = () => {
-    // Clean up stored recording
     if (recordingUrl) {
       URL.revokeObjectURL(recordingUrl);
       sessionStorage.removeItem("recordingUrl");
@@ -119,7 +184,7 @@ export default function LiveRecordingReviewPage() {
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Mode</span>
             <Badge variant="secondary" className="flex items-center gap-1">
-              {recordingMode === "video" ? <Video className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+              {recordingMode === "video" ? <Video className="h-3 h-3" /> : <Mic className="h-3 h-3" />}
               {recordingMode === "video" ? "Video" : "Audio only"}
             </Badge>
           </div>
@@ -153,7 +218,7 @@ export default function LiveRecordingReviewPage() {
             )}
             <li className="flex items-start gap-2">
               <CheckCircle className="h-4 w-4 text-secondary shrink-0 mt-0.5" />
-              <span>3 personalized coaching drills based on your weakest areas</span>
+              <span>Personalized coaching feedback based on your performance</span>
             </li>
           </ul>
           <p className="text-sm text-muted-foreground mt-4">
@@ -176,6 +241,7 @@ export default function LiveRecordingReviewPage() {
             variant="outline"
             className="flex-1"
             onClick={handleRerecord}
+            disabled={isSubmitting}
           >
             <RotateCcw className="h-4 w-4 mr-2" />
             Delete and Re-record
@@ -183,7 +249,7 @@ export default function LiveRecordingReviewPage() {
           <Button
             className="flex-1 bg-primary hover:bg-primary/90"
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !recordingUrl}
           >
             {isSubmitting ? (
               <>

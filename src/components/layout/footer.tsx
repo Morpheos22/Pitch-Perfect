@@ -95,7 +95,7 @@ export function Footer() {
               © {new Date().getFullYear()} Pitch Perfect. All rights reserved.
             </p>
             <p className="text-sm text-muted-foreground">
-              Built by <span className="text-primary font-medium">AutomagiKal</span>
+              Built by <a href="https://automagikal.co.za/" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">AutomagiKal</a>
             </p>
           </div>
         </div>

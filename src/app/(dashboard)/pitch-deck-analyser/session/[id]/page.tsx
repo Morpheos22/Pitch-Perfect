@@ -362,7 +362,7 @@ export default function PitchDeckSessionPage() {
 
       {/* Actions */}
       <div className="flex justify-between items-center">
-        <Button variant="outline" onClick={() => router.push("/history")}>
+        <Button variant="outline" onClick={() => router.push("/pitch-deck-analyser/history")}>
           <FileText className="h-4 w-4 mr-1" />
           View All Sessions
         </Button>

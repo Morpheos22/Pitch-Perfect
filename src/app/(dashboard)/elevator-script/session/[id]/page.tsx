@@ -311,7 +311,7 @@ export default function ElevatorScriptSessionPage() {
 
       {/* Actions */}
       <div className="flex justify-between items-center">
-        <Button variant="outline" onClick={() => router.push("/history")}>
+        <Button variant="outline" onClick={() => router.push("/elevator-script/history")}>
           View All Sessions
         </Button>
         <Button onClick={() => router.push("/elevator-script/new")} className="bg-primary hover:bg-primary/90">

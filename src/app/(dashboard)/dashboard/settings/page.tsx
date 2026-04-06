@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import {
   Save,
   CheckCircle2,
   AlertTriangle,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -44,6 +46,8 @@ export default function SettingsPage() {
   const [lastName, setLastName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -90,6 +94,38 @@ export default function SettingsPage() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setSaveMessage({ type: "error", text: "Please select an image file." });
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setSaveMessage({ type: "error", text: "Image must be smaller than 5MB." });
+      return;
+    }
+
+    setAvatarUploading(true);
+    setSaveMessage(null);
+    try {
+      await clerkUser?.setProfileImage({ file });
+      setSaveMessage({ type: "success", text: "Avatar updated successfully." });
+    } catch {
+      setSaveMessage({ type: "error", text: "Failed to update avatar. Please try again." });
+    } finally {
+      setAvatarUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   const email = clerkUser?.primaryEmailAddress?.emailAddress;
   const plan = userData?.subscription?.plan || "FREE";
   const planLabel = plan === "FREE" ? "Free" : plan === "STARTER" ? "Starter" : plan === "PROFESSIONAL" ? "Professional" : plan === "ENTERPRISE" ? "Enterprise" : plan;
@@ -126,12 +162,33 @@ export default function SettingsPage() {
           ) : (
             <>
               <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16">
-                  <AvatarImage src={clerkUser?.imageUrl} alt="User" />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-lg">
-                    {clerkUser?.firstName?.[0]}{clerkUser?.lastName?.[0]}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative group">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={clerkUser?.imageUrl} alt="User" />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-lg">
+                      {clerkUser?.firstName?.[0]}{clerkUser?.lastName?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {avatarUploading ? (
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-white" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
+                </div>
                 <div>
                   <p className="font-medium text-lg">
                     {clerkUser?.firstName} {clerkUser?.lastName || ""}
