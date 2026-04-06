@@ -35,10 +35,11 @@ model User {
   usage        Usage?
 
   // Coaching Data
-  pitchDecks   PitchDeck[]
-  pitchScripts PitchScript[]
-  pitchVideos  PitchVideo[]
-  fullSessions FullPitchSession[]
+  pitchDecks      PitchDeck[]
+  pitchScripts    PitchScript[]
+  pitchVideos     PitchVideo[]
+  fullSessions    FullPitchSession[]
+  founderSessions FounderSession[]
 
   // Zoho Integration
   zohoContactId String? // Zoho CRM Contact ID
@@ -180,7 +181,8 @@ model PitchDeck {
   rawAnalysis Json?
 
   // Relations
-  fullSessions FullPitchSession[]
+  fullSessions     FullPitchSession[]
+  founderSessions  FounderSession[]
 
   // Timestamps
   createdAt  DateTime  @default(now())
@@ -376,6 +378,43 @@ model FullPitchSession {
   @@map("full_pitch_sessions")
 }
 
+// ============================================
+// E5: PITCH FOUNDER SESSIONS
+// ============================================
+
+model FounderSession {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Module Type
+  moduleType String // FOUNDER_READINESS, PATHWAY_RECOMMENDATION, etc.
+
+  // Status
+  status String @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+
+  // Input/Output
+  inputData           Json?
+  resultData          Json?
+  overallScore        Int?
+  recommendedPathway  String? // GRIT_TO_GEAR or AFRIFLOW_DIRECT
+  audioBase64         String? // TTS narration audio (base64 WAV)
+
+  // AI Metadata
+  modelUsed  String?
+  tokensUsed Int?
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@index([moduleType])
+  @@index([status])
+  @@map("founder_sessions")
+}
+
 enum InvestorReadinessLevel {
   NOT_READY // 0-40
   NEEDS_WORK // 41-60
@@ -388,6 +427,60 @@ enum AnalysisStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+// ============================================
+// E5: PITCH FOUNDER — Conversion Layer
+// ============================================
+
+enum FounderModuleType {
+  FOUNDER_READINESS
+  PATHWAY_RECOMMENDATION
+  INVESTOR_RESEARCH
+  COHORT_MATCHING
+  NETWORK_PROFILE
+  PATHWAY_NARRATION
+}
+
+model FounderSession {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Module type
+  moduleType FounderModuleType
+
+  // Session status
+  status AnalysisStatus @default(PENDING)
+
+  // Input data (varies by module)
+  inputData Json?
+
+  // AI analysis results (structured JSON)
+  resultData Json?
+
+  // Key scores (0-100)
+  overallScore Int?
+
+  // Recommended pathway (for pathway modules)
+  recommendedPathway String? // "GRIT_TO_GEAR" or "AFRIFLOW_DIRECT"
+
+  // Audio narration (base64 WAV for TTS modules)
+  audioBase64 String?
+
+  // AI metadata
+  modelUsed  String?
+  tokensUsed Int?
+
+  // Timestamps
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  analyzedAt DateTime?
+
+  @@index([userId])
+  @@index([moduleType])
+  @@index([status])
+  @@map("founder_sessions")
 }
 
 // ============================================

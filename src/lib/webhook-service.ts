@@ -294,7 +294,7 @@ async function logWebhookExecution(
         entitlementUpdated: result.entitlementUpdated,
         externalWebhooksTriggered: result.externalWebhooksTriggered,
         errors: result.errors,
-        executedAt: new Date(),
+        createdAt: new Date(),
       },
     });
   } catch (error) {
