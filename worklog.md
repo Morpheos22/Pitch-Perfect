@@ -579,3 +579,100 @@ All three session pages already:
 - 0 new errors (1 pre-existing TS error in onboarding page: Clerk SDK `publicMetadata` type issue)
 - 4 pre-existing warnings (unused eslint-disable directives in unrelated elevator-pitch-live files)
 - All 8 modified files pass lint cleanly
+
+---
+## Task ID: 10 - real-data-pages
+### Work Task
+Fix 11 issues across the codebase: rewrite analysing pages to poll real APIs, rewrite history pages to fetch from APIs, rewrite compare page to use real route params, rewrite live session pages to fetch real data, rewrite review page with real upload flow, fix footer link, add avatar upload, fix session page links.
+
+### Work Summary
+
+#### Files Modified (12 files total):
+
+**1. `src/app/(dashboard)/pitch-deck-analyser/analysing/page.tsx` — COMPLETE REWRITE**
+- Removed fake `setTimeout` redirect to "demo-session"
+- Now accepts `searchParams` to get `sessionId` from URL query param
+- Polls `GET /api/coach/deck?id={sessionId}` every 5 seconds using `setTimeout` + `setInterval`
+- When response shows status "COMPLETED", redirects to `/pitch-deck-analyser/session/{sessionId}`
+- If no `sessionId` param, redirects to `/pitch-deck-analyser/new`
+- Added error state with retry/start new buttons
+- Kept same beautiful UI with rotating status messages, animated icons, progress dots
+
+**2. `src/app/(dashboard)/elevator-script/analysing/page.tsx` — COMPLETE REWRITE**
+- Same pattern as Task 1 but polls `GET /api/coach/script?id={sessionId}`
+- Redirects to `/elevator-script/session/{sessionId}` when complete
+- If no sessionId, redirects to `/elevator-script/new`
+
+**3. `src/app/(dashboard)/pitch-deck-analyser/history/page.tsx` — COMPLETE REWRITE**
+- Removed hardcoded `mockSessions` array and `scoreProgression`
+- Fetches from `GET /api/history?type=deck&limit=50` on mount
+- Transforms response `decks` array into session list format
+- Score progression chart built from real scored sessions (oldest first, last 10)
+- Search, sort, compare selection features preserved
+- Added loading skeleton state and error state with retry
+- Added empty state with "Start Your First Analysis" button
+- Removed hardcoded pagination buttons
+
+**4. `src/app/(dashboard)/elevator-script/history/page.tsx` — COMPLETE REWRITE**
+- Same pattern as Task 3 but fetches `GET /api/history?type=script&limit=50`
+- Transforms `scripts` array with `targetAudience` badge support
+- Score change deltas calculated from consecutive sorted sessions
+
+**5. `src/app/(dashboard)/pitch-deck-analyser/compare/[id1]/[id2]/page.tsx` — COMPLETE REWRITE**
+- Removed hardcoded `mockComparison` object
+- Uses `React.use()` to unwrap params Promise (Next.js 15 pattern)
+- Fetches both sessions from `GET /api/coach/deck?id={id1}` and `GET /api/coach/deck?id={id2}`
+- Extracts content scores from `contentAnalysis` (supports `contentScores` and `slideScores` structures)
+- Extracts visual scores from `visualAudit` (supports `designScores` and flat score fields)
+- Calculates real deltas between session 1 and session 2
+- Dynamically computes "Biggest Improvements" and "Areas to Focus" lists
+- Shows "Session not found" error if either API call fails
+- Kept same beautiful UI with DeltaBadge components
+
+**6. `src/app/(dashboard)/elevator-pitch-live/live/session/[id]/page.tsx` — COMPLETE REWRITE**
+- Removed hardcoded `reportData` constant (was 90 lines of fake data)
+- Uses `React.use()` to unwrap params Promise
+- Fetches from `GET /api/coach/live?id={id}`
+- Displays real data: overallDeliveryScore, individual vocal scores (pace/clarity/energy/confidence), body language scores (eye contact/posture/gestures), delivery feedback, key moments, filler words, WPM
+- Shows error if session not found
+- Kept same UI structure: stats bar, overall score, executive summary, strengths, priority actions, vocal delivery, body language, notes, action buttons
+
+**7. `src/app/(dashboard)/elevator-pitch-live/script/session/[id]/page.tsx` — COMPLETE REWRITE**
+- Removed hardcoded `mockAnalysis` constant
+- Same approach as Task 6: `React.use()` to unwrap params, fetch from `GET /api/coach/live?id={id}`
+- Displays real delivery scores, feedback, and session metadata
+
+**8. `src/app/(dashboard)/elevator-pitch-live/live/review/page.tsx` — COMPLETE REWRITE**
+- `handleSubmit` no longer uses fake `setTimeout` redirect
+- Real upload flow:
+  1. Converts blob URL from sessionStorage to a File
+  2. POSTs to `POST /api/video` (multipart/form-data with `video` and `type` fields) → uploads to WorkDrive
+  3. POSTs to `POST /api/coach/live` with `videoUrl` (downloadUrl), `duration`, `videoId` → triggers AI analysis
+  4. Redirects to `/elevator-pitch-live/live/session/{sessionId}` from analysis response
+- Handles 403 usage limit error with redirect to /pricing
+- Cleans up sessionStorage after successful upload
+- Removed unused eslint-disable directives
+
+**9. `src/components/layout/footer.tsx` — MINOR FIX**
+- Changed `<span className="text-primary font-medium">AutomagiKal</span>` to `<a href="https://automagikal.co.za/" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">AutomagiKal</a>`
+
+**10. `src/app/(dashboard)/dashboard/settings/page.tsx` — AVATAR UPLOAD ADDED**
+- Added `useRef` import and `fileInputRef` for hidden file input
+- Added `Camera` and `Loader2` icon imports
+- Added `avatarUploading` state
+- Added `handleAvatarChange` function:
+  - Validates file type (must be image/*)
+  - Validates file size (5MB max)
+  - Uses Clerk's `user.setProfileImage({ file })` to upload
+  - Shows loading spinner while uploading
+  - Shows success/error messages
+- Avatar component wrapped with hover overlay showing camera icon
+- Clerk Avatar component automatically reflects the change
+
+**11. Session page link fixes (2 files)**
+- `src/app/(dashboard)/pitch-deck-analyser/session/[id]/page.tsx`: Changed "View All Sessions" from `/history` to `/pitch-deck-analyser/history`
+- `src/app/(dashboard)/elevator-script/session/[id]/page.tsx`: Changed "View All Sessions" from `/history` to `/elevator-script/history`
+
+#### Lint Results
+- 0 errors, 1 pre-existing warning (unused eslint-disable directive in recording/page.tsx — unrelated)
+- All 12 modified files pass lint cleanly
