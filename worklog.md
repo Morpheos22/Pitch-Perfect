@@ -220,3 +220,37 @@ Stage Summary:
 - Payment routing: Paystack (ZA) → Stripe (ROW) → Zoho Billing (IN/Enterprise) → LemonSqueezy (fallback)
 - 3 new API routes created for billing webhooks and portal
 - prisma/schema.prisma: 11 models (was 10), added WebhookLog, restored Stripe fields
+
+---
+## Task ID: 12
+Agent: Full-Stack Developer Agent
+Task: Create rate limiting system for all API routes
+
+Work Log:
+- Read existing middleware.ts (Clerk-based with public route matching + onboarding redirect)
+- Inventoried all 19 API routes across /api/coach/*, /api/payment/*, /api/billing/*, /api/webhooks/*, /api/contact, /api/health, /api/dev/*, /api/video, /api/upload, /api/history, /api/user/*
+- Created src/lib/rate-limit.ts — comprehensive in-memory rate limiting library (zero external deps)
+  - Sliding window algorithm with per-user (Clerk ID) or per-IP identification
+  - 6 predefined tiers: ai (5/min), payment (10/min), contact (3/min), auth (5/min), general (30/min), unrestricted (1000/min)
+  - Auto-detection of tier from request pathname via getRateLimitConfig()
+  - Skip list for webhooks, health checks, user sync, and _next/* internal routes
+  - TTL cleanup via setInterval (runs every 60s, uses unref() to not block process exit)
+  - Nested Map storage: Map<identifier, Map<routeKey, StoredEntry>>
+  - Standard rate limit headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+  - 429 responses with Retry-After header and JSON error body
+  - rateLimitMiddleware() — returns null if allowed, NextResponse(429) if blocked (designed for Clerk callback)
+  - withRateLimit(handler, config) — higher-order wrapper for individual route handlers
+  - getRateLimitStats() and resetRateLimits() — admin/debug helpers
+- Updated src/middleware.ts to integrate rate limiting
+  - Added rate limit check at the top of the clerkMiddleware callback for all /api/* routes
+  - Calls auth() without protecting first to extract userId for per-user limiting
+  - Falls back to IP-based limiting for unauthenticated requests
+  - Rate limit check runs BEFORE auth.protect() — blocks abusive requests before they hit Clerk
+  - All existing functionality preserved (public routes, onboarding redirect, dev bypass)
+
+Stage Summary:
+- New file: src/lib/rate-limit.ts (~340 lines)
+- Modified: src/middleware.ts (added rate limiting integration, ~15 lines changed)
+- Rate limit tiers: AI routes 5/min, payment routes 10/min, contact 3/min, auth 5/min, general 30/min
+- Webhook routes (/api/webhooks/*), health checks, user sync are exempt from rate limiting
+- ESLint clean — zero new errors or warnings from these files

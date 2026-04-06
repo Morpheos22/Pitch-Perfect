@@ -131,8 +131,31 @@ export const SA_PRICING: Record<string, number> = {
   'master': 1100,         // ~$60
 };
 
-// Countries that use Paystack (South Africa focus)
-const PAYSTACK_COUNTRIES = ['ZA', 'ZAF', 'South Africa'];
+// Countries supported by Paystack (African markets)
+// Paystack operates in: Nigeria, Ghana, Kenya, South Africa, Tanzania, Côte d'Ivoire, Senegal, Uganda, Zambia, Rwanda, Egypt, Morocco, Tunisia, Benin, Cameroon, DR Congo, Mozambique, Malawi, Liberia, Niger, Sierra Leone
+const PAYSTACK_COUNTRIES = [
+  'NG', 'NGA', 'Nigeria',
+  'GH', 'GHA', 'Ghana',
+  'KE', 'KEN', 'Kenya',
+  'ZA', 'ZAF', 'South Africa',
+  'TZ', 'TZA', 'Tanzania',
+  'CI', 'CIV', "Côte d'Ivoire", 'Ivory Coast',
+  'SN', 'SEN', 'Senegal',
+  'UG', 'UGA', 'Uganda',
+  'ZM', 'ZMB', 'Zambia',
+  'RW', 'RWA', 'Rwanda',
+  'EG', 'EGY', 'Egypt',
+  'MA', 'MAR', 'Morocco',
+  'TN', 'TUN', 'Tunisia',
+  'BJ', 'BEN', 'Benin',
+  'CM', 'CMR', 'Cameroon',
+  'CD', 'COD', 'DR Congo',
+  'MZ', 'MOZ', 'Mozambique',
+  'MW', 'MWI', 'Malawi',
+  'LR', 'LBR', 'Liberia',
+  'NE', 'NER', 'Niger',
+  'SL', 'SLE', 'Sierra Leone',
+];
 
 // Countries where Zoho Billing is preferred (enterprise customers)
 const ZOHO_BILLING_COUNTRIES = ['IN', 'IND', 'India']; // Zoho's primary market
@@ -478,8 +501,8 @@ async function createStripeSession(
     },
     body: new URLSearchParams({
       mode: 'payment',
-      payment_method_types: 'card',
-      line_items: `price:${priceId},quantity:1`,
+      payment_method_types: 'card,apple_pay,google_pay',
+      line_items: `price:${priceId},quantity=1`,
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/cancel`,
       customer_email: customer.email,
@@ -490,8 +513,6 @@ async function createStripeSession(
         company_id: customer.companyId,
         ...metadata,
       }),
-      // Allow Apple Pay and Google Pay
-      payment_method_types: 'card,apple_pay,google_pay',
     }).toString(),
   });
 
@@ -587,7 +608,7 @@ async function createZohoBillingSession(
     body: JSON.stringify(customerPayload),
   });
 
-  let zohoCustomerId: string;
+  let zohoCustomerId: string = '';
   if (customerResponse.ok) {
     const customerData = await customerResponse.json();
     zohoCustomerId = customerData.customer?.customer_id || '';

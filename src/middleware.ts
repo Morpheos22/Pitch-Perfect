@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { rateLimitMiddleware } from "@/lib/rate-limit";
 
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
@@ -35,6 +36,31 @@ const isOnboardingOrApi = createRouteMatcher([
  */
 
 export default clerkMiddleware(async (auth, request) => {
+  const pathname = new URL(request.url).pathname;
+
+  // ──────────────────────────────────────────
+  // Rate Limiting (before auth protection)
+  // ──────────────────────────────────────────
+  // For API routes, check rate limits first.
+  // We read the user ID (without protecting) so authenticated users
+  // get per-user limits while anonymous requests fall back to IP.
+  if (pathname.startsWith("/api/")) {
+    let userId: string | undefined;
+
+    try {
+      const authResult = await auth();
+      userId = authResult.userId || undefined;
+    } catch {
+      // Auth not available for this request (e.g., webhook with no session)
+      userId = undefined;
+    }
+
+    const rateLimitResponse = rateLimitMiddleware(request, userId);
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+  }
+
   // Protect all non-public routes
   if (!isPublicRoute(request)) {
     auth.protect();

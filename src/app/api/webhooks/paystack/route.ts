@@ -1,12 +1,10 @@
 // Paystack Webhook Handler
 // POST /api/webhooks/paystack
-// Handles Paystack payment callbacks for South African customers
+// Handles Paystack payment callbacks for African market customers
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseWebhookPayload, verifyPayment, createEntitlementsFromPayment } from '@/lib/payment-service';
+import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
-import { createEntitlement, updateLeadStatus } from '@/lib/zoho-crm';
-import { sendPaymentConfirmationEmail } from '@/lib/zoho-mail';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,75 +18,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    // Handle different events
     if (event === 'charge.success') {
       const reference = (data as Record<string, unknown>).reference as string;
-      
-      // Verify payment with Paystack
+
+      // Verify payment with Paystack API
       const paymentResult = await verifyPayment('paystack', reference);
 
       if (!paymentResult.success) {
         return NextResponse.json({ error: 'Payment not successful' }, { status: 400 });
       }
 
-      // Find pending payment record
-      const payment = await prisma.payment.findFirst({
+      // Find pending transaction record
+      const transaction = await prisma.transaction.findFirst({
         where: {
-          gatewaySessionId: reference,
-          gateway: 'paystack',
+          providerReference: reference,
+          provider: 'PAYSTACK',
         },
-        include: { user: true },
       });
 
-      if (!payment) {
-        return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+      if (!transaction) {
+        return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
       }
 
-      // Update payment status
-      await prisma.payment.update({
-        where: { id: payment.id },
+      // Get product ID from providerAccessCode (where we stored it)
+      const productId = transaction.providerAccessCode || '';
+
+      // Create module access based on product
+      await prisma.moduleAccess.create({
         data: {
-          status: 'COMPLETED',
-          gatewayTransactionId: paymentResult.transactionId,
-          processedAt: new Date(),
+          transactionId: transaction.id,
+          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+          e4Access: ['pitch-deck-live', 'master'].includes(productId),
+          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+          e3Limit: productId === 'master' ? 30 : 3,
+          e4Limit: productId === 'master' ? 10 : 3,
         },
       });
 
-      // Create entitlements
-      const entitlementData = createEntitlementsFromPayment(paymentResult, payment.userId);
-      await createEntitlement(entitlementData);
-
       // Update user subscription
-      await prisma.subscription.update({
-        where: { userId: payment.userId },
-        data: {
-          plan: getPlanFromProduct(payment.productId),
+      await prisma.subscription.upsert({
+        where: { userId: transaction.userId },
+        create: {
+          userId: transaction.userId,
+          plan: getPlanFromProduct(productId),
           status: 'ACTIVE',
+          paystackSubscriptionId: reference,
+        },
+        update: {
+          plan: getPlanFromProduct(productId),
+          status: 'ACTIVE',
+          paystackSubscriptionId: reference,
           updatedAt: new Date(),
         },
       });
 
-      // Update CRM lead status
-      await updateLeadStatus(payment.user.clerkId, 'Qualified');
-
-      // Send confirmation email
-      await sendPaymentConfirmationEmail({
-        to: payment.user.email,
-        firstName: payment.user.firstName || 'there',
-        productName: payment.productName,
-        amount: payment.amount,
-        currency: payment.currency,
-        modules: entitlementData.modules.map(m => ({
-          name: m.moduleId,
-          cycles: m.totalCycles,
-        })),
+      // Update transaction amount with actual paid amount
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          type: 'SUBSCRIPTION',
+          amount: paymentResult.amount * 100, // Store in smallest unit
+          currency: paymentResult.currency.toLowerCase(),
+          creditsAdded: getModuleCycles(productId),
+        },
       });
 
       return NextResponse.json({ success: true });
     }
 
     // Acknowledge other events
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true, event });
 
   } catch (error) {
     console.error('Paystack webhook error:', error);
@@ -99,8 +101,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getPlanFromProduct(productId: string): string {
-  const planMap: Record<string, string> = {
+function getPlanFromProduct(productId: string): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
+  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
     'pitch-deck': 'STARTER',
     'elevator-script': 'STARTER',
     'elevator-live': 'PROFESSIONAL',
@@ -108,4 +110,15 @@ function getPlanFromProduct(productId: string): string {
     'master': 'ENTERPRISE',
   };
   return planMap[productId] || 'STARTER';
+}
+
+function getModuleCycles(productId: string): number {
+  const cycleMap: Record<string, number> = {
+    'pitch-deck': 2,
+    'elevator-script': 2,
+    'elevator-live': 5,
+    'pitch-deck-live': 8,
+    'master': 20,
+  };
+  return cycleMap[productId] || 0;
 }

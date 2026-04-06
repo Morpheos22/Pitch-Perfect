@@ -3,10 +3,8 @@
 // Handles LemonSqueezy (Merchant of Record) payment callbacks for international customers
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseWebhookPayload, verifyPayment, createEntitlementsFromPayment } from '@/lib/payment-service';
+import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
-import { createEntitlement, updateLeadStatus } from '@/lib/zoho-crm';
-import { sendPaymentConfirmationEmail } from '@/lib/zoho-mail';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +23,7 @@ export async function POST(request: NextRequest) {
       const order = data as Record<string, unknown>;
       const orderId = order.id as string;
       const orderAttributes = order.attributes as Record<string, unknown>;
-      
+
       // Check if order is paid
       if (orderAttributes.status !== 'paid') {
         return NextResponse.json({ received: true, status: 'not_paid' });
@@ -40,7 +38,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Missing user or product ID' }, { status: 400 });
       }
 
-      // Verify payment with LemonSqueezy
+      // Verify payment with LemonSqueezy API
       const paymentResult = await verifyPayment('lemonsqueezy', orderId);
 
       if (!paymentResult.success) {
@@ -56,41 +54,43 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      // Create payment record if not exists
-      const existingPayment = await prisma.payment.findFirst({
+      // Create transaction record if not exists
+      const existingTx = await prisma.transaction.findFirst({
         where: {
-          gatewayTransactionId: orderId,
-          gateway: 'lemonsqueezy',
+          providerReference: orderId,
+          provider: 'LEMONSQUEEZY',
         },
       });
 
-      if (!existingPayment) {
-        await prisma.payment.create({
+      if (!existingTx) {
+        await prisma.transaction.create({
           data: {
             userId: user.id,
-            gateway: 'lemonsqueezy',
-            gatewayTransactionId: orderId,
-            productId,
-            productName: customData.productName as string || productId,
-            amount: paymentResult.amount,
-            currency: paymentResult.currency,
-            status: 'COMPLETED',
-            processedAt: new Date(),
-          },
-        });
-      } else {
-        await prisma.payment.update({
-          where: { id: existingPayment.id },
-          data: {
-            status: 'COMPLETED',
-            processedAt: new Date(),
+            type: 'SUBSCRIPTION',
+            amount: paymentResult.amount * 100,
+            currency: paymentResult.currency.toLowerCase(),
+            provider: 'LEMONSQUEEZY',
+            providerReference: orderId,
+            providerAccessCode: productId,
+            creditsAdded: getModuleCycles(productId),
           },
         });
       }
 
-      // Create entitlements
-      const entitlementData = createEntitlementsFromPayment(paymentResult, userId);
-      await createEntitlement(entitlementData);
+      // Create module access
+      await prisma.moduleAccess.create({
+        data: {
+          transactionId: existingTx?.id || '',
+          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+          e4Access: ['pitch-deck-live', 'master'].includes(productId),
+          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+          e3Limit: productId === 'master' ? 30 : 3,
+          e4Limit: productId === 'master' ? 10 : 3,
+        },
+      });
 
       // Update user subscription
       await prisma.subscription.upsert({
@@ -107,27 +107,11 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Update CRM lead status
-      await updateLeadStatus(user.clerkId, 'Qualified');
-
-      // Send confirmation email
-      await sendPaymentConfirmationEmail({
-        to: user.email,
-        firstName: user.firstName || 'there',
-        productName: customData.productName as string || productId,
-        amount: paymentResult.amount,
-        currency: paymentResult.currency,
-        modules: entitlementData.modules.map(m => ({
-          name: m.moduleId,
-          cycles: m.totalCycles,
-        })),
-      });
-
       return NextResponse.json({ success: true });
     }
 
     // Acknowledge other events
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true, event });
 
   } catch (error) {
     console.error('LemonSqueezy webhook error:', error);
@@ -138,8 +122,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getPlanFromProduct(productId: string): string {
-  const planMap: Record<string, string> = {
+function getPlanFromProduct(productId: string): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
+  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
     'pitch-deck': 'STARTER',
     'elevator-script': 'STARTER',
     'elevator-live': 'PROFESSIONAL',
@@ -147,4 +131,15 @@ function getPlanFromProduct(productId: string): string {
     'master': 'ENTERPRISE',
   };
   return planMap[productId] || 'STARTER';
+}
+
+function getModuleCycles(productId: string): number {
+  const cycleMap: Record<string, number> = {
+    'pitch-deck': 2,
+    'elevator-script': 2,
+    'elevator-live': 5,
+    'pitch-deck-live': 8,
+    'master': 20,
+  };
+  return cycleMap[productId] || 0;
 }

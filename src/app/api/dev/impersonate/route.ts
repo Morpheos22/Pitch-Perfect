@@ -62,8 +62,7 @@ export async function POST(request: NextRequest) {
             e2ScriptCoachSessions: user.usage.e2ScriptCoachSessions,
             e3LivePitchSessions: user.usage.e3LivePitchSessions,
             e4FullPitchSessions: user.usage.e4FullPitchSessions,
-            claudeTokensUsed: user.usage.claudeTokensUsed,
-            geminiTokensUsed: user.usage.geminiTokensUsed,
+            zaiTokensUsed: user.usage.zaiTokensUsed,
           }
         : null,
       zohoContactId: user.zohoContactId ?? null,
