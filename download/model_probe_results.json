@@ -1,0 +1,114 @@
+[
+  {
+    "model": "gemini-1.5-pro",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemini-1.5-flash",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemini-1.5-flash-8b",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemini-2.0-flash",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemini-2.5-pro",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemini-2.5-flash",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemma-4",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemma-4-it",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "gemma-3-27b-it",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "glm-4-flash",
+    "ok": true,
+    "serverModel": "glm-4-plus",
+    "resp": "ok",
+    "type": "text"
+  },
+  {
+    "model": "glm-4-air",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "text"
+  },
+  {
+    "model": "glm-4-long",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "text"
+  },
+  {
+    "model": "glm-4.1v-thinking",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "vision"
+  },
+  {
+    "model": "gemini-1.5-pro",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "vision"
+  },
+  {
+    "model": "gemini-2.0-flash",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "vision"
+  },
+  {
+    "model": "gemini-2.5-flash",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "vision"
+  },
+  {
+    "model": "gemma-4-it",
+    "ok": false,
+    "error": "RATE_LIMITED",
+    "type": "vision"
+  }
+]
