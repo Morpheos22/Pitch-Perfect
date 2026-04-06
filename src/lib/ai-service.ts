@@ -1,4 +1,4 @@
-// AI Service Layer for PitchCoach AI
+// AI Service Layer for Pitch Perfect × Automagikal
 // Multi-provider via Z.ai Gateway: GLM, Gemini, Gemma + full capability suite
 //
 // ═══════════════════════════════════════════════════════════════════════

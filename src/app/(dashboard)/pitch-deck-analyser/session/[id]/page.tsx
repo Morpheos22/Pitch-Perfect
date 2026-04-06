@@ -88,7 +88,7 @@ export default function PitchDeckSessionPage() {
 
   const fetchSessionData = async () => {
     try {
-      const response = await fetch(`/api/pitch-deck?id=${params.id}`);
+      const response = await fetch(`/api/coach/deck?id=${params.id}`);
       
       if (!response.ok) {
         if (response.status === 401) {

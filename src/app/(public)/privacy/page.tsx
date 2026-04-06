@@ -133,6 +133,13 @@ export default function PrivacyPage() {
                   related services (collectively, the "Services").
                 </p>
                 <p className="text-muted-foreground mt-4">
+                  This Privacy Policy is drafted in compliance with the
+                  Protection of Personal Information Act 4 of 2013 ("POPIA") of
+                  the Republic of South Africa. We act as the Responsible Party
+                  for the processing of your personal information as described
+                  herein.
+                </p>
+                <p className="text-muted-foreground mt-4">
                   Please read this privacy policy carefully. If you do not agree
                   with the terms of this privacy policy, please do not access the
                   site and/or Services.
@@ -247,7 +254,19 @@ export default function PrivacyPage() {
                       <strong>AI Processing:</strong> Your pitch content is
                       processed by our AI partners (Z.ai) to generate analysis and
                       feedback. These partners are bound by confidentiality
-                      obligations.
+                      obligations and process data in accordance with applicable
+                      data protection laws.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary font-bold mt-1">•</span>
+                    <span>
+                      <strong>CRM &amp; Billing (Zoho):</strong> We use Zoho
+                      CRM and Zoho Billing to manage customer relationships,
+                      subscription records, and invoicing. Your name, email, and
+                      subscription details may be stored in Zoho&apos;s systems
+                      which are hosted on servers that comply with international
+                      data protection standards.
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
@@ -307,8 +326,10 @@ export default function PrivacyPage() {
               <div className="mb-12">
                 <h2 className="text-2xl font-bold mb-4">Your Rights</h2>
                 <p className="text-muted-foreground mb-4">
-                  Depending on your location, you may have certain rights
-                  regarding your personal information:
+                  In terms of POPIA and applicable data protection laws, you have
+                  the following rights regarding your personal information. Where
+                  applicable, we will respond to requests within 30 days as
+                  required by law:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 bg-muted/30 rounded-lg">

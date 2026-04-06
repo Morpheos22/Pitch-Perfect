@@ -187,6 +187,58 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const deckId = searchParams.get("id");
+
+    // Single deck lookup by ID (for session detail page)
+    if (deckId) {
+      const deck = await prisma.pitchDeck.findFirst({
+        where: { id: deckId, userId: user.id },
+      });
+
+      if (!deck) {
+        return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+      }
+
+      // Transform to match the session page's expected format
+      const strengths = Array.isArray(deck.strengths) ? deck.strengths : [];
+      const weaknesses = Array.isArray(deck.weaknesses) ? deck.weaknesses : [];
+      const recommendations = Array.isArray(deck.recommendations) ? deck.recommendations : [];
+
+      return NextResponse.json({
+        id: deck.id,
+        status: deck.status,
+        fileName: deck.fileName,
+        createdAt: deck.createdAt,
+        analysis: {
+          contentScores: {
+            problemClarity: deck.problemClarityScore,
+            solutionClarity: deck.solutionClarityScore,
+            marketOpportunity: deck.marketOpportunityScore,
+            businessModel: deck.businessModelScore,
+            teamCredibility: deck.teamCredibilityScore,
+            traction: deck.tractionScore,
+            financials: deck.financialsScore,
+            askClarity: deck.askClarityScore,
+            overall: deck.overallScore,
+          },
+          visualScores: {
+            designConsistency: deck.designConsistencyScore,
+            readability: deck.readabilityScore,
+            visualHierarchy: deck.visualHierarchyScore,
+            colorScheme: deck.colorSchemeScore,
+            typography: deck.typographyScore,
+          },
+          feedback: {
+            strengths,
+            weaknesses,
+            recommendations,
+          },
+        },
+      });
+    }
+
+    // List all decks (for history page)
     const decks = await prisma.pitchDeck.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },

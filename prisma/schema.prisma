@@ -1,4 +1,4 @@
-// PitchCoach AI - Prisma Schema
+// Pitch Perfect × Automagikal - Prisma Schema
 // Database: PostgreSQL (Supabase)
 
 generator client {
@@ -61,16 +61,16 @@ model Subscription {
   plan   PlanType           @default(FREE)
   status SubscriptionStatus @default(ACTIVE)
 
-  // Stripe Integration (Global/US)
-  stripeCustomerId     String?
-  stripeSubscriptionId String?
-  stripePriceId        String?
-
   // Paystack Integration (African Markets)
   paystackCustomerId     String?    // Paystack customer code
   paystackSubscriptionId String?    // Paystack subscription code
   paystackPlanCode       String?    // Paystack plan code
   paystackEmailToken     String?    // For verification
+
+  // Zoho Billing Integration
+  zohoSubscriptionId  String?    @unique // Zoho Billing subscription reference
+  zohoCustomerId      String?             // Zoho Billing customer reference
+  zohoPlanCode        String?             // Zoho Billing plan code for the subscription
 
   // Billing Cycle
   currentPeriodStart DateTime?
@@ -118,8 +118,7 @@ model Usage {
   e4FullPitchSessions   Int @default(0)
 
   // AI Token Usage (for cost tracking)
-  claudeTokensUsed Int @default(0)
-  geminiTokensUsed Int @default(0)
+  zaiTokensUsed    Int @default(0) // Z.ai Gateway token usage
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -398,15 +397,11 @@ model Transaction {
   currency String          @default("usd")
 
   // Payment Provider
-  provider PaymentProvider @default(STRIPE)
+  provider PaymentProvider @default(PAYSTACK)
 
-  // Stripe
-  stripePaymentIntentId String?
-  stripeInvoiceId       String?
-
-  // Paystack
-  paystackReference String?    // Paystack transaction reference
-  paystackAccessCode String?   // Paystack access code for verification
+  // Provider References
+  providerReference  String?    // Provider transaction/subscription reference
+  providerAccessCode String?    // Provider access/verification code
 
   // Credits
   creditsAdded Int @default(0)
@@ -430,8 +425,9 @@ enum TransactionType {
 }
 
 enum PaymentProvider {
-  STRIPE
   PAYSTACK
+  LEMONSQUEEZY
+  ZOHO
 }
 
 model ModuleAccess {

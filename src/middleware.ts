@@ -24,6 +24,16 @@ const isOnboardingOrApi = createRouteMatcher([
   "/api(.*)",
 ]);
 
+/**
+ * Dev Login Flow (development mode only):
+ *
+ * In development, the admin email (Helloautomagikal@gmail.com) can bypass the
+ * onboarding requirement so the developer can access the full app immediately.
+ * The /api/dev/impersonate endpoint is also exposed for debugging — it returns
+ * subscription plan, usage stats, and Zoho contact ID for a given email.
+ * These helpers are NO-OPs in production.
+ */
+
 export default clerkMiddleware(async (auth, request) => {
   // Protect all non-public routes
   if (!isPublicRoute(request)) {
@@ -31,14 +41,24 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // Check onboarding status for authenticated users
-  const { userId } = auth();
+  const { userId } = await auth();
 
   if (userId && !isOnboardingOrApi(request) && !isPublicRoute(request)) {
-    // Get user's onboarding status from Clerk public metadata
-    const sessionClaims = auth().sessionClaims as { public_metadata?: { onboardingCompleted?: boolean } } | undefined;
+    // Get user's onboarding status from Clerk
+    const claims = (await auth()).sessionClaims;
+    const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
+    const onboardingCompleted = publicMeta?.onboardingCompleted;
+
+    // In development mode, allow the admin email to bypass onboarding
+    if (process.env.NODE_ENV === "development") {
+      const email = claims?.email as string | undefined;
+      if (email?.toLowerCase() === "helloautomagikal@gmail.com") {
+        return NextResponse.next();
+      }
+    }
 
     // Redirect to onboarding if not completed
-    if (!sessionClaims?.public_metadata?.onboardingCompleted) {
+    if (!onboardingCompleted) {
       const onboardingUrl = new URL("/onboarding", request.url);
       return NextResponse.redirect(onboardingUrl);
     }

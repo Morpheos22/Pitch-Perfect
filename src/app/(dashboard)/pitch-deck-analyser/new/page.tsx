@@ -75,7 +75,7 @@ export default function PitchDeckAnalyserNewPage() {
       formData.append("sessionName", sessionName);
 
       // Call the API
-      const response = await fetch("/api/pitch-deck", {
+      const response = await fetch("/api/coach/deck", {
         method: "POST",
         body: formData,
       });

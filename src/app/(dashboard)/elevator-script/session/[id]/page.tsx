@@ -84,7 +84,7 @@ export default function ElevatorScriptSessionPage() {
 
   const fetchSessionData = async () => {
     try {
-      const response = await fetch(`/api/pitch-script?id=${params.id}`);
+      const response = await fetch(`/api/coach/script?id=${params.id}`);
       
       if (!response.ok) {
         if (response.status === 401) {

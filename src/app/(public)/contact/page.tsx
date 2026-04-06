@@ -17,6 +17,7 @@ import {
   CheckCircle,
   Linkedin,
   Twitter,
+  AlertCircle,
 } from "lucide-react";
 
 const contactMethods = [
@@ -73,16 +74,36 @@ export default function ContactPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    // Simulate form submission
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formState),
+      });
 
-    setIsSubmitting(false);
-    setIsSubmitted(true);
+      const data = await response.json();
+
+      if (!response.ok) {
+        const details = data.details?.join(". ") || data.message || "Something went wrong.";
+        throw new Error(details);
+      }
+
+      setIsSubmitted(true);
+    } catch (error) {
+      console.error("Contact form submission error:", error);
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to send message. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (
@@ -92,6 +113,8 @@ export default function ContactPage() {
       ...prev,
       [e.target.name]: e.target.value,
     }));
+    // Clear error when user starts editing again
+    if (submitError) setSubmitError(null);
   };
 
   return (
@@ -112,7 +135,7 @@ export default function ContactPage() {
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
                 Have a question about our services or want to discuss how we can
-                help your business? We'd love to hear from you.
+                help your business? We&apos;d love to hear from you.
               </p>
             </div>
           </div>
@@ -184,13 +207,14 @@ export default function ContactPage() {
                           Message Sent!
                         </h3>
                         <p className="text-muted-foreground mb-6">
-                          Thank you for reaching out. We'll get back to you within
+                          Thank you for reaching out. We&apos;ll get back to you within
                           24 hours.
                         </p>
                         <Button
                           variant="outline"
                           onClick={() => {
                             setIsSubmitted(false);
+                            setSubmitError(null);
                             setFormState({
                               name: "",
                               email: "",
@@ -205,6 +229,14 @@ export default function ContactPage() {
                       </div>
                     ) : (
                       <form onSubmit={handleSubmit} className="space-y-6">
+                        {/* Error Banner */}
+                        {submitError && (
+                          <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+                            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+                            <p className="text-sm">{submitError}</p>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label htmlFor="name">Full Name *</Label>
@@ -215,6 +247,7 @@ export default function ContactPage() {
                               value={formState.name}
                               onChange={handleChange}
                               required
+                              disabled={isSubmitting}
                             />
                           </div>
                           <div className="space-y-2">
@@ -227,6 +260,7 @@ export default function ContactPage() {
                               value={formState.email}
                               onChange={handleChange}
                               required
+                              disabled={isSubmitting}
                             />
                           </div>
                         </div>
@@ -240,6 +274,7 @@ export default function ContactPage() {
                               placeholder="Your Company"
                               value={formState.company}
                               onChange={handleChange}
+                              disabled={isSubmitting}
                             />
                           </div>
                           <div className="space-y-2">
@@ -251,6 +286,7 @@ export default function ContactPage() {
                               value={formState.subject}
                               onChange={handleChange}
                               required
+                              disabled={isSubmitting}
                             />
                           </div>
                         </div>
@@ -265,7 +301,13 @@ export default function ContactPage() {
                             value={formState.message}
                             onChange={handleChange}
                             required
+                            minLength={10}
+                            maxLength={5000}
+                            disabled={isSubmitting}
                           />
+                          <p className="text-xs text-muted-foreground text-right">
+                            {formState.message.length}/5000 characters
+                          </p>
                         </div>
 
                         <Button
@@ -303,7 +345,7 @@ export default function ContactPage() {
                 Global Reach, Local Expertise
               </h2>
               <p className="text-lg text-muted-foreground mb-12">
-                While we're headquartered in South Africa, we serve clients across
+                While we&apos;re headquartered in South Africa, we serve clients across
                 Africa, the United Kingdom, and beyond.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -312,7 +354,7 @@ export default function ContactPage() {
                     <MapPin className="h-8 w-8 text-primary mx-auto mb-4" />
                     <h3 className="font-semibold mb-2">South Africa</h3>
                     <p className="text-sm text-muted-foreground">
-                      Headquarters & primary operations
+                      Headquarters &amp; primary operations
                     </p>
                   </CardContent>
                 </Card>

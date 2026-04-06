@@ -1,4 +1,4 @@
-// Database Operations for PitchCoach AI
+// Database Operations for Pitch Perfect × Automagikal
 // Handles all Prisma queries for sessions, users, and usage tracking
 
 import { prisma } from './db';
