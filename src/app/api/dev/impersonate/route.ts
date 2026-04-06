@@ -4,14 +4,33 @@
 // This route is BLOCKED in production (returns 403).
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
-import { DEV_MODE } from '@/lib/dev-auth';
+import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth';
 
 export async function POST(request: NextRequest) {
   // ── Guard: development mode only ──
   if (!DEV_MODE) {
     return NextResponse.json(
       { error: 'This endpoint is only available in development mode.' },
+      { status: 403 },
+    );
+  }
+
+  // ── Guard: must be authenticated ──
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // ── Guard: only admin emails ──
+  const client = await clerkClient();
+  const clerkUser = await client.users.getUser(clerkId);
+  const requesterEmail = clerkUser.emailAddresses[0]?.emailAddress;
+
+  if (!requesterEmail || !isAdminEmail(requesterEmail)) {
+    return NextResponse.json(
+      { error: 'Access denied. Only admin accounts can use this endpoint.' },
       { status: 403 },
     );
   }

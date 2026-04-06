@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { rateLimitMiddleware } from "@/lib/rate-limit";
+import { isAdminEmail } from "@/lib/dev-auth";
 
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
@@ -28,8 +29,8 @@ const isOnboardingOrApi = createRouteMatcher([
 /**
  * Dev Login Flow (development mode only):
  *
- * In development, the admin email (Helloautomagikal@gmail.com) can bypass the
- * onboarding requirement so the developer can access the full app immediately.
+ * In development, admin emails (Helloautomagikal@gmail.com, morphylee22@gmail.com)
+ * can bypass the onboarding requirement so developers can access the full app immediately.
  * The /api/dev/impersonate endpoint is also exposed for debugging — it returns
  * subscription plan, usage stats, and Zoho contact ID for a given email.
  * These helpers are NO-OPs in production.
@@ -75,13 +76,13 @@ export default clerkMiddleware(async (auth, request) => {
     const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
     const onboardingCompleted = publicMeta?.onboardingCompleted;
 
-    // In development mode, the admin email can use dual-mode:
+    // In development mode, admin emails can use dual-mode:
     //   - Dev mode:    onboardingCompleted = true in Clerk metadata → bypasses onboarding
     //   - Client mode: onboardingCompleted = false in Clerk metadata → redirects to /onboarding
     // Controlled via POST /api/dev/set-mode
     if (process.env.NODE_ENV === "development") {
       const email = claims?.email as string | undefined;
-      if (email?.toLowerCase() === "helloautomagikal@gmail.com") {
+      if (email && isAdminEmail(email)) {
         // Only bypass if onboardingCompleted is explicitly true (dev mode).
         // If false/missing (client mode), fall through to the redirect below.
         if (onboardingCompleted === true) {

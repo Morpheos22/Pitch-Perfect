@@ -320,3 +320,182 @@ Stage Summary:
 - Dead code reduced by ~400 lines
 - All 5 crypto require() calls converted to ESM imports
 - .env.example created for Vercel deployment
+
+---
+## Task ID: 5 - dashboard-real-data-fix
+### Work Task
+Fix ALL hardcoded/placeholder data across the dashboard. Add Morphylee22@gmail.com as co-admin dev account. Create real Settings & Billing pages. Rewrite Dashboard and History pages with live API data.
+
+### Work Summary
+
+#### TASK 1: Added Morphylee22@gmail.com as co-admin dev account (5 files)
+
+**1. `src/lib/dev-auth.ts`**
+- Added `coAdmin: 'morphylee22@gmail.com'` to `DEV_ACCOUNTS`
+- Updated `isAdminEmail()` to check both `admin` and `coAdmin` emails
+
+**2. `src/middleware.ts`**
+- Added `import { isAdminEmail } from "@/lib/dev-auth"`
+- Replaced hardcoded `email?.toLowerCase() === "helloautomagikal@gmail.com"` with `email && isAdminEmail(email)`
+- Both admin emails now get dual-mode (dev/client) bypass capability
+
+**3. `src/app/api/dev/set-mode/route.ts`**
+- Already used `isAdminEmail()` — no changes needed ✅
+
+**4. `src/app/api/dev/impersonate/route.ts`**
+- Added auth check: now requires the requester to be an admin email (via `isAdminEmail()`)
+- Added `import { auth, clerkClient } from '@clerk/nextjs/server'` and `import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth'`
+- Previously had NO auth gate — any authenticated user could impersonate any other user
+
+**5. `src/app/(dashboard)/dev-tools/page.tsx`**
+- Removed hardcoded `const ADMIN_EMAIL = "helloautomagikal@gmail.com"`
+- Added local `isAdminEmail()` function checking both emails
+- Updated `isAdmin` check to use the function instead of direct comparison
+
+#### TASK 2: Rewrote Dashboard Page — NO hardcoded data (1 file)
+
+**`src/app/(dashboard)/dashboard/page.tsx` — COMPLETE REWRITE**
+
+Removed ALL hardcoded data:
+- ❌ Removed fake `modules` array with hardcoded `sessions: 3, limit: 5`
+- ❌ Removed fake `recentSessions` array with fake names/scores/dates
+- ❌ Removed fake `entitlements` object with hardcoded `used: 3, total: 5`
+- ❌ Removed fake stats: "Total Sessions: 17", "Avg Score: 76", "Decks Analyzed: 3", "Practice Time: 4.2h"
+- ❌ Removed hardcoded "Pro Plan" badge
+
+New implementation:
+- ✅ Fetches `GET /api/user/sync` on mount → reads `user.subscription.plan`, `user.usage.*`, `user.firstName`
+- ✅ Fetches `GET /api/history?limit=5` on mount → builds recent sessions list from real data
+- ✅ Plan-based entitlement panel: limits derived from `PLAN_LIMITS` map keyed by subscription plan
+- ✅ Stats cards: Total Sessions = sum of all usage counts, Avg Score = computed from history scores or "-"
+- ✅ Practice Time: shows "-" (not yet tracked in the system)
+- ✅ Module cards: usage counts from `user.usage`, limits from plan
+- ✅ Recent Activity: unified session list from history API, "No sessions yet" empty state
+- ✅ Plan badge: shows actual plan name (Free/Starter/Professional/Enterprise)
+- ✅ Loading state: skeleton UI while data loads
+- ✅ Error handling: error banner for failed API calls
+- ✅ Quick tip cards: context-aware messaging based on actual plan limits
+
+#### TASK 3: Created Settings & Billing pages (2 new files)
+
+**`src/app/(dashboard)/dashboard/settings/page.tsx` — NEW**
+- Profile section: shows avatar, name, email from Clerk `useUser()` hook
+- Edit name form: uses Clerk's `user.update()` to save firstName/lastName
+- Appearance section: includes `ThemeToggle` component
+- Billing link: navigates to `/dashboard/settings/billing`
+- Danger zone: sign out button using Clerk's `signOut()`
+- Loading skeletons for all data-dependent sections
+- Success/error messages for name updates
+
+**`src/app/(dashboard)/dashboard/settings/billing/page.tsx` — NEW**
+- Current plan card: shows plan name, status badge, billing period end
+- Credits card: shows credits used/remaining (only if credits > 0)
+- Usage breakdown: per-module (E1-E4) with progress bars from `user.usage` and plan limits
+- AI token usage: shows `zaiTokensUsed` if > 0
+- Upgrade CTA: links to `/pricing` (hidden for Enterprise users)
+
+#### TASK 4: Rewrote History Page — NO hardcoded data (1 file)
+
+**`src/app/(dashboard)/history/page.tsx` — COMPLETE REWRITE**
+
+Removed ALL hardcoded data:
+- ❌ Removed fake `sessions` array with 5 fake entries
+- ❌ Removed hardcoded chart data
+
+New implementation:
+- ✅ Fetches `GET /api/history` on mount
+- ✅ Re-fetches when module filter changes (passes `type` query param to API)
+- ✅ Flattens all 4 response arrays (decks, scripts, videos, fullSessions) into unified list
+- ✅ Sorts by date descending
+- ✅ Client-side search filter on session name
+- ✅ Server-side module filter via API query param
+- ✅ Score progression chart built from real scored sessions (max 10 bars)
+- ✅ Null scores displayed as "-"
+- ✅ Empty state: "No sessions yet" with appropriate messaging for filtered vs unfiltered
+- ✅ Loading skeleton state
+- ✅ Error state with retry button
+- ✅ Session counts summary at bottom
+
+#### TASK 5: Fixed DashboardLayout sidebar links (1 file)
+
+**`src/app/(dashboard)/DashboardLayout.tsx` — UPDATED**
+
+- ✅ Billing dropdown link: changed from `/dashboard/billing` → `/dashboard/settings/billing`
+- ✅ Added Dev Tools link in sidebar footer: only shown when `process.env.NODE_ENV === "development"`
+- ✅ Dynamic plan badge: replaced hardcoded "Pro Plan" with `<PlanBadge />` component that fetches plan from `/api/user/sync`
+- ✅ `PlanBadge` component: lazy-loads plan on mount, shows actual plan name or nothing while loading
+
+#### Lint Results
+- 0 errors, 4 pre-existing warnings (all in unrelated elevator-pitch-live files)
+- All 8 modified/created files pass lint cleanly
+
+---
+## Task ID: 6 - pricing-and-upgrade-pages
+### Work Task
+Rewrite pricing page with real subscription plans (FREE/STARTER/PROFESSIONAL/ENTERPRISE), rewrite all three upgrade pages (deck analysis, script coach, live pitch), rewrite founder page with subscription-based access control, and fix dashboard sidebar navigation.
+
+### Work Summary
+
+#### 1. Pricing Page — COMPLETE REWRITE (`src/app/(public)/pricing/page.tsx`)
+**Before:** Old one-time-purchase product model (5 products: Pitch Deck Analyser $15, Script Check $10, Elevator Live $25, Pitch Deck Live $40, Master $60) with product-level feature comparison.
+**After:** Subscription plan model with 4 plans aligned to Prisma schema `PlanType` enum:
+- **Free ($0 forever):** 1 deck analysis, 1 script session, 0 live/full sessions
+- **Starter ($29/mo):** 5 deck analyses, 10 script sessions, 3 live pitch sessions
+- **Professional ($79/mo, "Most Popular"):** 15 deck analyses, 30 script sessions, 10 live pitch sessions, 3 full pitch sessions, priority support
+- **Enterprise ($199/mo):** Unlimited all, 10 full pitch sessions, Founder Coaching (E5), dedicated support, custom integrations
+
+Design features:
+- 4-column responsive card grid (1/2/4 cols)
+- Professional plan highlighted with teal border, scale, shadow, and "Most Popular" badge
+- Each card shows features with check/X icons and specific limit numbers
+- CTA buttons: "Get Started" (SignedOut → /sign-up) / "Upgrade" (SignedIn → /dashboard)
+- Gift code section with input and apply button
+- Full feature comparison table (23 rows) covering all modules and features
+- Payment provider badges at bottom: Paystack (Africa), Stripe (International), Zoho Billing (India)
+
+#### 2. Pitch Deck Analyser Upgrade Page — COMPLETE REWRITE (`src/app/(dashboard)/pitch-deck-analyser/upgrade/page.tsx`)
+**Before:** Old one-time-purchase add-on model (Single $19, 3-Pack $49, 5-Pack $79) with fake "Current Plan: Pro" status.
+**After:**
+- "What you unlock" section: 4 benefit cards (10-Slide Framework, Visual Design Audit, Before & After Comparison, PDF Report)
+- 4-column plan comparison grid showing deck analysis limits per plan
+- Detailed feature comparison table (10 rows) specific to E1 + cross-module features
+- CTA: "Ready to upgrade? View All Plans" → links to /pricing
+
+#### 3. Elevator Script Upgrade Page — COMPLETE REWRITE (`src/app/(dashboard)/elevator-script/upgrade/page.tsx`)
+**Before:** Old one-time-purchase add-on model (Single $15, 5-Pack $59, 10-Pack $99).
+**After:**
+- "What you unlock" section: 4 benefit cards (5-Element Scoring, AI Rewrites, Tone Analysis, Version Comparison)
+- 4-column plan comparison grid showing script session limits per plan
+- Detailed feature comparison table (10 rows) specific to E2 + cross-module features
+- CTA: links to /pricing
+
+#### 4. Elevator Pitch Live Upgrade Page — COMPLETE REWRITE (`src/app/(dashboard)/elevator-pitch-live/upgrade/page.tsx`)
+**Before:** Old one-time-purchase add-on model (Single $29, 3-Pack $75, 5-Pack $119).
+**After:**
+- "What you unlock" section: 4 benefit cards (Video Recording, Vocal Delivery Scoring, Body Language Analysis, Coaching Drills)
+- 4-column plan comparison grid showing live session limits per plan
+- Detailed feature comparison table (10 rows) specific to E3 + cross-module features
+- CTA: links to /pricing
+
+#### 5. Founder Page — REWRITTEN WITH ACCESS CONTROL (`src/app/(dashboard)/founder/page.tsx`)
+**Before:** Accessible to all users, no subscription check, no upgrade prompt.
+**After:**
+- Fetches user subscription from `GET /api/user/sync` on mount
+- **Access control logic:** PROFESSIONAL or ENTERPRISE = access granted; FREE or STARTER = locked
+- **Locked state:** Shows amber "Founder Coaching requires Enterprise" banner with upgrade CTA → /pricing. Module cards redirect to /pricing. Explanatory note at bottom.
+- **Access granted state:** Shows emerald "Access Granted" banner with Enterprise badge. Module cards link to real sub-module pages.
+- Plan badge in header shows current status ("Access Granted" or "Enterprise")
+- Preserved all existing functionality: progress tracker, pathway cards (A/B), sub-module grid, recent activity history
+
+#### 6. DashboardLayout Sidebar — FIXED (`src/app/(dashboard)/DashboardLayout.tsx`)
+**Changes:**
+- Added `Founder` link to main navigation (Rocket icon → /founder)
+- Renamed "Session History" → "History" for consistency
+- Removed duplicate History link from bottom section (was in both nav and footer)
+- Replaced duplicate History link with "Upgrade Plan" link (CreditCard icon → /pricing)
+- Added `Rocket` import from lucide-react
+- Final sidebar: Dashboard, Pitch Deck Analyser, Script Check, Elevator Live, Founder, History (main nav) + Upgrade Plan, Settings, Dev Tools (footer)
+
+#### Lint Results
+- 0 errors, 4 pre-existing warnings (all in unrelated elevator-pitch-live files)
+- All 6 modified files pass lint cleanly
