@@ -1,19 +1,20 @@
 // API Route: Video Upload for E3 (Live Pitch) and E4 (Full Pitch)
-// Handles presigned URL generation for direct client-side uploads to R2
+// Handles video uploads via Zoho WorkDrive storage
 // Bypasses Vercel's 4.5MB body size limit
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma as db } from '@/lib/db';
 import {
-  generatePresignedUploadUrl,
-  generatePresignedDownloadUrl,
-  isR2Configured,
-  validateFileType,
-  validateFileSize
+  isWorkDriveConfigured,
+  uploadToWorkDrive,
+  getWorkDriveFileUrl,
+  validateFileTypeByCategory,
+  validateFileSizeByCategory,
+  generateFileKey,
 } from '@/lib/storage';
 
-// POST: Generate presigned upload URL for video
+// POST: Upload video to WorkDrive
 export async function POST(request: NextRequest) {
   try {
     // SECURITY: Get authenticated user from session
@@ -39,28 +40,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if R2 is configured
-    if (!isR2Configured()) {
+    // Check if WorkDrive is configured
+    if (!isWorkDriveConfigured()) {
       return NextResponse.json(
         { error: 'Video storage not configured. Please contact support.' },
         { status: 503 }
       );
     }
 
-    // Parse request
-    const body = await request.json();
-    const { fileName, mimeType, fileSize, type = 'live' } = body;
+    const formData = await request.formData();
+    const videoFile = formData.get('video') as File | null;
+    const type = (formData.get('type') as string) || 'live';
 
-    // Validate inputs
-    if (!fileName || !mimeType || !fileSize) {
+    if (!videoFile) {
       return NextResponse.json(
-        { error: 'fileName, mimeType, and fileSize are required' },
+        { error: 'Video file is required' },
         { status: 400 }
       );
     }
 
     // Validate file type
-    const typeValidation = validateFileType(fileName, mimeType, 'video');
+    const typeValidation = validateFileTypeByCategory(videoFile.name, videoFile.type, 'video');
     if (!typeValidation.valid) {
       return NextResponse.json(
         { error: typeValidation.error },
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate file size
-    const sizeValidation = validateFileSize(fileSize, 'video');
+    const sizeValidation = validateFileSizeByCategory(videoFile.size, 'video');
     if (!sizeValidation.valid) {
       return NextResponse.json(
         { error: sizeValidation.error },
@@ -80,52 +80,48 @@ export async function POST(request: NextRequest) {
     // Determine video type for storage path
     const videoType = type === 'full' ? 'full' : 'live';
 
-    // Generate presigned upload URL
-    const { uploadUrl, key, publicUrl } = await generatePresignedUploadUrl(
-      user.id,
-      'video',
-      fileName,
-      mimeType,
-      7200 // 2 hours for large videos
+    // Upload to WorkDrive
+    const arrayBuffer = await videoFile.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const uploadResult = await uploadToWorkDrive(
+      buffer,
+      videoFile.name,
+      process.env.ZOHO_WORKDRIVE_FOLDER_ID!
     );
+
+    const key = generateFileKey(user.id, 'video', videoFile.name);
 
     // Create a pending video record in database
     const video = await db.pitchVideo.create({
       data: {
         userId: user.id,
-        fileName,
-        fileUrl: publicUrl,
+        fileName: videoFile.name,
+        fileUrl: uploadResult.downloadUrl,
         r2Key: key,
-        duration: 0, // Will be updated after upload
+        duration: 0, // Will be updated after upload confirmation
         status: 'PENDING',
         type: videoType.toUpperCase(),
       },
     });
 
     return NextResponse.json({
-      uploadUrl,
-      key,
       videoId: video.id,
-      publicUrl,
-      expiresIn: 7200,
-      instructions: {
-        method: 'PUT',
-        headers: {
-          'Content-Type': mimeType,
-        },
-        body: 'Binary file data',
-      },
+      fileId: uploadResult.fileId,
+      key,
+      downloadUrl: uploadResult.downloadUrl,
+      fileName: uploadResult.fileName,
     });
   } catch (error) {
-    console.error('Video upload URL generation error:', error);
+    console.error('Video upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to generate upload URL', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to upload video', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
 
-// GET: Get presigned download URL for a video
+// GET: Get download URL for a video
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -151,22 +147,28 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('videoId');
-    const key = searchParams.get('key');
+    const fileId = searchParams.get('fileId');
 
-    if (!videoId && !key) {
+    if (!videoId && !fileId) {
       return NextResponse.json(
-        { error: 'videoId or key is required' },
+        { error: 'videoId or fileId is required' },
         { status: 400 }
       );
     }
 
-    let r2Key = key;
+    // If fileId provided directly, generate download URL
+    if (fileId) {
+      const downloadUrl = getWorkDriveFileUrl(fileId);
+      return NextResponse.json({
+        downloadUrl,
+      });
+    }
 
-    // If videoId provided, look up the key from database
+    // If videoId provided, look up the file from database
     if (videoId) {
       const video = await db.pitchVideo.findFirst({
         where: { id: videoId, userId: user.id },
-        select: { r2Key: true },
+        select: { fileUrl: true },
       });
 
       if (!video) {
@@ -176,27 +178,19 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      r2Key = video.r2Key;
+      return NextResponse.json({
+        downloadUrl: video.fileUrl,
+      });
     }
 
-    if (!r2Key) {
-      return NextResponse.json(
-        { error: 'Video key not found' },
-        { status: 404 }
-      );
-    }
-
-    // Generate presigned download URL
-    const downloadUrl = await generatePresignedDownloadUrl(r2Key);
-
-    return NextResponse.json({
-      downloadUrl,
-      expiresIn: 3600,
-    });
+    return NextResponse.json(
+      { error: 'Invalid request' },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('Video download URL generation error:', error);
     return NextResponse.json(
-      { error: 'Failed to generate download URL' },
+      { error: 'Failed to get download URL' },
       { status: 500 }
     );
   }

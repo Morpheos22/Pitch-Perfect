@@ -1,57 +1,175 @@
-// Cloudflare R2 Storage Utilities
-// Handles file uploads for PDF, PPTX, and video files
+// Zoho WorkDrive Storage Utilities
+// Handles file uploads for PDF, PPTX, DOCX, and video files via Zoho WorkDrive API
 
-// R2 Configuration
-const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
-const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
-const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'pitchcoach-files';
-const R2_PUBLIC_URL = process.env.CLOUDFLARE_R2_PUBLIC_URL;
+// ============================================
+// ZOHO WORKDRIVE CONFIGURATION
+// ============================================
 
-// Check if R2 is configured
-export function isR2Configured(): boolean {
-  return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+const WORKDRIVE_CLIENT_ID = process.env.ZOHO_WORKDRIVE_CLIENT_ID;
+const WORKDRIVE_CLIENT_SECRET = process.env.ZOHO_WORKDRIVE_CLIENT_SECRET;
+const WORKDRIVE_REFRESH_TOKEN = process.env.ZOHO_WORKDRIVE_REFRESH_TOKEN;
+const WORKDRIVE_FOLDER_ID = process.env.ZOHO_WORKDRIVE_FOLDER_ID;
+
+// Token caching (in-memory, per process)
+let cachedAccessToken: string | null = null;
+let tokenExpiresAt = 0;
+
+// ============================================
+// CONFIGURATION CHECK
+// ============================================
+
+/** Check if Zoho WorkDrive is properly configured */
+export function isWorkDriveConfigured(): boolean {
+  return !!(
+    WORKDRIVE_CLIENT_ID &&
+    WORKDRIVE_CLIENT_SECRET &&
+    WORKDRIVE_REFRESH_TOKEN &&
+    WORKDRIVE_FOLDER_ID
+  );
 }
 
-// Get R2 API endpoint
-function getR2Endpoint(): string {
-  return `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-}
+// ============================================
+// OAUTH TOKEN MANAGEMENT
+// ============================================
 
-// Get public URL for a file
-export function getR2FileUrl(key: string): string {
-  if (R2_PUBLIC_URL) {
-    return `${R2_PUBLIC_URL}/${key}`;
+/**
+ * Get a valid Zoho WorkDrive OAuth access token.
+ * Uses the refresh token to obtain a new access token.
+ * Caches the token until it expires.
+ */
+export async function getWorkDriveAccessToken(): Promise<string> {
+  // Return cached token if still valid
+  if (cachedAccessToken && Date.now() < tokenExpiresAt) {
+    return cachedAccessToken;
   }
-  // Fallback to R2 public bucket URL
-  return `https://pub-${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`;
+
+  if (!isWorkDriveConfigured()) {
+    throw new Error(
+      'Zoho WorkDrive is not configured. Please set ZOHO_WORKDRIVE_CLIENT_ID, ZOHO_WORKDRIVE_CLIENT_SECRET, ZOHO_WORKDRIVE_REFRESH_TOKEN, and ZOHO_WORKDRIVE_FOLDER_ID environment variables.'
+    );
+  }
+
+  const response = await fetch(
+    'https://accounts.zoho.com/oauth/v2/token',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: WORKDRIVE_CLIENT_ID!,
+        client_secret: WORKDRIVE_CLIENT_SECRET!,
+        refresh_token: WORKDRIVE_REFRESH_TOKEN!,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `Failed to obtain Zoho WorkDrive access token: ${response.status} ${errorBody}`
+    );
+  }
+
+  const data = await response.json() as {
+    access_token: string;
+    expires_in: number;
+    token_type: string;
+  };
+
+  cachedAccessToken = data.access_token;
+  // Set expiry 60 seconds early to avoid edge cases
+  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+
+  return cachedAccessToken;
 }
 
-// Generate unique file key
-export function generateFileKey(userId: string, type: 'deck' | 'script' | 'video', fileName: string): string {
+// ============================================
+// FILE KEY GENERATION
+// ============================================
+
+/**
+ * Generate a unique file key/path for organizing files in WorkDrive.
+ * Format: {type}/{userId}/{timestamp}-{random}-{sanitizedName}
+ */
+export function generateFileKey(
+  userId: string,
+  type: string,
+  originalName: string
+): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
-  const sanitized = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const sanitized = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
   return `${type}/${userId}/${timestamp}-${random}-${sanitized}`;
 }
 
-// Allowed file types
-const ALLOWED_DECK_TYPES = ['application/pdf', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
-const ALLOWED_SCRIPT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'];
+// ============================================
+// FILE VALIDATION
+// ============================================
 
+/** Allowed file extensions by category */
 const DECK_EXTENSIONS = ['.pdf', '.ppt', '.pptx'];
 const SCRIPT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt'];
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi'];
 
-// File validation
+/** Allowed MIME types by category */
+const ALLOWED_DECK_TYPES = [
+  'application/pdf',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+];
+const ALLOWED_SCRIPT_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+];
+const ALLOWED_VIDEO_TYPES = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-msvideo',
+];
+
+/** File size limits in bytes */
+const FILE_SIZE_LIMITS = {
+  deck: 50 * 1024 * 1024,   // 50MB
+  script: 10 * 1024 * 1024,  // 10MB
+  video: 500 * 1024 * 1024,  // 500MB
+};
+
+/**
+ * Validate file extension against a list of allowed types.
+ * @param fileName - The file name to check
+ * @param allowedTypes - Array of allowed file extensions (e.g. ['.pdf', '.pptx'])
+ * @returns Object with valid flag and optional error message
+ */
 export function validateFileType(
+  fileName: string,
+  allowedTypes: string[]
+): { valid: boolean; error?: string } {
+  const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+  if (!allowedTypes.includes(ext)) {
+    return {
+      valid: false,
+      error: `Invalid file type (.${ext}). Allowed types: ${allowedTypes.join(', ')}`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Convenience: validate file type by category (deck, script, video).
+ * Checks both extension and MIME type.
+ */
+export function validateFileTypeByCategory(
   fileName: string,
   mimeType: string,
   type: 'deck' | 'script' | 'video'
 ): { valid: boolean; error?: string } {
   const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-  
+
   switch (type) {
     case 'deck':
       if (!ALLOWED_DECK_TYPES.includes(mimeType) && !DECK_EXTENSIONS.includes(ext)) {
@@ -69,60 +187,179 @@ export function validateFileType(
       }
       break;
   }
-  
+
   return { valid: true };
 }
 
-// File size limits (in bytes)
-const FILE_SIZE_LIMITS = {
-  deck: 50 * 1024 * 1024, // 50MB
-  script: 10 * 1024 * 1024, // 10MB
-  video: 500 * 1024 * 1024, // 500MB
-};
-
-export function validateFileSize(size: number, type: 'deck' | 'script' | 'video'): { valid: boolean; error?: string } {
-  const limit = FILE_SIZE_LIMITS[type];
-  if (size > limit) {
-    const limitMB = limit / (1024 * 1024);
-    return { valid: false, error: `File size exceeds ${limitMB}MB limit.` };
+/**
+ * Validate file size against a maximum.
+ * @param fileSize - Size of the file in bytes
+ * @param maxSizeBytes - Maximum allowed size in bytes
+ * @returns Object with valid flag and optional error message
+ */
+export function validateFileSize(
+  fileSize: number,
+  maxSizeBytes: number
+): { valid: boolean; error?: string } {
+  if (fileSize > maxSizeBytes) {
+    const limitMB = maxSizeBytes / (1024 * 1024);
+    return {
+      valid: false,
+      error: `File size exceeds ${limitMB}MB limit.`,
+    };
   }
   return { valid: true };
 }
 
+/**
+ * Convenience: validate file size by category.
+ */
+export function validateFileSizeByCategory(
+  size: number,
+  type: 'deck' | 'script' | 'video'
+): { valid: boolean; error?: string } {
+  return validateFileSize(size, FILE_SIZE_LIMITS[type]);
+}
+
 // ============================================
-// UPLOAD FUNCTIONS
+// UPLOAD RESULT TYPE
 // ============================================
 
-interface UploadResult {
+export interface UploadResult {
   key: string;
   url: string;
   fileName: string;
   fileSize: number;
   fileType: string;
+  fileId?: string;  // Zoho WorkDrive file ID
 }
 
-// Upload file to R2 using S3-compatible API
-export async function uploadToR2(
-  file: Buffer | File,
+// ============================================
+// ZOHO WORKDRIVE API FUNCTIONS
+// ============================================
+
+/**
+ * Upload a file to Zoho WorkDrive.
+ * @param file - File content as Buffer
+ * @param fileName - Name of the file to upload
+ * @param folderId - WorkDrive folder ID to upload into
+ * @returns Object with file ID, name, and download URL
+ */
+export async function uploadToWorkDrive(
+  file: Buffer,
+  fileName: string,
+  folderId: string
+): Promise<{ fileId: string; fileName: string; downloadUrl: string }> {
+  const accessToken = await getWorkDriveAccessToken();
+
+  const formData = new FormData();
+  formData.append('filename', fileName);
+  formData.append('parent_id', folderId);
+
+  // Append file as a Blob with the correct name
+  const blob = new Blob([file]);
+  formData.append('content', blob, fileName);
+
+  const response = await fetch('https://workdrive.zoho.com/api/v1/upload', {
+    method: 'POST',
+    headers: {
+      Authorization: `Zoho-oauthtoken ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `Zoho WorkDrive upload failed: ${response.status} ${errorBody}`
+    );
+  }
+
+  const data = await response.json() as {
+    data?: Array<{
+      attributes?: {
+        resource_id?: string;
+        filename?: string;
+        resource_type?: string;
+      };
+    }>;
+    status: string;
+  };
+
+  if (data.status !== 'success' || !data.data?.[0]?.attributes) {
+    throw new Error('Zoho WorkDrive upload returned unexpected response format.');
+  }
+
+  const fileAttr = data.data[0].attributes;
+  const fileId = fileAttr.resource_id || '';
+
+  return {
+    fileId,
+    fileName: fileAttr.filename || fileName,
+    downloadUrl: `https://workdrive.zoho.com/api/v1/download/${fileId}`,
+  };
+}
+
+/**
+ * Get a download URL for a file stored in Zoho WorkDrive.
+ * @param fileId - The WorkDrive file ID
+ * @returns The download URL string
+ */
+export function getWorkDriveFileUrl(fileId: string): string {
+  return `https://workdrive.zoho.com/api/v1/download/${fileId}`;
+}
+
+/**
+ * Delete a file from Zoho WorkDrive.
+ * @param fileId - The WorkDrive file ID to delete
+ */
+export async function deleteWorkDriveFile(fileId: string): Promise<void> {
+  const accessToken = await getWorkDriveAccessToken();
+
+  const response = await fetch(
+    `https://workdrive.zoho.com/api/v1/files/${fileId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `Zoho WorkDrive delete failed: ${response.status} ${errorBody}`
+    );
+  }
+}
+
+// ============================================
+// MAIN UPLOAD FUNCTION
+// ============================================
+
+/**
+ * Upload a file using Zoho WorkDrive (if configured) or local mock storage.
+ * This is the primary upload function used throughout the application.
+ *
+ * @param file - File to upload (File or Buffer)
+ * @param userId - User ID for organizing files
+ * @param type - File category ('deck', 'script', 'video')
+ * @param originalName - Original file name
+ * @param mimeType - MIME type of the file
+ * @returns Upload result with file metadata and URL
+ */
+export async function uploadFile(
+  file: File | Buffer,
   userId: string,
   type: 'deck' | 'script' | 'video',
   originalName: string,
   mimeType: string
 ): Promise<UploadResult> {
-  if (!isR2Configured()) {
-    throw new Error('Cloudflare R2 is not configured. Please set up R2 credentials.');
-  }
-
-  // Validate file
-  const typeValidation = validateFileType(originalName, mimeType, type);
-  if (!typeValidation.valid) {
-    throw new Error(typeValidation.error);
-  }
-
   // Convert File to Buffer if needed
   let buffer: Buffer;
   let fileSize: number;
-  
+
   if (file instanceof File) {
     const arrayBuffer = await file.arrayBuffer();
     buffer = Buffer.from(arrayBuffer);
@@ -132,171 +369,38 @@ export async function uploadToR2(
     fileSize = file.length;
   }
 
-  // Validate size
-  const sizeValidation = validateFileSize(fileSize, type);
+  // Validate file type
+  const typeValidation = validateFileTypeByCategory(originalName, mimeType, type);
+  if (!typeValidation.valid) {
+    throw new Error(typeValidation.error);
+  }
+
+  // Validate file size
+  const sizeValidation = validateFileSizeByCategory(fileSize, type);
   if (!sizeValidation.valid) {
     throw new Error(sizeValidation.error);
   }
 
-  // Generate unique key
   const key = generateFileKey(userId, type, originalName);
 
-  // Upload to R2 using fetch with S3 API
-  const endpoint = getR2Endpoint();
-  const url = `${endpoint}/${R2_BUCKET_NAME}/${key}`;
+  if (isWorkDriveConfigured()) {
+    const result = await uploadToWorkDrive(buffer, originalName, WORKDRIVE_FOLDER_ID!);
 
-  // Create AWS Signature V4 for authentication
-  const date = new Date();
-  const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
-  const datetimeStr = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
-
-  // For simplicity, we'll use a presigned URL approach or direct upload
-  // In production, you'd want to use AWS SDK with proper signing
-  
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': mimeType,
-      'Content-Length': fileSize.toString(),
-      // Note: In production, you need proper AWS Signature V4 headers
-      // This is a simplified version
-    },
-    body: new Uint8Array(buffer),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Upload failed: ${response.statusText}`);
+    return {
+      key,
+      url: result.downloadUrl,
+      fileName: originalName,
+      fileSize,
+      fileType: mimeType,
+      fileId: result.fileId,
+    };
   }
 
-  return {
-    key,
-    url: getR2FileUrl(key),
-    fileName: originalName,
-    fileSize,
-    fileType: mimeType,
-  };
-}
-
-// ============================================
-// PRESIGNED URL GENERATION
-// For direct client-side uploads
-// ============================================
-
-export async function generatePresignedUploadUrl(
-  userId: string,
-  type: 'deck' | 'script' | 'video',
-  fileName: string,
-  mimeType: string,
-  expiresIn = 3600 // 1 hour
-): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
-  if (!isR2Configured()) {
-    throw new Error('Cloudflare R2 is not configured.');
-  }
-
-  // Validate file type
-  const typeValidation = validateFileType(fileName, mimeType, type);
-  if (!typeValidation.valid) {
-    throw new Error(typeValidation.error);
-  }
-
-  const key = generateFileKey(userId, type, fileName);
-
-  // In production, you'd use AWS SDK to generate a presigned URL
-  // For now, return the key for server-side upload
-  const endpoint = getR2Endpoint();
-  const uploadUrl = `${endpoint}/${R2_BUCKET_NAME}/${key}`;
-
-  return {
-    uploadUrl,
-    key,
-    publicUrl: getR2FileUrl(key),
-  };
-}
-
-export async function generatePresignedDownloadUrl(
-  key: string,
-  expiresIn = 3600 // 1 hour
-): Promise<{ downloadUrl: string }> {
-  if (!isR2Configured()) {
-    throw new Error('Cloudflare R2 is not configured.');
-  }
-
-  // In production, you'd use AWS SDK to generate a presigned URL
-  // For now, return the public URL
-  const downloadUrl = getR2FileUrl(key);
-
-  return { downloadUrl };
-}
-
-// ============================================
-// FILE EXTRACTION UTILITIES
-// ============================================
-
-// Extract text from PDF (simplified - in production use pdf-parse or similar)
-export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  // Note: In production, use a library like pdf-parse
-  // This is a placeholder that would need actual implementation
-  
-  // For now, return a message indicating we need the PDF content
-  return `[PDF content extraction - file size: ${buffer.length} bytes]`;
-}
-
-// Extract text from PowerPoint (simplified)
-export async function extractTextFromPPTX(buffer: Buffer): Promise<string> {
-  // Note: In production, use a library like pptx-parser
-  // This is a placeholder
-  
-  return `[PowerPoint content extraction - file size: ${buffer.length} bytes]`;
-}
-
-// Get file content as text for analysis
-export async function getFileContent(url: string, fileType: string): Promise<string> {
-  const response = await fetch(url);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  
-  if (fileType === 'application/pdf' || fileType.endsWith('.pdf')) {
-    return extractTextFromPDF(buffer);
-  } else if (fileType.includes('presentation') || fileType.endsWith('.pptx') || fileType.endsWith('.ppt')) {
-    return extractTextFromPPTX(buffer);
-  } else if (fileType === 'text/plain' || fileType.endsWith('.txt')) {
-    return buffer.toString('utf-8');
-  }
-  
-  throw new Error(`Unsupported file type: ${fileType}`);
-}
-
-// ============================================
-// MOCK STORAGE (Development Mode)
-// ============================================
-
-// For development when R2 is not configured
-const mockStorage = new Map<string, { buffer: Buffer; metadata: object }>();
-
-export async function mockUpload(
-  file: Buffer | File,
-  userId: string,
-  type: 'deck' | 'script' | 'video',
-  originalName: string,
-  mimeType: string
-): Promise<UploadResult> {
-  let buffer: Buffer;
-  let fileSize: number;
-  
-  if (file instanceof File) {
-    const arrayBuffer = await file.arrayBuffer();
-    buffer = Buffer.from(arrayBuffer);
-    fileSize = file.size;
-  } else {
-    buffer = file;
-    fileSize = file.length;
-  }
-
-  const key = generateFileKey(userId, type, originalName);
-  
-  // Store in memory (development only)
-  mockStorage.set(key, { 
-    buffer, 
-    metadata: { originalName, mimeType, fileSize } 
+  // Fallback: local mock storage (development only)
+  console.warn('Zoho WorkDrive not configured, using mock storage');
+  mockStorage.set(key, {
+    buffer,
+    metadata: { originalName, mimeType, fileSize },
   });
 
   return {
@@ -308,19 +412,59 @@ export async function mockUpload(
   };
 }
 
-// Unified upload function that handles both R2 and mock
-export async function uploadFile(
-  file: Buffer | File,
-  userId: string,
-  type: 'deck' | 'script' | 'video',
-  originalName: string,
-  mimeType: string
-): Promise<UploadResult> {
-  if (isR2Configured()) {
-    return uploadToR2(file, userId, type, originalName, mimeType);
+// ============================================
+// FILE CONTENT FETCHING
+// ============================================
+
+/**
+ * Fetch file content from a URL as a Buffer.
+ * Supports both Zoho WorkDrive download URLs and generic URLs.
+ */
+export async function getFileContent(fileUrl: string): Promise<Buffer> {
+  // Handle mock:// URLs from dev storage
+  if (fileUrl.startsWith('mock://')) {
+    const key = fileUrl.replace('mock://', '');
+    const entry = mockStorage.get(key);
+    if (!entry) {
+      throw new Error(`Mock file not found: ${key}`);
+    }
+    return entry.buffer;
   }
-  
-  // Use mock storage in development
-  console.warn('R2 not configured, using mock storage');
-  return mockUpload(file, userId, type, originalName, mimeType);
+
+  // Handle Zoho WorkDrive download URLs
+  if (fileUrl.includes('workdrive.zoho.com/api/v1/download/')) {
+    const accessToken = await getWorkDriveAccessToken();
+    const response = await fetch(fileUrl, {
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch file from WorkDrive: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  // Generic URL fetch
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch file from URL: ${response.status} ${response.statusText}`
+    );
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
+
+// ============================================
+// MOCK STORAGE (Development Fallback)
+// ============================================
+
+/** In-memory mock storage for when WorkDrive is not configured */
+const mockStorage = new Map<string, { buffer: Buffer; metadata: Record<string, unknown> }>();

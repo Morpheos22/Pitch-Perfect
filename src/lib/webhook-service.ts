@@ -5,6 +5,7 @@ import { syncSessionToCRM, updateEntitlementUsage, getEntitlement } from './zoho
 import { sendSessionCompleteEmail } from './zoho-mail';
 import { generateDeckReport, generateScriptReport, generateVideoReport, generateFullPitchReport } from './pdf-report';
 import { prisma } from './db';
+import { createHmac } from 'crypto';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -265,7 +266,6 @@ async function triggerExternalWebhooks(payload: SessionWebhookPayload): Promise<
 // ============================================
 
 function generateWebhookSignature(payload: unknown): string {
-  const { createHmac } = require('crypto');
   const secret = process.env.WEBHOOK_SECRET;
   if (!secret) {
     throw new Error('WEBHOOK_SECRET environment variable is not set. Webhook signatures cannot be generated.');
@@ -325,40 +325,131 @@ function getSessionTypeLabel(type: string): string {
 // ============================================
 
 export async function manuallyTriggerWebhooks(sessionId: string): Promise<WebhookResponse | null> {
-  // Fetch session data from database
-  // This is a placeholder - implement based on your session schema
-  const session = await prisma.pitchDeck.findUnique({
+  // Try to find the session across all session types
+  const deck = await prisma.pitchDeck.findUnique({
     where: { id: sessionId },
     include: { user: true },
   });
 
-  if (!session) {
-    return null;
+  if (deck) {
+    return triggerPostSessionWebhooks({
+      sessionId: deck.id,
+      sessionType: 'deck',
+      userId: deck.userId,
+      userEmail: deck.user?.email || '',
+      userName: `${deck.user?.firstName || ''} ${deck.user?.lastName || ''}`.trim(),
+      productId: 'pitch-deck',
+      moduleId: 'm1',
+      score: deck.overallScore || 0,
+      completedAt: deck.analyzedAt || new Date(),
+      reportData: {
+        problemClarityScore: deck.problemClarityScore,
+        solutionClarityScore: deck.solutionClarityScore,
+        marketOpportunityScore: deck.marketOpportunityScore,
+        businessModelScore: deck.businessModelScore,
+        teamCredibilityScore: deck.teamCredibilityScore,
+        tractionScore: deck.tractionScore,
+        financialsScore: deck.financialsScore,
+        askClarityScore: deck.askClarityScore,
+        overallScore: deck.overallScore,
+        strengths: deck.strengths || [],
+        weaknesses: deck.weaknesses || [],
+        recommendations: deck.recommendations || [],
+      },
+    });
   }
 
-  return triggerPostSessionWebhooks({
-    sessionId: session.id,
-    sessionType: 'deck',
-    userId: session.userId,
-    userEmail: session.user?.email || '',
-    userName: `${session.user?.firstName || ''} ${session.user?.lastName || ''}`.trim(),
-    productId: 'pitch-deck',
-    moduleId: 'm1',
-    score: session.overallScore || 0,
-    completedAt: session.analyzedAt || new Date(),
-    reportData: {
-      problemClarityScore: session.problemClarityScore,
-      solutionClarityScore: session.solutionClarityScore,
-      marketOpportunityScore: session.marketOpportunityScore,
-      businessModelScore: session.businessModelScore,
-      teamCredibilityScore: session.teamCredibilityScore,
-      tractionScore: session.tractionScore,
-      financialsScore: session.financialsScore,
-      askClarityScore: session.askClarityScore,
-      overallScore: session.overallScore,
-      strengths: session.strengths || [],
-      weaknesses: session.weaknesses || [],
-      recommendations: session.recommendations || [],
-    },
+  const script = await prisma.pitchScript.findUnique({
+    where: { id: sessionId },
+    include: { user: true },
   });
+
+  if (script) {
+    return triggerPostSessionWebhooks({
+      sessionId: script.id,
+      sessionType: 'script',
+      userId: script.userId,
+      userEmail: script.user?.email || '',
+      userName: `${script.user?.firstName || ''} ${script.user?.lastName || ''}`.trim(),
+      productId: 'elevator-script',
+      moduleId: 'm2',
+      score: script.overallScore || 0,
+      completedAt: script.analyzedAt || new Date(),
+      reportData: {
+        hookScore: script.hookScore,
+        problemScore: script.problemScore,
+        solutionScore: script.solutionScore,
+        credibilityScore: script.credibilityScore,
+        ctaScore: script.ctaScore,
+        overallScore: script.overallScore,
+        strengths: script.strengths || [],
+        weaknesses: script.weaknesses || [],
+        recommendations: script.recommendations || [],
+      },
+    });
+  }
+
+  const video = await prisma.pitchVideo.findUnique({
+    where: { id: sessionId },
+    include: { user: true },
+  });
+
+  if (video) {
+    return triggerPostSessionWebhooks({
+      sessionId: video.id,
+      sessionType: 'live',
+      userId: video.userId,
+      userEmail: video.user?.email || '',
+      userName: `${video.user?.firstName || ''} ${video.user?.lastName || ''}`.trim(),
+      productId: 'elevator-live',
+      moduleId: 'm3',
+      score: video.overallDeliveryScore || 0,
+      completedAt: video.analyzedAt || new Date(),
+      reportData: {
+        paceScore: video.paceScore,
+        clarityScore: video.clarityScore,
+        fillerWordScore: video.fillerWordScore,
+        energyScore: video.energyScore,
+        confidenceScore: video.confidenceScore,
+        overallDeliveryScore: video.overallDeliveryScore,
+        strengths: video.strengths || [],
+        weaknesses: video.weaknesses || [],
+        recommendations: video.recommendations || [],
+      },
+    });
+  }
+
+  const fullSession = await prisma.fullPitchSession.findUnique({
+    where: { id: sessionId },
+    include: { user: true, pitchDeck: true },
+  });
+
+  if (fullSession) {
+    return triggerPostSessionWebhooks({
+      sessionId: fullSession.id,
+      sessionType: 'full',
+      userId: fullSession.userId,
+      userEmail: fullSession.user?.email || '',
+      userName: `${fullSession.user?.firstName || ''} ${fullSession.user?.lastName || ''}`.trim(),
+      productId: 'pitch-deck-live',
+      moduleId: 'm4',
+      score: fullSession.overallReadinessScore || 0,
+      completedAt: fullSession.analyzedAt || new Date(),
+      reportData: {
+        problemSolutionFit: fullSession.problemSolutionFit,
+        marketOpportunity: fullSession.marketOpportunity,
+        businessModelViability: fullSession.businessModelViability,
+        teamCredibility: fullSession.teamCredibility,
+        tractionMilestones: fullSession.tractionMilestones,
+        deliveryPresence: fullSession.deliveryPresence,
+        overallReadinessScore: fullSession.overallReadinessScore,
+        investorReadinessLevel: fullSession.investorReadinessLevel,
+        strengths: fullSession.strengths || [],
+        weaknesses: fullSession.weaknesses || [],
+        recommendations: fullSession.recommendations || [],
+      },
+    });
+  }
+
+  return null;
 }

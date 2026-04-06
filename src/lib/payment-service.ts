@@ -1,6 +1,8 @@
 // Payment Service for Pitch Perfect × Automagikal
 // Supports: Paystack (South Africa), Stripe (International), Zoho Billing (Enterprise), LemonSqueezy (Merchant of Record)
 
+import { createHmac } from 'crypto';
+
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
@@ -50,16 +52,6 @@ export interface PaymentResult {
   productId: string;
   metadata: Record<string, unknown>;
   processedAt: Date;
-}
-
-export interface EntitlementCreation {
-  userId: string;
-  productId: string;
-  modules: Array<{
-    moduleId: string;
-    totalCycles: number;
-    usedCycles: number;
-  }>;
 }
 
 // ============================================
@@ -761,9 +753,7 @@ export interface WebhookPayload {
 }
 
 export function verifyPaystackWebhook(signature: string, body: string): boolean {
-  const crypto = require('crypto');
-  const hash = crypto
-    .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET || '')
+  const hash = createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET || '')
     .update(body)
     .digest('hex');
   
@@ -771,9 +761,7 @@ export function verifyPaystackWebhook(signature: string, body: string): boolean 
 }
 
 export function verifyLemonSqueezyWebhook(signature: string, body: string): boolean {
-  const crypto = require('crypto');
-  const hash = crypto
-    .createHmac('sha256', process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '')
+  const hash = createHmac('sha256', process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '')
     .update(body)
     .digest('hex');
   
@@ -781,11 +769,9 @@ export function verifyLemonSqueezyWebhook(signature: string, body: string): bool
 }
 
 export function verifyStripeWebhook(signature: string, body: string): boolean {
-  const crypto = require('crypto');
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) return false;
-  const expectedSig = crypto
-    .createHmac('sha256', webhookSecret)
+  const expectedSig = createHmac('sha256', webhookSecret)
     .update(body)
     .digest('hex');
   // Stripe signatures are in format: t=timestamp,v1=signature
@@ -795,11 +781,9 @@ export function verifyStripeWebhook(signature: string, body: string): boolean {
 }
 
 export function verifyZohoWebhook(signature: string, body: string): boolean {
-  const crypto = require('crypto');
   const webhookSecret = process.env.ZOHO_BILLING_WEBHOOK_SECRET;
   if (!webhookSecret) return false;
-  const hash = crypto
-    .createHmac('sha256', webhookSecret)
+  const hash = createHmac('sha256', webhookSecret)
     .update(body)
     .digest('hex');
   return hash === signature;
@@ -843,26 +827,5 @@ export function parseWebhookPayload(
 }
 
 // ============================================
-// ENTITLEMENT CREATION
+// WEBHOOK HANDLING
 // ============================================
-
-export function createEntitlementsFromPayment(
-  payment: PaymentResult,
-  userId: string
-): EntitlementCreation {
-  const product = PRODUCTS[payment.productId];
-  
-  if (!product) {
-    throw new Error(`Product not found: ${payment.productId}`);
-  }
-  
-  return {
-    userId,
-    productId: payment.productId,
-    modules: product.modules.map(m => ({
-      moduleId: m.id,
-      totalCycles: m.cycles,
-      usedCycles: 0,
-    })),
-  };
-}

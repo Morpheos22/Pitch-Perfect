@@ -146,7 +146,7 @@ model PitchDeck {
 
   // File Info
   fileName   String
-  fileUrl    String // R2 storage URL
+  fileUrl    String // WorkDrive storage URL
   fileSize   Int // in bytes
   fileType   String // pdf, pptx
   slideCount Int?
@@ -206,7 +206,7 @@ model PitchScript {
   // Input
   inputType    ScriptInputType // text, pdf, docx
   inputText    String? // Direct text input
-  inputFileUrl String? // R2 URL for uploaded file
+  inputFileUrl String? // WorkDrive URL for uploaded file
   fileName     String?
 
   // Target Audience
@@ -262,15 +262,15 @@ model PitchVideo {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Video Info
-  videoUrl     String // Cloudflare Stream URL
-  videoId      String // Cloudflare Stream ID
+  videoUrl     String // Video URL (WorkDrive or external)
+  videoId      String // Video ID
   thumbnailUrl String?
   duration     Int // in seconds (max 180 for E3)
   fileSize     Int? // in bytes
 
-  // R2 Storage (for direct uploads)
+  // File Storage
   fileName String?
-  r2Key    String?
+  r2Key    String? // Legacy key field (now stores WorkDrive file ID)
   type     String? // 'LIVE' or 'FULL'
 
   // Analysis Results
@@ -328,8 +328,8 @@ model FullPitchSession {
   pitchDeck   PitchDeck? @relation(fields: [pitchDeckId], references: [id])
 
   // Video Info
-  videoUrl     String // Cloudflare Stream URL
-  videoId      String // Cloudflare Stream ID
+  videoUrl     String // Video URL (WorkDrive or external)
+  videoId      String // Video ID
   thumbnailUrl String?
   duration     Int // in seconds (up to 1800 for E4)
   fileSize     Int?

@@ -75,11 +75,18 @@ export default clerkMiddleware(async (auth, request) => {
     const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
     const onboardingCompleted = publicMeta?.onboardingCompleted;
 
-    // In development mode, allow the admin email to bypass onboarding
+    // In development mode, the admin email can use dual-mode:
+    //   - Dev mode:    onboardingCompleted = true in Clerk metadata → bypasses onboarding
+    //   - Client mode: onboardingCompleted = false in Clerk metadata → redirects to /onboarding
+    // Controlled via POST /api/dev/set-mode
     if (process.env.NODE_ENV === "development") {
       const email = claims?.email as string | undefined;
       if (email?.toLowerCase() === "helloautomagikal@gmail.com") {
-        return NextResponse.next();
+        // Only bypass if onboardingCompleted is explicitly true (dev mode).
+        // If false/missing (client mode), fall through to the redirect below.
+        if (onboardingCompleted === true) {
+          return NextResponse.next();
+        }
       }
     }
 

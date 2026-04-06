@@ -2,7 +2,6 @@
 // Generates professional PDF reports for deck, script, and video analyses
 
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 // ============================================
 // TYPE DEFINITIONS

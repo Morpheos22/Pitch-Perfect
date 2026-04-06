@@ -105,11 +105,10 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
 
   if (existingUser) return;
 
-  // Developer emails for full access
-  const DEVELOPER_EMAILS = [
-    'helloautomagikal@gmail.com',
-    'morphylee22@gmail.com',
-  ];
+  // Developer emails for full access (configurable via env var)
+  const DEVELOPER_EMAILS = (process.env.DEVELOPER_EMAILS || 'helloautomagikal@gmail.com,morphylee22@gmail.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase());
   const isDeveloper = DEVELOPER_EMAILS.includes(email.toLowerCase());
 
   // Check if email is already verified
