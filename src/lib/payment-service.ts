@@ -1,11 +1,11 @@
-// Payment Service for Pitch Perfect
-// Supports: Paystack (South Africa), LemonSqueezy (Merchant of Record - International)
+// Payment Service for Pitch Perfect × Automagikal
+// Supports: Paystack (South Africa), Stripe (International), Zoho Billing (Enterprise), LemonSqueezy (Merchant of Record)
 
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
 
-export type PaymentGateway = 'paystack' | 'lemonsqueezy';
+export type PaymentGateway = 'paystack' | 'stripe' | 'zoho' | 'lemonsqueezy';
 export type Currency = 'ZAR' | 'USD' | 'EUR' | 'GBP';
 
 export interface PaymentCustomer {
@@ -134,42 +134,90 @@ export const SA_PRICING: Record<string, number> = {
 // Countries that use Paystack (South Africa focus)
 const PAYSTACK_COUNTRIES = ['ZA', 'ZAF', 'South Africa'];
 
+// Countries where Zoho Billing is preferred (enterprise customers)
+const ZOHO_BILLING_COUNTRIES = ['IN', 'IND', 'India']; // Zoho's primary market
+
+// Stripe price IDs (configured in Stripe Dashboard) — env vars per product
+const STRIPE_PRICE_IDS: Record<string, string | undefined> = {
+  'pitch-deck': process.env.STRIPE_PRICE_PITCH_DECK,
+  'elevator-script': process.env.STRIPE_PRICE_ELEVATOR_SCRIPT,
+  'elevator-live': process.env.STRIPE_PRICE_ELEVATOR_LIVE,
+  'pitch-deck-live': process.env.STRIPE_PRICE_PITCH_DECK_LIVE,
+  'master': process.env.STRIPE_PRICE_MASTER,
+};
+
+// Zoho Billing plan codes (configured in Zoho Billing)
+const ZOHO_PLAN_CODES: Record<string, string | undefined> = {
+  'pitch-deck': process.env.ZOHO_PLAN_PITCH_DECK,
+  'elevator-script': process.env.ZOHO_PLAN_ELEVATOR_SCRIPT,
+  'elevator-live': process.env.ZOHO_PLAN_ELEVATOR_LIVE,
+  'pitch-deck-live': process.env.ZOHO_PLAN_PITCH_DECK_LIVE,
+  'master': process.env.ZOHO_PLAN_MASTER,
+};
+
 // ============================================
 // GATEWAY ROUTING
 // ============================================
 
-export function determinePaymentGateway(country: string): PaymentGateway {
+/**
+ * Payment Gateway Routing Logic:
+ * - South Africa → Paystack (ZAR, local payment methods)
+ * - India → Zoho Billing (Zoho's strongest market)
+ * - Rest of World → Stripe (cards, Apple Pay, Google Pay)
+ * - Fallback → LemonSqueezy (Merchant of Record, handles tax compliance)
+ * 
+ * Override: If query param `gateway` is explicitly set, use that.
+ */
+export function determinePaymentGateway(country: string, explicitGateway?: string): PaymentGateway {
+  // Allow explicit gateway override (e.g., from frontend)
+  if (explicitGateway && ['paystack', 'stripe', 'zoho', 'lemonsqueezy'].includes(explicitGateway)) {
+    return explicitGateway as PaymentGateway;
+  }
+
   const normalizedCountry = country.toUpperCase();
-  
+
   // South Africa uses Paystack
   if (PAYSTACK_COUNTRIES.includes(normalizedCountry) || normalizedCountry === 'SOUTH AFRICA') {
     return 'paystack';
   }
-  
-  // All other countries use LemonSqueezy (Merchant of Record)
+
+  // India / Zoho-preferring markets use Zoho Billing
+  if (ZOHO_BILLING_COUNTRIES.includes(normalizedCountry)) {
+    return 'zoho';
+  }
+
+  // All other countries use Stripe (international card payments)
+  // LemonSqueezy is available as fallback if Stripe is not configured
+  if (process.env.STRIPE_SECRET_KEY) {
+    return 'stripe';
+  }
+
   return 'lemonsqueezy';
 }
 
 export function getCurrencyForCountry(country: string): Currency {
   const gateway = determinePaymentGateway(country);
-  
-  if (gateway === 'paystack') {
-    return 'ZAR';
+
+  switch (gateway) {
+    case 'paystack':
+      return 'ZAR';
+    case 'zoho':
+      return 'USD'; // Zoho Billing supports multi-currency, default USD
+    default:
+      return 'USD';
   }
-  
-  return 'USD';
 }
 
 export function getPriceForCountry(productId: string, country: string): { amount: number; currency: Currency } {
   const gateway = determinePaymentGateway(country);
-  
+
   if (gateway === 'paystack') {
     return {
       amount: SA_PRICING[productId] || PRODUCTS[productId]?.price * 18 || 0,
       currency: 'ZAR',
     };
   }
-  
+
   return {
     amount: PRODUCTS[productId]?.price || 0,
     currency: 'USD',
@@ -403,20 +451,261 @@ async function verifyLemonSqueezyPayment(orderId: string): Promise<PaymentResult
 }
 
 // ============================================
+// STRIPE INTEGRATION (International)
+// ============================================
+
+async function createStripeSession(
+  customer: PaymentCustomer,
+  productId: string,
+  metadata: Record<string, unknown>
+): Promise<PaymentSession> {
+  const product = PRODUCTS[productId];
+  if (!product) {
+    throw new Error(`Product not found: ${productId}`);
+  }
+
+  const priceId = STRIPE_PRICE_IDS[productId];
+  if (!priceId) {
+    throw new Error(`Stripe price ID not configured for product: ${productId}. Set env var STRIPE_PRICE_${productId.toUpperCase().replace(/-/g, '_')}`);
+  }
+
+  // Use Stripe Checkout Sessions API
+  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+    },
+    body: new URLSearchParams({
+      mode: 'payment',
+      payment_method_types: 'card',
+      line_items: `price:${priceId},quantity:1`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/cancel`,
+      customer_email: customer.email,
+      metadata: JSON.stringify({
+        product_id: productId,
+        customer_name: customer.name,
+        customer_country: customer.country,
+        company_id: customer.companyId,
+        ...metadata,
+      }),
+      // Allow Apple Pay and Google Pay
+      payment_method_types: 'card,apple_pay,google_pay',
+    }).toString(),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Stripe error: ${response.status} - ${error}`);
+  }
+
+  const session = await response.json();
+
+  return {
+    id: session.id,
+    gateway: 'stripe',
+    checkoutUrl: session.url,
+    amount: session.amount_total / 100,
+    currency: session.currency.toUpperCase() as Currency,
+    customerEmail: customer.email,
+    productId,
+    metadata,
+    expiresAt: new Date(session.expires_at * 1000),
+  };
+}
+
+async function verifyStripePayment(sessionId: string): Promise<PaymentResult> {
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Stripe verification failed: ${response.status}`);
+  }
+
+  const session = await response.json();
+
+  return {
+    success: session.payment_status === 'paid',
+    transactionId: session.payment_intent || session.id,
+    gateway: 'stripe',
+    amount: session.amount_total / 100,
+    currency: session.currency.toUpperCase() as Currency,
+    customerEmail: session.customer_details?.email || session.customer_email,
+    productId: session.metadata?.product_id || '',
+    metadata: session.metadata || {},
+    processedAt: new Date(),
+  };
+}
+
+// ============================================
+// ZOHO BILLING INTEGRATION (Enterprise)
+// ============================================
+
+async function createZohoBillingSession(
+  customer: PaymentCustomer,
+  productId: string,
+  metadata: Record<string, unknown>
+): Promise<PaymentSession> {
+  const product = PRODUCTS[productId];
+  if (!product) {
+    throw new Error(`Product not found: ${productId}`);
+  }
+
+  const planCode = ZOHO_PLAN_CODES[productId];
+  if (!planCode) {
+    throw new Error(`Zoho Billing plan not configured for product: ${productId}. Set env var ZOHO_PLAN_${productId.toUpperCase().replace(/-/g, '_')}`);
+  }
+
+  const zohoOrgId = process.env.ZOHO_BILLING_ORG_ID;
+  if (!zohoOrgId) {
+    throw new Error('ZOHO_BILLING_ORG_ID environment variable is required');
+  }
+
+  // Step 1: Create or retrieve Zoho Billing customer
+  const customerPayload = {
+    name: customer.name,
+    email: customer.email,
+    company_name: customer.companyId || customer.name,
+  country: customer.country,
+  custom_fields: Object.entries(metadata).map(([key, value]) => ({
+      label: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      value: String(value),
+    })),
+  };
+
+  const customerResponse = await fetch(`https://billing.zoho.com/api/v3/customers?organization_id=${zohoOrgId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}`,
+    },
+    body: JSON.stringify(customerPayload),
+  });
+
+  let zohoCustomerId: string;
+  if (customerResponse.ok) {
+    const customerData = await customerResponse.json();
+    zohoCustomerId = customerData.customer?.customer_id || '';
+  } else {
+    // Try to find existing customer by email
+    const findResponse = await fetch(
+      `https://billing.zoho.com/api/v3/customers?email=${customer.email}&organization_id=${zohoOrgId}`,
+      {
+        headers: { 'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}` },
+      }
+    );
+    if (findResponse.ok) {
+      const findData = await findResponse.json();
+      zohoCustomerId = findData.customers?.[0]?.customer_id || '';
+    }
+  }
+
+  if (!zohoCustomerId) {
+    throw new Error('Failed to create or find Zoho Billing customer');
+  }
+
+  // Step 2: Create a hosted checkout page
+  const checkoutPayload = {
+    customer_id: zohoCustomerId,
+    plan_code: planCode,
+    reference_id: `PP-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    redirect_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success`,
+    custom_fields: Object.entries(metadata).map(([key, value]) => ({
+      label: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      value: String(value),
+    })),
+  };
+
+  const checkoutResponse = await fetch(
+    `https://billing.zoho.com/api/v3/hostedpages/new?organization_id=${zohoOrgId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}`,
+      },
+      body: JSON.stringify(checkoutPayload),
+    }
+  );
+
+  if (!checkoutResponse.ok) {
+    const error = await checkoutResponse.text();
+    throw new Error(`Zoho Billing error: ${checkoutResponse.status} - ${error}`);
+  }
+
+  const checkoutData = await checkoutResponse.json();
+
+  return {
+    id: checkoutData.hostedpage?.hostedpage_id || checkoutPayload.reference_id,
+    gateway: 'zoho',
+    checkoutUrl: checkoutData.hostedpage?.url || '',
+    amount: product.price,
+    currency: product.currency,
+    customerEmail: customer.email,
+    productId,
+    metadata: { ...metadata, zohoCustomerId, zohoOrgId },
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+  };
+}
+
+async function verifyZohoBillingPayment(hostedPageId: string): Promise<PaymentResult> {
+  const zohoOrgId = process.env.ZOHO_BILLING_ORG_ID;
+
+  const response = await fetch(
+    `https://billing.zoho.com/api/v3/hostedpages/${hostedPageId}?organization_id=${zohoOrgId}`,
+    {
+      headers: { 'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Zoho Billing verification failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const hostedPage = data.hostedpage || {};
+
+  return {
+    success: hostedPage.status === 'success' || hostedPage.status === 'completed',
+    transactionId: hostedPage.reference_id || hostedPageId,
+    gateway: 'zoho',
+    amount: hostedPage.amount_paid || 0,
+    currency: 'USD',
+    customerEmail: '', // Fetched from subscription details
+    productId: '',
+    metadata: { zohoSubscriptionId: hostedPage.subscription_id },
+    processedAt: new Date(),
+  };
+}
+
+// ============================================
 // UNIFIED PAYMENT INTERFACE
 // ============================================
 
 export async function createCheckoutSession(
   customer: PaymentCustomer,
   productId: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  explicitGateway?: string
 ): Promise<PaymentSession> {
-  const gateway = determinePaymentGateway(customer.country);
-  
-  if (gateway === 'paystack') {
-    return createPaystackSession(customer, productId, metadata);
-  } else {
-    return createLemonSqueezySession(customer, productId, metadata);
+  const gateway = determinePaymentGateway(customer.country, explicitGateway);
+
+  switch (gateway) {
+    case 'paystack':
+      return createPaystackSession(customer, productId, metadata);
+    case 'stripe':
+      return createStripeSession(customer, productId, metadata);
+    case 'zoho':
+      return createZohoBillingSession(customer, productId, metadata);
+    case 'lemonsqueezy':
+      return createLemonSqueezySession(customer, productId, metadata);
+    default:
+      throw new Error(`Unknown payment gateway: ${gateway}`);
   }
 }
 
@@ -424,10 +713,17 @@ export async function verifyPayment(
   gateway: PaymentGateway,
   reference: string
 ): Promise<PaymentResult> {
-  if (gateway === 'paystack') {
-    return verifyPaystackPayment(reference);
-  } else {
-    return verifyLemonSqueezyPayment(reference);
+  switch (gateway) {
+    case 'paystack':
+      return verifyPaystackPayment(reference);
+    case 'stripe':
+      return verifyStripePayment(reference);
+    case 'zoho':
+      return verifyZohoBillingPayment(reference);
+    case 'lemonsqueezy':
+      return verifyLemonSqueezyPayment(reference);
+    default:
+      throw new Error(`Unknown payment gateway: ${gateway}`);
   }
 }
 
@@ -463,6 +759,31 @@ export function verifyLemonSqueezyWebhook(signature: string, body: string): bool
   return signature === hash;
 }
 
+export function verifyStripeWebhook(signature: string, body: string): boolean {
+  const crypto = require('crypto');
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return false;
+  const expectedSig = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(body)
+    .digest('hex');
+  // Stripe signatures are in format: t=timestamp,v1=signature
+  const sigParts = signature.split(',');
+  const v1Part = sigParts.find(s => s.startsWith('v1='));
+  return v1Part ? v1Part.replace('v1=', '') === expectedSig : false;
+}
+
+export function verifyZohoWebhook(signature: string, body: string): boolean {
+  const crypto = require('crypto');
+  const webhookSecret = process.env.ZOHO_BILLING_WEBHOOK_SECRET;
+  if (!webhookSecret) return false;
+  const hash = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(body)
+    .digest('hex');
+  return hash === signature;
+}
+
 export function parseWebhookPayload(
   gateway: PaymentGateway,
   body: string,
@@ -470,24 +791,31 @@ export function parseWebhookPayload(
 ): { valid: boolean; event?: string; data?: Record<string, unknown> } {
   try {
     const parsed = JSON.parse(body);
-    
-    if (gateway === 'paystack') {
-      const valid = verifyPaystackWebhook(signature, body);
-      return {
-        valid,
-        event: parsed.event,
-        data: parsed.data,
-      };
-    } else if (gateway === 'lemonsqueezy') {
-      const valid = verifyLemonSqueezyWebhook(signature, body);
-      return {
-        valid,
-        event: parsed.meta?.event_name || parsed.event,
-        data: parsed.data,
-      };
+
+    switch (gateway) {
+      case 'paystack': {
+        const valid = verifyPaystackWebhook(signature, body);
+        return { valid, event: parsed.event, data: parsed.data };
+      }
+      case 'stripe': {
+        const valid = verifyStripeWebhook(signature, body);
+        return { valid, event: parsed.type, data: parsed.data };
+      }
+      case 'zoho': {
+        const valid = verifyZohoWebhook(signature, body);
+        return { valid, event: parsed.event_type || parsed.event, data: parsed.data };
+      }
+      case 'lemonsqueezy': {
+        const valid = verifyLemonSqueezyWebhook(signature, body);
+        return {
+          valid,
+          event: parsed.meta?.event_name || parsed.event,
+          data: parsed.data,
+        };
+      }
+      default:
+        return { valid: false };
     }
-    
-    return { valid: false };
   } catch (e) {
     return { valid: false };
   }
