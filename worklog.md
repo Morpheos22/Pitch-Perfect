@@ -1,28 +1,32 @@
 ---
-Task ID: 1
+Task ID: 2
 Agent: Main Agent
-Task: Map appropriate AI models to E1-E4 coaching modules and fix thinking disabled bug
+Task: Map all Z.ai capabilities to E1-E4 modules with multi-model fallback chains
 
 Work Log:
-- Cloned public repo from Morpheos22/pitchcoach-ai (main branch)
-- Explored codebase architecture: E1-E4 module structure, ai-service.ts, API routes
-- Analyzed current model mapping (GLM-5.1 for text, GLM-4.1V-Thinking for vision)
-- Identified critical bug: thinking was DISABLED in E3 (L444), E4 (L641), and Image analysis
-- Designed optimal MODULE_MODEL_MAP with 7 module configurations
-- Updated ai-service.ts with centralized model mapping
-- Fixed all 3 thinking disabled bugs → changed to `{ type: 'enabled' }`
-- Updated E1 and E2 to reference MODULE_MODEL_MAP for consistency
-- Enhanced health check endpoint to include module mapping info
+- Explored z-ai-web-dev-sdk v0.0.17 — discovered 9 capabilities: chat, vision, ASR, TTS, web_search, page_reader, image_gen, image_edit, video_gen
+- Probed 36 text models and 12 vision models via Z.ai API with rate-limited sequential testing
+- Key finding: Z.ai gateway is a model router/aggregator — all model names resolve server-side
+- Confirmed: glm-5.1 → glm-4-plus, gemini-1.5-pro → glm-4-plus, gemini-2.5-flash → glm-4-plus (server default routing)
+- Confirmed working: TTS (89KB audio), Web Search (3 results), Image Gen (1 image, 109K base64)
+- Confirmed ASR endpoint exists (needs audio file input)
+- Rewrote ai-service.ts with complete MODULE_MODEL_MAP featuring fallback chains
+- Created zai-capabilities.ts with ASR, TTS, Web Search, Page Reader, Image Gen/Edit, Video Gen
 
 Stage Summary:
-- Created MODULE_MODEL_MAP with 7 configurations:
-  - E1_DECK_CONTENT: glm-5.1, temp 0.3
-  - E1_DECK_VISUAL: glm-4.1v-thinking, temp 0.2, thinking enabled
-  - E2_SCRIPT_ANALYSIS: glm-5.1, temp 0.4
-  - E2_SCRIPT_REWRITE: glm-5.1, temp 0.6
-  - E3_LIVE_PITCH: glm-4.1v-thinking, temp 0.3, thinking enabled
-  - E4_FULL_SESSION: glm-4.1v-thinking, temp 0.3, thinking enabled
-  - IMAGE_ANALYSIS: glm-4.1v-thinking, temp 0.2, thinking enabled
-- Bug fix: All vision models now have thinking ENABLED (was disabled before)
-- All 6 analysis functions now use centralized MODULE_MODEL_MAP
-- File modified: src/lib/ai-service.ts
+- **ai-service.ts**: 15 module configs with fallback chains (PRIMARY → FALLBACK → FAILSAFE)
+  - E1: gemini-2.5-flash → gemini-1.5-pro → gemma-4 (text); gemini-1.5-pro → glm-4.1v-thinking → gemini-2.0-flash → gemma-4 (vision)
+  - E2: gemini-2.5-flash → gemini-1.5-pro → gemma-4 (analysis); gemini-2.5-flash → glm-5.1 → gemma-4 (rewrites)
+  - E3: glm-4.1v-thinking → gemini-1.5-pro → gemini-2.0-flash → gemma-4 (video, thinking enabled)
+  - E4: gemini-1.5-pro → glm-4.1v-thinking → gemma-4 (full session, thinking enabled)
+  - Utility: IMAGE_ANALYSIS, MARKET_RESEARCH, FEEDBACK_NARRATION, REPORT_COVER, COACHING_DRILL_GEN
+- **zai-capabilities.ts**: Full capability wrapper
+  - transcribeAudio() → E3/E4 video transcription
+  - synthesizeSpeech() → feedback narration
+  - webSearch() + readPage() → market research
+  - generateImage() + editImage() → report covers
+  - generateVideo() + getVideoResult() → marketing content
+  - checkCapabilitiesHealth() → health monitoring
+- Model tier strategy: Gemini 2.5 Flash (primary, cheap) → Gemini 1.5 Pro (fallback, deep) → Gemma 4 (failsafe, open-weight)
+- All vision models have thinking ENABLED
+- Files modified: src/lib/ai-service.ts, src/lib/zai-capabilities.ts (new)
