@@ -5,11 +5,11 @@ import { Logo } from "./logo";
 
 const footerLinks = {
   product: [
-    { label: "Pitch Deck Analyser", href: "/pricing#pitch-deck" },
-    { label: "Elevator Script Check", href: "/pricing#elevator-script" },
-    { label: "Elevator Pitch Live", href: "/pricing#elevator-live" },
-    { label: "Pitch Deck Live", href: "/pricing#pitch-live" },
-    { label: "Master Pitch Analyser", href: "/pricing#master" },
+    { label: "Pitch Deck Analyser", href: "/pitch-deck-analyser" },
+    { label: "Script Check", href: "/elevator-script" },
+    { label: "Elevator Pitch Live", href: "/elevator-pitch-live" },
+    { label: "Full Pitch Session", href: "/coach/full" },
+    { label: "Founder Coaching", href: "/founder" },
   ],
   company: [
     { label: "About", href: "/about" },
