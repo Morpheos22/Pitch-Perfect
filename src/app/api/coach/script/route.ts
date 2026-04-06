@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { script, targetAudience, targetDuration } = body;
+    const { script, targetAudience, targetDuration, sessionName } = body;
 
     if (!script || typeof script !== "string") {
       return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     const savedScript = await prisma.pitchScript.create({
       data: {
         userId: user.id,
+        fileName: sessionName || null,
         inputType: "TEXT",
         inputText: script,
         targetAudience: targetAudience || "investor",

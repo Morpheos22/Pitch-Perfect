@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle, Type, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+
+const PLAN_LIMITS: Record<string, { e2: number }> = {
+  FREE: { e2: 1 },
+  STARTER: { e2: 10 },
+  PROFESSIONAL: { e2: 30 },
+  ENTERPRISE: { e2: 999 },
+};
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -27,6 +34,31 @@ export default function ElevatorScriptNewPage() {
   const [scriptText, setScriptText] = useState("");
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Session counter state
+  const [usedCount, setUsedCount] = useState<number | null>(null);
+  const [limitCount, setLimitCount] = useState<number | null>(null);
+  const [isEnterprise, setIsEnterprise] = useState(false);
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/sync");
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success && json.user) {
+        const plan = json.user.subscription?.plan || "FREE";
+        const usage = json.user.usage;
+        const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
+        setUsedCount(usage?.e2ScriptCoachSessions ?? 0);
+        setLimitCount(limits.e2);
+        setIsEnterprise(plan === "ENTERPRISE");
+      }
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
   const wordCount = scriptText.trim() ? scriptText.trim().split(/\s+/).length : 0;
   const estimatedDuration = Math.round(wordCount / 150 * 60); // ~150 words per minute
@@ -88,6 +120,7 @@ export default function ElevatorScriptNewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           script: scriptContent,
+          sessionName: sessionName,
           targetAudience: "investors",
           targetDuration: 60,
         }),
@@ -120,6 +153,19 @@ export default function ElevatorScriptNewPage() {
     }
   };
 
+  // Session counter display
+  const sessionLabel = isEnterprise
+    ? "Unlimited sessions"
+    : usedCount !== null && limitCount !== null
+      ? `Session ${usedCount + 1} of ${limitCount}`
+      : "Loading...";
+
+  const remainingLabel = isEnterprise
+    ? "Unlimited"
+    : usedCount !== null && limitCount !== null
+      ? `${Math.max(0, limitCount - usedCount)} remaining`
+      : "—";
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
@@ -134,9 +180,9 @@ export default function ElevatorScriptNewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Session</p>
-              <p className="font-semibold">Session 1 of 2</p>
+              <p className="font-semibold">{sessionLabel}</p>
             </div>
-            <Badge variant="secondary">1 session remaining</Badge>
+            <Badge variant="secondary">{remainingLabel}</Badge>
           </div>
         </CardContent>
       </Card>

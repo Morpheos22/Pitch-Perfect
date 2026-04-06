@@ -212,7 +212,7 @@ export default function ElevatorScriptSessionPage() {
                 <span className="font-medium">{inputType}</span>
               </div>
             </div>
-            <Badge variant="secondary">Session 1 of 2</Badge>
+            <Badge variant="secondary">Analysis Complete</Badge>
           </div>
         </CardContent>
       </Card>
@@ -315,7 +315,7 @@ export default function ElevatorScriptSessionPage() {
           View All Sessions
         </Button>
         <Button onClick={() => router.push("/elevator-script/new")} className="bg-primary hover:bg-primary/90">
-          Start Cycle 2
+          New Analysis
           <ArrowRight className="h-4 w-4 ml-1" />
         </Button>
       </div>
