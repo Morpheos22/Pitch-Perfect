@@ -110,6 +110,9 @@ export default function DashboardPage() {
 
   const fetchUserData = useCallback(async () => {
     try {
+      // POST first to ensure user is synced to DB (handles Clerk webhook race condition)
+      await fetch("/api/user/sync", { method: "POST" }).catch(() => {});
+      // Then GET the fresh user data
       const res = await fetch("/api/user/sync");
       if (!res.ok) throw new Error("Failed to fetch user data");
       const json = await res.json();
@@ -195,7 +198,7 @@ export default function DashboardPage() {
         recentSessions.push({
           id: f.id, type: "Full Session", label: "Full Pitch Session",
           name: f.pitchDeck?.fileName || "Full Pitch Session", score: f.overallReadinessScore,
-          date: f.createdAt, href: `/full-session/session/${f.id}`,
+          date: f.createdAt, href: `/coach/full/session/${f.id}`,
           icon: TrendingUp, colorClass: "bg-emerald-500/10 text-emerald-500",
         });
       });
@@ -242,7 +245,7 @@ export default function DashboardPage() {
     {
       id: "m4", title: "Full Pitch Session",
       description: "Complete 30-minute session with deck and video analysis",
-      icon: TrendingUp, href: "/pricing",
+      icon: TrendingUp, href: "/coach/full/new",
       color: "bg-emerald-500/10 text-emerald-500",
       sessions: usage?.e4FullPitchSessions ?? 0, limit: limits.e4,
       status: limits.e4 > 0 ? ("active" as const) : ("upgrade" as const),
