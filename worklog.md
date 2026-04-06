@@ -499,3 +499,83 @@ Design features:
 #### Lint Results
 - 0 errors, 4 pre-existing warnings (all in unrelated elevator-pitch-live files)
 - All 6 modified files pass lint cleanly
+
+---
+## Task ID: 7 - post-onboarding-bugs
+### Work Task
+Fix 7 problems encountered after user sign-in: onboarding dark theme, hardcoded session counters on 3 "new" pages, paste content for deck analyser, session result page badges, and missing sessionName save in coach APIs.
+
+### Work Summary
+
+#### PROBLEM 1: Onboarding page hardcoded dark theme
+**File:** `src/app/(dashboard)/onboarding/page.tsx`
+- Replaced `bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900` → `bg-background`
+- Replaced `bg-slate-800/50 backdrop-blur` on Card → removed (uses default Card styling)
+- Replaced `text-white` → `text-foreground`
+- Replaced `text-slate-400` → `text-muted-foreground`
+- Replaced `bg-slate-600` (progress dots) → `bg-muted`
+- Replaced `bg-indigo-500/20` → `bg-primary/10`
+- Replaced `text-indigo-400` → `text-primary`
+- Replaced `border-slate-600` / `border-slate-700` → `border-border`
+- Replaced `bg-slate-700/50` / `bg-slate-700/30` → `bg-muted/50`
+- Replaced `text-indigo-400 hover:text-indigo-300` → `text-primary hover:text-primary/80`
+- Replaced `border-slate-600/700` → `border-border` / `border-primary/50`
+- Replaced `text-red-400 bg-red-500/10` → `text-destructive bg-destructive/10`
+- Page now fully theme-aware using shadcn/ui CSS variables
+
+#### PROBLEM 2: Deck Analyser new page — hardcoded session counter + paste tab
+**File:** `src/app/(dashboard)/pitch-deck-analyser/new/page.tsx`
+- Added `PLAN_LIMITS` constant matching dashboard (FREE:1, STARTER:5, PROFESSIONAL:20, ENTERPRISE:999)
+- Added `useCallback` + `useEffect` to fetch user data from `/api/user/sync`
+- Session counter now shows real data: `Session {used+1} of {limit}` or "Unlimited sessions" for Enterprise
+- Badge shows `{limit - used} remaining` or "Unlimited"
+- Shows "Loading..." while data fetches
+- **Added Paste Content tab** (shadcn Tabs) with two modes:
+  1. "Upload Deck" — existing file upload (PDF/PPTX/PPT)
+  2. "Paste Content" — textarea (20,000 char limit, word count display)
+- When paste tab is selected, sends FormData with `content` field to `/api/coach/deck`
+- Validation: requires 100+ characters for paste mode
+- Submit button disabled logic updated for both modes
+
+#### PROBLEM 3: Elevator Script new page — hardcoded session counter + send sessionName
+**File:** `src/app/(dashboard)/elevator-script/new/page.tsx`
+- Added `PLAN_LIMITS` constant for E2 (FREE:1, STARTER:10, PROFESSIONAL:30, ENTERPRISE:999)
+- Added real session counter fetching from `/api/user/sync`
+- Shows `Session {used+1} of {limit}` or "Unlimited sessions" for Enterprise
+- **Fixed: now sends `sessionName` in the API request body** to `/api/coach/script`
+- Previously sessionName was collected but never sent
+
+#### PROBLEM 4: Elevator Pitch Live new page — hardcoded data
+**File:** `src/app/(dashboard)/elevator-pitch-live/new/page.tsx`
+- Removed hardcoded `recentSessions` array (was: 2 fake sessions with scores)
+- Removed hardcoded `scriptSessions = { used: 1, total: 2 }` and `liveSessions = { used: 1, total: 3 }`
+- Added `PLAN_LIMITS` constant for E2+E3
+- Added `useEffect` that fetches both `/api/user/sync` AND `/api/history?limit=5` in parallel
+- Session counters now show real usage data with "Unlimited" for Enterprise
+- Progress bars show real usage percentages
+- Recent sessions list built from real history API data (scripts + videos)
+- Added loading state (Loader2 spinner) while data loads
+- Added empty state card when no sessions exist
+- Uses `Link` component instead of `div` for recent sessions (better UX)
+
+#### PROBLEM 5: Session result pages — hardcoded badges
+**Files modified:**
+- `src/app/(dashboard)/pitch-deck-analyser/session/[id]/page.tsx` — "Cycle 1 of 2" → "Analysis Complete", "Start Cycle 2" → "New Analysis"
+- `src/app/(dashboard)/elevator-script/session/[id]/page.tsx` — "Session 1 of 2" → "Analysis Complete", "Start Cycle 2" → "New Analysis"
+- `src/app/(dashboard)/coach/full/session/[id]/page.tsx` — Already functional, no hardcoded counters found ✅
+
+All three session pages already:
+- Fetch session data from appropriate API on mount
+- Show loading states, error states, not-found states
+- Show real scores and feedback from API
+- Have "Back to Dashboard" buttons
+
+#### PROBLEM 7: Coach API routes — sessionName saving
+**Files modified:**
+- `src/app/api/coach/deck/route.ts` — Now reads `sessionName` from FormData and uses it as `fileName` when saving to DB. Falls back to `file?.name` or `"text-input"`.
+- `src/app/api/coach/script/route.ts` — Now reads `sessionName` from JSON body and saves it as `fileName` in the PitchScript record. Previously `fileName` was always null for text input.
+
+#### Lint Results
+- 0 new errors (1 pre-existing TS error in onboarding page: Clerk SDK `publicMetadata` type issue)
+- 4 pre-existing warnings (unused eslint-disable directives in unrelated elevator-pitch-live files)
+- All 8 modified files pass lint cleanly

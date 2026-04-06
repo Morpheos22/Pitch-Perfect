@@ -211,7 +211,7 @@ export default function PitchDeckSessionPage() {
       {/* Overall Score */}
       <Card className="border-primary/20">
         <CardContent className="py-8 text-center">
-          <Badge variant="secondary" className="mb-4">Cycle 1 of 2</Badge>
+          <Badge variant="secondary" className="mb-4">Analysis Complete</Badge>
           <div className="flex items-center justify-center gap-6">
             <div className="text-center">
               <div className={`text-6xl font-bold ${getScoreColor(overallScore)}`}>
@@ -367,7 +367,7 @@ export default function PitchDeckSessionPage() {
           View All Sessions
         </Button>
         <Button onClick={() => router.push("/pitch-deck-analyser/new")} className="bg-primary hover:bg-primary/90">
-          Start Cycle 2
+          New Analysis
           <ArrowRight className="h-4 w-4 ml-1" />
         </Button>
       </div>

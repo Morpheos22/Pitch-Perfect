@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File;
     const deckContent = formData.get("content") as string;
+    const sessionName = formData.get("sessionName") as string | null;
 
     if (!file && !deckContent) {
       return NextResponse.json(
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
     const savedDeck = await prisma.pitchDeck.create({
       data: {
         userId: user.id,
-        fileName: file?.name || "text-input",
+        fileName: sessionName || file?.name || "text-input",
         fileUrl: "",
         fileSize: file?.size || 0,
         fileType: file?.type || "text/plain",

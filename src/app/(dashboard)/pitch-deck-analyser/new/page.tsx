@@ -1,13 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, FileText, ChevronDown, ChevronUp, AlertCircle, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+
+const PLAN_LIMITS: Record<string, { e1: number }> = {
+  FREE: { e1: 1 },
+  STARTER: { e1: 5 },
+  PROFESSIONAL: { e1: 20 },
+  ENTERPRISE: { e1: 999 },
+};
 
 const frameworkElements = [
   { name: "Title Slide", description: "Clear company name and tagline" },
@@ -34,8 +43,35 @@ export default function PitchDeckAnalyserNewPage() {
   const router = useRouter();
   const [sessionName, setSessionName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [deckText, setDeckText] = useState("");
+  const [inputTab, setInputTab] = useState<"upload" | "paste">("upload");
   const [uploading, setUploading] = useState(false);
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
+
+  // Session counter state
+  const [usedCount, setUsedCount] = useState<number | null>(null);
+  const [limitCount, setLimitCount] = useState<number | null>(null);
+  const [isEnterprise, setIsEnterprise] = useState(false);
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/sync");
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success && json.user) {
+        const plan = json.user.subscription?.plan || "FREE";
+        const usage = json.user.usage;
+        const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
+        setUsedCount(usage?.e1DeckAnalyses ?? 0);
+        setLimitCount(limits.e1);
+        setIsEnterprise(plan === "ENTERPRISE");
+      }
+    } catch {
+      // Non-critical, use fallback display
+    }
+  }, []);
+
+  useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -61,46 +97,77 @@ export default function PitchDeckAnalyserNewPage() {
       toast.error("Please enter a session name");
       return;
     }
-    if (!file) {
+    if (inputTab === "upload" && !file) {
       toast.error("Please upload a file");
+      return;
+    }
+    if (inputTab === "paste" && deckText.trim().length < 100) {
+      toast.error("Please provide more detailed pitch deck content (at least 100 characters)");
       return;
     }
 
     setUploading(true);
     
     try {
-      // Create form data
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("sessionName", sessionName);
+      if (inputTab === "paste") {
+        // Send as FormData with content field (API supports this)
+        const formData = new FormData();
+        formData.append("content", deckText);
+        formData.append("sessionName", sessionName);
 
-      // Call the API
-      const response = await fetch("/api/coach/deck", {
-        method: "POST",
-        body: formData,
-      });
+        const response = await fetch("/api/coach/deck", {
+          method: "POST",
+          body: formData,
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        if (response.status === 403) {
-          toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
-          router.push("/pitch-deck-analyser/upgrade");
-          return;
+        if (!response.ok) {
+          if (response.status === 403) {
+            toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
+            router.push("/pitch-deck-analyser/upgrade");
+            return;
+          }
+          if (response.status === 401) {
+            toast.error("Please sign in to continue");
+            router.push("/sign-in");
+            return;
+          }
+          throw new Error(data.error || "Analysis failed");
         }
-        if (response.status === 401) {
-          toast.error("Please sign in to continue");
-          router.push("/sign-in");
-          return;
+
+        toast.success("Analysis complete!");
+        router.push(`/pitch-deck-analyser/session/${data.id}`);
+      } else {
+        // File upload
+        const formData = new FormData();
+        formData.append("file", file!);
+        formData.append("sessionName", sessionName);
+
+        const response = await fetch("/api/coach/deck", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (response.status === 403) {
+            toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
+            router.push("/pitch-deck-analyser/upgrade");
+            return;
+          }
+          if (response.status === 401) {
+            toast.error("Please sign in to continue");
+            router.push("/sign-in");
+            return;
+          }
+          throw new Error(data.error || "Analysis failed");
         }
-        throw new Error(data.error || "Analysis failed");
+
+        toast.success("Analysis complete!");
+        router.push(`/pitch-deck-analyser/session/${data.id}`);
       }
-
-      toast.success("Analysis complete!");
-      
-      // Navigate to the session results page
-      router.push(`/pitch-deck-analyser/session/${data.id}`);
-      
     } catch (error) {
       console.error("Upload error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to analyze deck");
@@ -108,6 +175,19 @@ export default function PitchDeckAnalyserNewPage() {
       setUploading(false);
     }
   };
+
+  // Session counter display
+  const sessionLabel = isEnterprise
+    ? "Unlimited sessions"
+    : usedCount !== null && limitCount !== null
+      ? `Session ${usedCount + 1} of ${limitCount}`
+      : "Loading...";
+
+  const remainingLabel = isEnterprise
+    ? "Unlimited"
+    : usedCount !== null && limitCount !== null
+      ? `${Math.max(0, limitCount - usedCount)} remaining`
+      : "—";
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -123,9 +203,9 @@ export default function PitchDeckAnalyserNewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Session</p>
-              <p className="font-semibold">Session 1 of 2</p>
+              <p className="font-semibold">{sessionLabel}</p>
             </div>
-            <Badge variant="secondary">1 session remaining</Badge>
+            <Badge variant="secondary">{remainingLabel}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -195,47 +275,75 @@ export default function PitchDeckAnalyserNewPage() {
         </CardContent>
       </Card>
 
-      {/* File Upload */}
+      {/* File Upload / Paste Content Tabs */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Upload Your Deck</CardTitle>
-          <CardDescription>PDF, PPTX or PPT • Maximum 50MB</CardDescription>
+          <CardTitle className="text-lg">Your Deck Content</CardTitle>
+          <CardDescription>Upload a deck file or paste your content directly</CardDescription>
         </CardHeader>
         <CardContent>
-          {!file ? (
-            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-              <input
-                type="file"
-                accept=".pdf,.pptx,.ppt"
-                onChange={handleFileChange}
-                className="hidden"
-                id="file-upload"
+          <Tabs value={inputTab} onValueChange={(v) => setInputTab(v as "upload" | "paste")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="upload">Upload Deck</TabsTrigger>
+              <TabsTrigger value="paste">Paste Content</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="upload" className="mt-4">
+              {!file ? (
+                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".pdf,.pptx,.ppt"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="font-medium">Drag your deck here, or click to browse</p>
+                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT up to 50MB</p>
+                  </label>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{file.name}</p>
+                      <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-secondary" />
+                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="paste" className="mt-4">
+              <Textarea
+                placeholder="Paste your pitch deck content here — slide headings, bullet points, key data..."
+                value={deckText}
+                onChange={(e) => setDeckText(e.target.value)}
+                maxLength={20000}
+                className="min-h-[250px]"
               />
-              <label htmlFor="file-upload" className="cursor-pointer">
-                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="font-medium">Drag your deck here, or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT up to 50MB</p>
-              </label>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="font-medium">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                </div>
+              <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
+                <span>{deckText.trim().split(/\s+/).filter(Boolean).length} words</span>
+                <span>{deckText.length}/20,000</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-secondary" />
-                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-                  Remove
-                </Button>
-              </div>
-            </div>
-          )}
+              {deckText.length > 0 && deckText.trim().length < 100 && (
+                <p className="text-sm text-yellow-500 mt-2">
+                  Please provide more content for a meaningful analysis (at least 100 characters).
+                </p>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -246,7 +354,11 @@ export default function PitchDeckAnalyserNewPage() {
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!sessionName.trim() || !file || uploading}
+          disabled={
+            !sessionName.trim() ||
+            (inputTab === "upload" ? !file : deckText.trim().length < 100) ||
+            uploading
+          }
           className="bg-primary hover:bg-primary/90"
         >
           {uploading ? (
