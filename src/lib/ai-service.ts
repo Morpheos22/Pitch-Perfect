@@ -86,14 +86,80 @@ async function getZai() {
 
 export const AI_MODELS = {
   // Z.ai GLM Models - Text Analysis (Latest Flagship)
-  GLM_TEXT: 'glm-5.1',              // Latest flagship text model (E1, E2)
+  GLM_TEXT: 'glm-5.1',              // Latest flagship text model
   
   // Z.ai GLM Models - Vision Analysis (Latest Flagship)
-  GLM_VISION: 'glm-4.1v-thinking',  // Latest vision model with thinking (E3)
-  GLM_VISION_PRO: 'glm-4.1v-thinking', // Deep video analysis with thinking (E4)
+  GLM_VISION: 'glm-4.1v-thinking',  // Latest vision model with thinking
+  GLM_VISION_PRO: 'glm-4.1v-thinking', // Deep video analysis with thinking
 } as const;
 
 const AI_MODELS_LIST = Object.values(AI_MODELS);
+
+// ============================================
+// MODULE → MODEL MAPPING
+// ============================================
+
+export const MODULE_MODEL_MAP = {
+  // E1: Pitch Deck Analyser
+  // - Text content analysis: GLM-5.1 (structured scoring, 8-dimension framework)
+  // - Visual/slide audit: GLM-4.1V-Thinking (design, typography, layout)
+  E1_DECK_CONTENT: {
+    model: AI_MODELS.GLM_TEXT,
+    temperature: 0.3,
+    description: 'Pitch deck text content analysis (problem, solution, market, team, financials, ask)',
+  },
+  E1_DECK_VISUAL: {
+    model: AI_MODELS.GLM_VISION,
+    temperature: 0.2,
+    thinkingEnabled: true,
+    description: 'Pitch deck visual audit (design consistency, readability, typography, color scheme)',
+  },
+
+  // E2: Elevator Pitch Script Coach
+  // - Script analysis: GLM-5.1 (5-element framework: hook, problem, solution, credibility, CTA)
+  // - Script rewrites: GLM-5.1 (higher temperature for creative alternatives)
+  E2_SCRIPT_ANALYSIS: {
+    model: AI_MODELS.GLM_TEXT,
+    temperature: 0.4,
+    description: 'Elevator pitch script analysis (5-element scoring, tone, duration)',
+  },
+  E2_SCRIPT_REWRITE: {
+    model: AI_MODELS.GLM_TEXT,
+    temperature: 0.6,
+    description: 'Elevator pitch script rewriting (creative alternatives, hook variants)',
+  },
+
+  // E3: Live Elevator Pitch Coach (video ≤3 min)
+  // - Delivery analysis: GLM-4.1V-Thinking (pace, clarity, filler words, energy, confidence)
+  // - Body language: GLM-4.1V-Thinking (eye contact, posture, gestures, facial expressions)
+  E3_LIVE_PITCH: {
+    model: AI_MODELS.GLM_VISION,
+    temperature: 0.3,
+    thinkingEnabled: true,
+    description: 'Short-form video pitch analysis (delivery, body language, coaching drills)',
+  },
+
+  // E4: Full Pitch Session (video ≤30 min + deck)
+  // - Comprehensive analysis: GLM-4.1V-Thinking (6-dimension investor readiness)
+  // - Q&A prep, competitive analysis, investor readiness level
+  E4_FULL_SESSION: {
+    model: AI_MODELS.GLM_VISION_PRO,
+    temperature: 0.3,
+    thinkingEnabled: true,
+    description: 'Full investor pitch analysis (6-dimension readiness, Q&A prep, competitive positioning)',
+  },
+
+  // Utility: General image analysis (deck slide screenshots)
+  IMAGE_ANALYSIS: {
+    model: AI_MODELS.GLM_VISION,
+    temperature: 0.2,
+    thinkingEnabled: true,
+    description: 'Individual slide image analysis for visual audit',
+  },
+} as const;
+
+// Type for module model config values
+export type ModuleModelConfig = typeof MODULE_MODEL_MAP[keyof typeof MODULE_MODEL_MAP];
 
 // ============================================
 // PITCH DECK ANALYSIS (E1)
@@ -174,14 +240,15 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "recommendations": ["<specific actionable recommendation 1>", "<specific actionable recommendation 2>", "<specific actionable recommendation 3>", "<specific actionable recommendation 4>", "<specific actionable recommendation 5>"]
 }`;
 
+  const config = MODULE_MODEL_MAP.E1_DECK_CONTENT;
   const zai = await getZai();
   const response = await zai.chat.completions.create({
-    model: AI_MODELS.GLM_TEXT,
+    model: config.model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ],
-    temperature: 0.3,
+    temperature: config.temperature,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -197,7 +264,7 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   
   const result = JSON.parse(jsonMatch[0]) as DeckAnalysisResult;
   result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_TEXT;
+  result.modelUsed = config.model;
   return result;
 }
 
@@ -305,14 +372,15 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "alternativeHooks": ["<alternative opening hook 1>", "<alternative opening hook 2>", "<alternative opening hook 3>"]
 }`;
 
+  const config = MODULE_MODEL_MAP.E2_SCRIPT_ANALYSIS;
   const zai = await getZai();
   const response = await zai.chat.completions.create({
-    model: AI_MODELS.GLM_TEXT,
+    model: config.model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ],
-    temperature: 0.4,
+    temperature: config.temperature,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -330,7 +398,7 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   result.wordCount = scriptText.split(/\s+/).filter(Boolean).length;
   result.estimatedDuration = Math.round(result.wordCount / 2.5);
   result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_TEXT;
+  result.modelUsed = config.model;
   return result;
 }
 
@@ -428,9 +496,10 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "transcript": "<full transcript of what was said>"
 }`;
 
+  const config = MODULE_MODEL_MAP.E3_LIVE_PITCH;
   const zai = await getZai();
   const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION,
+    model: config.model,
     messages: [
       {
         role: 'user',
@@ -441,7 +510,7 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
         ]
       }
     ],
-    thinking: { type: 'disabled' },
+    thinking: { type: 'enabled' },
   });
 
   const content = response.choices[0]?.message?.content;
@@ -457,7 +526,7 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   
   const result = JSON.parse(jsonMatch[0]) as VideoAnalysisResult;
   result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION;
+  result.modelUsed = config.model;
   return result;
 }
 
@@ -625,9 +694,10 @@ Provide your comprehensive analysis as a JSON object with this EXACT structure (
   "transcript": "<full transcript of the presentation>"
 }`;
 
+  const config = MODULE_MODEL_MAP.E4_FULL_SESSION;
   const zai = await getZai();
   const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION_PRO,
+    model: config.model,
     messages: [
       {
         role: 'user',
@@ -638,7 +708,7 @@ Provide your comprehensive analysis as a JSON object with this EXACT structure (
         ]
       }
     ],
-    thinking: { type: 'disabled' },
+    thinking: { type: 'enabled' },
   });
 
   const content = response.choices[0]?.message?.content;
@@ -654,7 +724,7 @@ Provide your comprehensive analysis as a JSON object with this EXACT structure (
   
   const result = JSON.parse(jsonMatch[0]) as FullPitchAnalysisResult;
   result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION_PRO;
+  result.modelUsed = config.model;
   return result;
 }
 
@@ -687,9 +757,10 @@ Respond as JSON: {
   "suggestions": ["<suggestion 1>", "<suggestion 2>"]
 }`;
 
+  const config = MODULE_MODEL_MAP.IMAGE_ANALYSIS;
   const zai = await getZai();
   const response = await zai.chat.completions.createVision({
-    model: AI_MODELS.GLM_VISION,
+    model: config.model,
     messages: [
       {
         role: 'user',
@@ -699,7 +770,7 @@ Respond as JSON: {
         ]
       }
     ],
-    thinking: { type: 'disabled' },
+    thinking: { type: 'enabled' },
   });
 
   const content = response.choices[0]?.message?.content;
@@ -714,7 +785,7 @@ Respond as JSON: {
   
   const result = JSON.parse(jsonMatch[0]) as ImageAnalysisResult;
   result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = AI_MODELS.GLM_VISION;
+  result.modelUsed = config.model;
   return result;
 }
 
@@ -754,6 +825,12 @@ export async function checkAIServiceHealth(): Promise<{
   return {
     status: results.glm.status === 'healthy' ? 'healthy' : 'unhealthy',
     models: AI_MODELS_LIST,
+    moduleMapping: Object.entries(MODULE_MODEL_MAP).map(([key, val]) => ({
+      module: key,
+      model: val.model,
+      temperature: val.temperature,
+      thinkingEnabled: 'thinkingEnabled' in val ? val.thinkingEnabled : false,
+    })),
     configFound: true,
     glm: results.glm,
   };
