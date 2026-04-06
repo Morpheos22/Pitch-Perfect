@@ -67,6 +67,13 @@ model Subscription {
   paystackPlanCode       String?    // Paystack plan code
   paystackEmailToken     String?    // For verification
 
+  // Stripe Integration (International)
+  stripeCustomerId        String?    @unique // Stripe customer ID
+  stripeSubscriptionId    String?             // Stripe subscription ID
+  stripePlanId            String?             // Stripe price/plan ID
+  stripePaymentMethodId   String?             // Stripe payment method ID
+  stripeCurrentPeriodEnd  DateTime?           // Stripe billing cycle end
+
   // Zoho Billing Integration
   zohoSubscriptionId  String?    @unique // Zoho Billing subscription reference
   zohoCustomerId      String?             // Zoho Billing customer reference
@@ -417,6 +424,33 @@ model Transaction {
   @@map("transactions")
 }
 
+// ============================================
+// WEBHOOK LOGGING
+// ============================================
+
+model WebhookLog {
+  id      String @id @default(cuid())
+  userId  String?
+
+  // Session reference
+  sessionId   String?
+  sessionType String? // deck, script, live, full
+
+  // Execution results
+  success                     Boolean   @default(false)
+  crmSynced                   Boolean   @default(false)
+  emailSent                   Boolean   @default(false)
+  entitlementUpdated          Boolean   @default(false)
+  externalWebhooksTriggered  Boolean   @default(false)
+  errors                      String[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("webhook_logs")
+}
+
 enum TransactionType {
   SUBSCRIPTION
   ONE_TIME
@@ -426,6 +460,7 @@ enum TransactionType {
 
 enum PaymentProvider {
   PAYSTACK
+  STRIPE
   LEMONSQUEEZY
   ZOHO
 }

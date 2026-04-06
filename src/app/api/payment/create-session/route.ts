@@ -71,17 +71,16 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Create pending payment record
-    await prisma.payment.create({
+    // Create pending transaction record
+    await prisma.transaction.create({
       data: {
         userId: user.id,
-        gateway: gateway,
-        gatewaySessionId: session.id,
-        productId,
-        productName: PRODUCTS[productId].name,
-        amount,
-        currency,
-        status: 'PENDING',
+        type: 'SUBSCRIPTION',
+        amount: Math.round(amount * 100), // Store in smallest currency unit
+        currency: currency.toLowerCase(),
+        provider: gateway.toUpperCase() as 'PAYSTACK' | 'STRIPE' | 'LEMONSQUEEZY' | 'ZOHO',
+        providerReference: session.id,
+        providerAccessCode: productId, // Store product ID for webhook reconciliation
       },
     });
 

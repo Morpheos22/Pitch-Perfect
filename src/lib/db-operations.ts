@@ -126,7 +126,7 @@ export async function incrementUsage(userId: string, module: ModuleType, tokensU
     where: { userId },
     data: {
       [field]: { increment: 1 },
-      claudeTokensUsed: { increment: tokensUsed },
+      zaiTokensUsed: { increment: tokensUsed },
       updatedAt: new Date(),
     },
   });

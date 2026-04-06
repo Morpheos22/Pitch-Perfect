@@ -193,3 +193,30 @@ Stage Summary:
 - 4 page files (route dedup updates)
 
 ### Net: +2,341 lines of Zoho integration, -43KB dead code, 12+ files modernized
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: Restore Stripe billing + Fix 4 critical runtime bugs
+
+Work Log:
+- User reported Stripe was wrongly removed — their spec is Paystack + Stripe + Zoho Billing (3 providers)
+- Restored Stripe fields to Subscription model (stripeCustomerId, stripeSubscriptionId, stripePlanId, stripePaymentMethodId, stripeCurrentPeriodEnd)
+- Added STRIPE back to PaymentProvider enum (now: PAYSTACK, STRIPE, LEMONSQUEEZY, ZOHO)
+- Added WebhookLog model to Prisma schema (was missing, caused silent runtime failures)
+- Fixed Bug #1: prisma.payment.create → prisma.transaction.create in /api/payment/create-session/route.ts
+- Fixed Bug #2: prisma.webhookLog.create now valid (WebhookLog model added)
+- Fixed Bug #3: claudeTokensUsed → zaiTokensUsed in db-operations.ts
+- Fixed Bug #4: PaymentGateway type now includes 'stripe' | 'zoho' — full 4-gateway support
+- Added Stripe Checkout integration (create + verify) with Apple Pay, Google Pay
+- Added Zoho Billing integration (customer creation + hosted checkout + verify)
+- Updated gateway routing: ZA→Paystack, IN→Zoho, ROW→Stripe, fallback→LemonSqueezy
+- Created /api/billing/webhooks/stripe — handles checkout.completed, subscription events, payment failures
+- Created /api/billing/webhooks/zoho — handles subscription.activated/renewed/cancelled/payment_failed
+- Created /api/billing/portal — returns Stripe portal or Zoho portal URL based on user's subscription
+
+Stage Summary:
+- 4 critical runtime bugs fixed (payment creation, webhook logging, usage tracking, gateway support)
+- Payment routing: Paystack (ZA) → Stripe (ROW) → Zoho Billing (IN/Enterprise) → LemonSqueezy (fallback)
+- 3 new API routes created for billing webhooks and portal
+- prisma/schema.prisma: 11 models (was 10), added WebhookLog, restored Stripe fields
