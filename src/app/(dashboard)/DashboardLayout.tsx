@@ -26,17 +26,63 @@ import {
   CreditCard,
   Menu,
   History,
+  Shield,
+  Rocket,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useClerk, useUser } from "@clerk/nextjs";
+
+const IS_DEV = process.env.NODE_ENV === "development";
+
+interface PlanBadgeProps {
+  className?: string;
+}
+
+function PlanBadge({ className }: PlanBadgeProps) {
+  const [plan, setPlan] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchPlan() {
+      try {
+        const res = await fetch("/api/user/sync");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.user?.subscription?.plan) {
+            const names: Record<string, string> = {
+              FREE: "Free",
+              STARTER: "Starter",
+              PROFESSIONAL: "Professional",
+              ENTERPRISE: "Enterprise",
+            };
+            setPlan(names[json.user.subscription.plan] || json.user.subscription.plan);
+          } else {
+            setPlan("Free");
+          }
+        }
+      } catch {
+        setPlan(null);
+      }
+    }
+    fetchPlan();
+  }, []);
+
+  if (!plan) return null;
+
+  return (
+    <Badge variant="secondary" className={`hidden sm:flex bg-accent/10 text-accent ${className ?? ""}`}>
+      {plan}
+    </Badge>
+  );
+}
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Pitch Deck Analyser", href: "/pitch-deck-analyser", icon: Presentation },
   { name: "Script Check", href: "/elevator-script", icon: MessageSquare },
   { name: "Elevator Live", href: "/elevator-pitch-live", icon: Video },
-  { name: "Session History", href: "/history", icon: History },
+  { name: "Founder", href: "/founder", icon: Rocket },
+  { name: "History", href: "/history", icon: History },
 ];
 
 interface SidebarContentProps {
@@ -72,12 +118,12 @@ function SidebarContent({ onNavigate, pathname }: SidebarContentProps) {
       </nav>
       <div className="border-t p-4 space-y-1">
         <Link
-          href="/history"
+          href="/pricing"
           onClick={onNavigate}
           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          <History className="h-4 w-4" />
-          History
+          <CreditCard className="h-4 w-4" />
+          Upgrade Plan
         </Link>
         <Link
           href="/dashboard/settings"
@@ -87,6 +133,16 @@ function SidebarContent({ onNavigate, pathname }: SidebarContentProps) {
           <Settings className="h-4 w-4" />
           Settings
         </Link>
+        {IS_DEV && (
+          <Link
+            href="/dev-tools"
+            onClick={onNavigate}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-orange-500 hover:bg-orange-500/10 hover:text-orange-600 transition-colors"
+          >
+            <Shield className="h-4 w-4" />
+            Dev Tools
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -131,9 +187,7 @@ export default function DashboardLayout({
           <div className="flex-1" />
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <Badge variant="secondary" className="hidden sm:flex bg-accent/10 text-accent">
-              Pro Plan
-            </Badge>
+            <PlanBadge />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
@@ -170,7 +224,7 @@ export default function DashboardLayout({
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard/billing" className="flex items-center">
+                  <Link href="/dashboard/settings/billing" className="flex items-center">
                     <CreditCard className="mr-2 h-4 w-4" />
                     Billing
                   </Link>

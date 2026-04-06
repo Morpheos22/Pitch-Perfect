@@ -22,8 +22,6 @@ import {
 
 const DEV_MODE_CHECK = process.env.NODE_ENV === "development";
 
-const ADMIN_EMAIL = "helloautomagikal@gmail.com";
-
 const moduleLinks = [
   { label: "E1 — Pitch Deck Analyser", href: "/pitch-deck-analyser/new", icon: Presentation },
   { label: "E2 — Script Check", href: "/elevator-script/new", icon: MessageSquare },
@@ -34,14 +32,19 @@ const moduleLinks = [
 
 type Mode = "dev" | "client" | "unknown" | "loading";
 
+function isAdminEmail(email: string): boolean {
+  const lower = email.toLowerCase();
+  return lower === "helloautomagikal@gmail.com" || lower === "morphylee22@gmail.com";
+}
+
 export default function DevToolsPage() {
   const router = useRouter();
   const { user, isLoaded } = useUser();
   const [switching, setSwitching] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const email = user?.primaryEmailAddress?.emailAddress?.toLowerCase();
-  const isAdmin = isLoaded && email === ADMIN_EMAIL;
+  const email = user?.primaryEmailAddress?.emailAddress?.toLowerCase() ?? "";
+  const isAdmin = isLoaded && isAdminEmail(email);
   const isOnboardingCompleted = user?.publicMetadata?.onboardingCompleted === true;
 
   const currentMode: Mode = !isLoaded
@@ -104,7 +107,7 @@ export default function DevToolsPage() {
             <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-2" />
             <CardTitle className="text-xl">Access Denied</CardTitle>
             <CardDescription>
-              You must be signed in as the admin account to access Dev Tools.
+              You must be signed in as an admin account to access Dev Tools.
             </CardDescription>
           </CardHeader>
         </Card>

@@ -19,7 +19,15 @@ import {
   Sparkles,
   CheckCircle2,
   Target,
+  Lock,
+  ArrowRight,
+  ShieldCheck,
+  Crown,
 } from "lucide-react";
+
+// ─── Types ───────────────────────────────────────────────────────────
+
+type PlanType = "FREE" | "STARTER" | "PROFESSIONAL" | "ENTERPRISE";
 
 const subModules = [
   {
@@ -85,15 +93,38 @@ interface FounderHistory {
   recommendedPathway?: string;
 }
 
+// ─── Page Component ──────────────────────────────────────────────────
+
 export default function FounderPage() {
   const [history, setHistory] = useState<FounderHistory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userPlan, setUserPlan] = useState<PlanType>("FREE");
+  const [planLoading, setPlanLoading] = useState(true);
 
   const completedModules = new Set(
     history.filter((h) => h.completedAt).map((h) => h.moduleType)
   );
   const completedCount = completedModules.size;
   const totalModules = subModules.length;
+
+  const hasAccess = userPlan === "PROFESSIONAL" || userPlan === "ENTERPRISE";
+
+  useEffect(() => {
+    async function fetchPlan() {
+      try {
+        const res = await fetch("/api/user/sync");
+        if (res.ok) {
+          const data = await res.json();
+          setUserPlan(data.user?.subscription?.plan || "FREE");
+        }
+      } catch (err) {
+        console.error("Failed to fetch user plan:", err);
+      } finally {
+        setPlanLoading(false);
+      }
+    }
+    fetchPlan();
+  }, []);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -121,16 +152,85 @@ export default function FounderPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Rocket className="w-6 h-6 text-primary" />
-            Pitch Founder
-          </h1>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Rocket className="w-6 h-6 text-primary" />
+              Pitch Founder
+            </h1>
+            <Badge
+              variant="secondary"
+              className={
+                hasAccess
+                  ? "bg-emerald-500/10 text-emerald-600"
+                  : "bg-amber-500/10 text-amber-600"
+              }
+            >
+              {planLoading ? "…" : hasAccess ? "Access Granted" : "Enterprise"}
+            </Badge>
+          </div>
           <p className="text-muted-foreground">
             E5 — Conversion layer to the Automagikal Network
           </p>
         </div>
       </div>
+
+      {/* Access Control Banner */}
+      {!planLoading && !hasAccess && (
+        <Card className="border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+          <CardContent className="py-5">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <Lock className="w-6 h-6 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Founder Coaching requires Enterprise</h3>
+                  <p className="text-sm text-muted-foreground max-w-lg">
+                    The E5 Founder Coaching module is available on the{" "}
+                    <span className="font-semibold text-foreground">Enterprise plan ($199/mo)</span>.
+                    It includes all 6 sub-modules: Readiness, Pathway, Research, Cohort, Network, and Narration.
+                    Upgrade to unlock your journey into the Automagikal Network.
+                  </p>
+                </div>
+              </div>
+              <Link href="/pricing" className="shrink-0">
+                <Button className="bg-amber-500 hover:bg-amber-600 text-white" size="lg">
+                  Upgrade to Enterprise
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Access Granted Banner */}
+      {!planLoading && hasAccess && (
+        <Card className="border-emerald-500/30 bg-gradient-to-r from-emerald-500/5 to-teal-500/5">
+          <CardContent className="py-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-6 h-6 text-emerald-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  Access Granted
+                  {userPlan === "ENTERPRISE" && (
+                    <Badge className="bg-amber-500 text-white text-xs">
+                      <Crown className="w-3 h-3 mr-1" />
+                      Enterprise
+                    </Badge>
+                  )}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  You have full access to all 6 Founder Coaching modules. Start your journey below.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Overview Card */}
       <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -242,13 +342,18 @@ export default function FounderPage() {
               title={mod.title}
               description={mod.description}
               icon={mod.icon}
-              href={mod.href}
+              href={hasAccess ? mod.href : "/pricing"}
               color={mod.color}
               badge={mod.badge}
               completed={completedModules.has(mod.key)}
             />
           ))}
         </div>
+        {!hasAccess && (
+          <p className="text-xs text-muted-foreground mt-3 text-center">
+            Module links redirect to the pricing page. Upgrade to Enterprise for full access.
+          </p>
+        )}
       </div>
 
       {/* Recent Activity */}
