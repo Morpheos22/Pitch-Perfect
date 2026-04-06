@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           error: "Video file upload requires storage configuration",
-          message: "Please provide a video URL instead, or configure video storage (Cloudflare Stream/R2/S3).",
+          message: "Please provide a video URL instead, or configure video storage (Zoho WorkDrive).",
           details: "Direct video file analysis requires the video to be accessible via URL."
         },
         { status: 400 }

@@ -235,19 +235,19 @@ export async function parseDocument(
 }
 
 /**
- * Quick text extraction for files already in R2 storage
- * Downloads from R2 and parses
+ * Quick text extraction for files stored in WorkDrive or accessible via URL.
+ * Downloads the file and parses it into text.
  */
-export async function extractTextFromR2File(
-  r2Key: string,
+export async function extractTextFromStoredFile(
+  fileUrl: string,
   mimeType: string
 ): Promise<string> {
-  // Import storage functions dynamically to avoid circular dependencies
-  const { getFileBuffer } = await import('./storage');
-  
-  const buffer = await getFileBuffer(r2Key);
+  // Fetch the file as a raw buffer
+  const response = await fetch(fileUrl);
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
   const result = await parseDocument(buffer, mimeType);
-  
   return result.text;
 }
 

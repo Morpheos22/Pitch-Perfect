@@ -244,7 +244,7 @@ export default function PrivacyPage() {
                     <span>
                       <strong>Service Providers:</strong> We share information
                       with third-party vendors who perform services on our behalf,
-                      such as cloud hosting (Cloudflare), payment processing
+                      such as cloud hosting (Zoho), payment processing
                       (Stripe), and authentication services (Clerk).
                     </span>
                   </li>

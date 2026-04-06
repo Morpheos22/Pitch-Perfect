@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  serverExternalPackages: [
+    "sharp",
+    "z-ai-web-dev-sdk",
+    "resend",
+  ],
 };
 
 export default nextConfig;

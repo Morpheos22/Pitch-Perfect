@@ -1,9 +1,9 @@
 // API Route: File Upload
-// POST /api/upload - Handles file uploads for R2 storage
+// POST /api/upload - Handles file uploads via Zoho WorkDrive storage
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateUser } from '@/lib/db-operations';
-import { uploadFile, validateFileType, validateFileSize } from '@/lib/storage';
+import { uploadFile, validateFileTypeByCategory, validateFileSizeByCategory } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,13 +22,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate file type
-    const typeValidation = validateFileType(file.name, file.type, type);
+    const typeValidation = validateFileTypeByCategory(file.name, file.type, type);
     if (!typeValidation.valid) {
       return NextResponse.json({ error: typeValidation.error }, { status: 400 });
     }
 
     // Validate file size
-    const sizeValidation = validateFileSize(file.size, type);
+    const sizeValidation = validateFileSizeByCategory(file.size, type);
     if (!sizeValidation.valid) {
       return NextResponse.json({ error: sizeValidation.error }, { status: 400 });
     }

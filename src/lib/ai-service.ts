@@ -776,50 +776,6 @@ JSON structure (no markdown):
 }
 
 // ============================================
-// IMAGE ANALYSIS (deck slide screenshots)
-// ============================================
-
-export interface ImageAnalysisResult {
-  description: string;
-  visualElements: string[];
-  designQuality: number;
-  readability: number;
-  suggestions: string[];
-  tokensUsed?: number;
-  modelUsed?: string;
-}
-
-export async function analyzeImage(imageUrl: string): Promise<ImageAnalysisResult> {
-  const prompt = `Analyze this pitch deck slide. Provide:
-1. Design quality (0-100)
-2. Readability (0-100)
-3. Key visual elements
-4. Specific improvement suggestions
-
-JSON: { "description": "<desc>", "visualElements": ["<e1>", "<e2>"], "designQuality": <0-100>, "readability": <0-100>, "suggestions": ["<s1>", "<s2>"] }`;
-
-  const { response, modelUsed } = await executeWithFallback('IMAGE_ANALYSIS', (model) => ({
-    model,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageUrl } },
-      ],
-    }],
-    temperature: MODULE_MODEL_MAP.IMAGE_ANALYSIS.temperature,
-  }));
-
-  const content = response.choices?.[0]?.message?.content;
-  if (!content) throw new Error('No response from AI');
-
-  const result = parseJsonResponse<ImageAnalysisResult>(content);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = modelUsed;
-  return result;
-}
-
-// ============================================
 // HEALTH CHECK
 // ============================================
 
