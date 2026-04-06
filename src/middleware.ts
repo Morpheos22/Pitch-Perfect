@@ -1,4 +1,4 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { rateLimitMiddleware } from "@/lib/rate-limit";
 import { isAdminEmail } from "@/lib/dev-auth";
@@ -35,11 +35,16 @@ const isOnboardingOrApi = createRouteMatcher([
  * 3. Onboarding page → no redirect (prevents infinite loop)
  * 4. Admin emails (Helloautomagikal@gmail.com, Morphylee22@gmail.com) → ALWAYS bypass onboarding
  * 5. All other users → redirect to /onboarding if onboardingCompleted is not true
+ *
+ * Uses a HYBRID approach:
+ * - Fast path: check JWT claims (zero latency)
+ * - Slow path: call Clerk API for fresh user data if JWT is inconclusive
+ * - This handles stale JWTs where claims were issued before metadata was set
  */
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
 
-  // ── Rate Limiting ──
+  // ── Rate Limiting (API routes only) ──
   if (pathname.startsWith("/api/")) {
     let userId: string | undefined;
     try {
@@ -62,20 +67,47 @@ export default clerkMiddleware(async (auth, request) => {
   const userId = authResult.userId;
 
   if (userId && !isOnboardingOrApi(request) && !isPublicRoute(request)) {
+    // FAST PATH: Check JWT claims first (zero latency)
     const claims = authResult.sessionClaims;
-    const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
-    const onboardingCompleted = publicMeta?.onboardingCompleted === true;
+    if (claims) {
+      const email = claims.email as string | undefined;
+      const publicMeta = claims.public_metadata as
+        | { onboardingCompleted?: boolean }
+        | undefined;
+      const onboardingCompleted = publicMeta?.onboardingCompleted === true;
 
-    // Admin emails: ALWAYS bypass onboarding (works in ALL environments)
-    const email = claims?.email as string | undefined;
-    if (email && isAdminEmail(email)) {
-      return NextResponse.next();
+      // Admin bypass via JWT
+      if (email && isAdminEmail(email)) {
+        return NextResponse.next();
+      }
+
+      // If JWT clearly says onboarding is completed, skip the slow check
+      if (onboardingCompleted) {
+        return NextResponse.next();
+      }
     }
 
-    // All other authenticated users: redirect to onboarding if not completed
-    if (!onboardingCompleted) {
-      const url = new URL("/onboarding", request.url);
-      return NextResponse.redirect(url);
+    // SLOW PATH: JWT is stale, missing, or inconclusive — ask Clerk API directly
+    try {
+      const client = await clerkClient();
+      const user = await client.users.getUser(userId);
+
+      // Admin bypass via Clerk API (always fresh)
+      const email = user.emailAddresses[0]?.emailAddress;
+      if (email && isAdminEmail(email)) {
+        return NextResponse.next();
+      }
+
+      // Check onboarding status from live user metadata
+      const onboardingCompleted =
+        user.publicMetadata?.onboardingCompleted === true;
+      if (!onboardingCompleted) {
+        const url = new URL("/onboarding", request.url);
+        return NextResponse.redirect(url);
+      }
+    } catch (error) {
+      console.error("[middleware] Onboarding check error:", error);
+      // Fail-open: if Clerk API is unreachable, let the request through
     }
   }
 
