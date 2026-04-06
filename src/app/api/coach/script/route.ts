@@ -137,6 +137,54 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const scriptId = searchParams.get("id");
+
+    // Single script lookup by ID (for session detail page)
+    if (scriptId) {
+      const script = await prisma.pitchScript.findFirst({
+        where: { id: scriptId, userId: user.id },
+      });
+
+      if (!script) {
+        return NextResponse.json({ error: "Script not found" }, { status: 404 });
+      }
+
+      // Transform to match the session page's expected format
+      const improvements = typeof script.improvements === "object" && script.improvements !== null
+        ? script.improvements as Record<string, string[]>
+        : { hook: [], problem: [], solution: [], credibility: [], cta: [] };
+
+      const alternativeHooks = Array.isArray(script.alternativeHooks) ? script.alternativeHooks : [];
+
+      return NextResponse.json({
+        id: script.id,
+        status: script.status,
+        inputType: script.inputType,
+        fileName: script.fileName || undefined,
+        createdAt: script.createdAt,
+        targetAudience: script.targetAudience,
+        analysis: {
+          scores: {
+            hook: script.hookScore,
+            problem: script.problemScore,
+            solution: script.solutionScore,
+            credibility: script.credibilityScore,
+            cta: script.ctaScore,
+            overall: script.overallScore,
+          },
+          metrics: {
+            wordCount: script.wordCount || 0,
+            estimatedDuration: script.estimatedDuration || 0,
+          },
+          improvements,
+          rewrittenScript: script.rewrittenScript || "",
+          alternativeHooks,
+        },
+      });
+    }
+
+    // List all scripts (for history page)
     const scripts = await prisma.pitchScript.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },

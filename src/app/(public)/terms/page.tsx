@@ -394,9 +394,13 @@ export default function TermsPage() {
                 <h2 className="text-2xl font-bold mb-4">Governing Law</h2>
                 <p className="text-muted-foreground">
                   These Terms shall be governed by and construed in accordance
-                  with the laws of the Republic of South Africa, without regard
-                  to its conflict of law provisions. Any disputes arising from
-                  these Terms shall be resolved in the courts of South Africa.
+                  with the laws of the Republic of South Africa, including the
+                  Protection of Personal Information Act 4 of 2013 (POPIA), the
+                  Consumer Protection Act 68 of 2008 (CPA), and the Electronic
+                  Communications and Transactions Act 25 of 2002 (ECTA), without
+                  regard to conflict of law provisions. Any disputes arising
+                  from these Terms shall be resolved in the courts of South
+                  Africa.
                 </p>
               </div>
 

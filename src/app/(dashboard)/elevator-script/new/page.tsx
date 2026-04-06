@@ -73,18 +73,24 @@ export default function ElevatorScriptNewPage() {
     setSubmitting(true);
     
     try {
-      const formData = new FormData();
+      // Extract script text from file or use pasted text
+      let scriptContent = scriptText;
       if (inputTab === "upload" && file) {
-        formData.append("file", file);
-      } else {
-        formData.append("text", scriptText);
+        scriptContent = await file.text();
       }
-      formData.append("targetAudience", "investors");
-      formData.append("targetDuration", "60");
 
-      const response = await fetch("/api/pitch-script", {
+      if (!scriptContent || scriptContent.trim().length < 20) {
+        throw new Error("Script content is too short. Please provide at least 20 words.");
+      }
+
+      const response = await fetch("/api/coach/script", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: scriptContent,
+          targetAudience: "investors",
+          targetDuration: 60,
+        }),
       });
 
       const data = await response.json();

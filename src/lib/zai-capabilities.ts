@@ -1,4 +1,4 @@
-// Z.ai Capabilities Layer for PitchCoach AI
+// Z.ai Capabilities Layer for Pitch Perfect × Automagikal
 // Full suite: ASR, TTS, Web Search, Image Gen, Video Gen
 // All powered by the z-ai-web-dev-sdk
 
