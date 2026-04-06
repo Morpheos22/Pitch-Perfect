@@ -29,13 +29,12 @@ const isOnboardingOrApi = createRouteMatcher([
 /**
  * Auth middleware with onboarding redirect.
  *
- * FLOW:
- * 1. Rate limit API routes first
- * 2. Protect non-public routes (require Clerk auth)
- * 3. Check onboarding: if user hasn't completed it, redirect to /onboarding
- *    - Admin emails in dev mode: only redirect if onboardingCompleted is explicitly false
- *    - All other users: redirect if onboardingCompleted is not true
- *    - IMPORTANT: /onboarding itself is NOT protected, so no redirect loop
+ * RULES:
+ * 1. Public routes → no auth required
+ * 2. API routes → no onboarding redirect (but auth required for non-public APIs)
+ * 3. Onboarding page → no redirect (prevents infinite loop)
+ * 4. Admin emails (Helloautomagikal@gmail.com, Morphylee22@gmail.com) → ALWAYS bypass onboarding
+ * 5. All other users → redirect to /onboarding if onboardingCompleted is not true
  */
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
@@ -59,7 +58,6 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // ── Onboarding redirect ──
-  // Single auth() call to get both userId and sessionClaims
   const authResult = await auth();
   const userId = authResult.userId;
 
@@ -68,12 +66,10 @@ export default clerkMiddleware(async (auth, request) => {
     const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
     const onboardingCompleted = publicMeta?.onboardingCompleted === true;
 
-    // Admin emails in dev mode: respect their chosen mode
-    if (process.env.NODE_ENV === "development") {
-      const email = claims?.email as string | undefined;
-      if (email && isAdminEmail(email) && onboardingCompleted) {
-        return NextResponse.next();
-      }
+    // Admin emails: ALWAYS bypass onboarding (works in ALL environments)
+    const email = claims?.email as string | undefined;
+    if (email && isAdminEmail(email)) {
+      return NextResponse.next();
     }
 
     // All other authenticated users: redirect to onboarding if not completed

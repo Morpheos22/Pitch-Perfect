@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,8 +34,7 @@ const USE_CASES = [
 ];
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const [step, setStep] = useState(1);
   const [country, setCountry] = useState("");
   const [primaryUseCase, setPrimaryUseCase] = useState("");
@@ -53,7 +51,7 @@ export default function OnboardingPage() {
     setError("");
 
     try {
-      // Save to database via API
+      // Server handles BOTH database update AND Clerk metadata update
       const response = await fetch("/api/user/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,27 +59,29 @@ export default function OnboardingPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save onboarding data");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save onboarding data");
       }
 
-      // Update Clerk public metadata
-      await user?.update({
-        publicMetadata: {
-          ...user.publicMetadata,
-          country,
-          primaryUseCase,
-          onboardingCompleted: true,
-        },
-      });
-
-      // Redirect to dashboard
-      router.push("/dashboard");
+      // HARD redirect — forces full page reload which fetches a fresh JWT
+      // from Clerk with updated onboardingCompleted=true claims.
+      // Using router.push() caused an infinite loop because the JWT was stale.
+      window.location.href = "/dashboard";
     } catch (err) {
       console.error("Onboarding error:", err);
-      setError("Something went wrong. Please try again.");
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setLoading(false);
     }
   };
+
+  // Don't render until Clerk user is loaded
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

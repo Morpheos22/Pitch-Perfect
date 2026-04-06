@@ -1,8 +1,8 @@
 // Dev Auth Utility for Pitch Perfect × Automagikal
-// Provides development-mode login helpers for testing admin and client experiences.
-// This file has NO effect in production (NODE_ENV !== 'development').
+// Admin emails that bypass onboarding in ALL environments (dev + production).
+// The middleware uses isAdminEmail() to skip the onboarding redirect.
 
-/** Admin/developer emails that bypass certain restrictions in development mode */
+/** Admin/developer emails that bypass onboarding */
 export const DEV_ACCOUNTS = {
   admin: 'Helloautomagikal@gmail.com',
   coAdmin: 'morphylee22@gmail.com',
