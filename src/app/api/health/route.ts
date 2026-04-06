@@ -9,7 +9,9 @@ interface HealthChecks {
     status: string;
     message: string;
     configFound: boolean;
-    glm: { status: string; message?: string };
+    gatewayRouting: { text: string; vision: string };
+    zai: { status: string; message?: string };
+    moduleCount: number;
   };
 }
 
@@ -23,7 +25,9 @@ export async function GET() {
       status: 'checking',
       message: '',
       configFound: false,
-      glm: { status: 'unknown' },
+      gatewayRouting: { text: 'unknown', vision: 'unknown' },
+      zai: { status: 'unknown' },
+      moduleCount: 0,
     },
   };
 
@@ -48,14 +52,16 @@ export async function GET() {
     };
   }
 
-  // Check 3: AI Service (GLM only)
+  // Check 3: AI Service (Z.ai Gateway)
   try {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
       status: aiHealth.status,
-      message: aiHealth.message || '',
+      message: aiHealth.zai?.message || '',
       configFound: aiHealth.configFound || false,
-      glm: aiHealth.glm || { status: 'unknown' },
+      gatewayRouting: aiHealth.gatewayRouting,
+      zai: aiHealth.zai || { status: 'unknown' },
+      moduleCount: aiHealth.moduleMapping.length,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown AI error';
@@ -63,7 +69,9 @@ export async function GET() {
       status: 'unhealthy',
       message: errorMessage,
       configFound: false,
-      glm: { status: 'unknown', message: 'Health check failed' },
+      gatewayRouting: { text: 'unknown', vision: 'unknown' },
+      zai: { status: 'unknown', message: 'Health check failed' },
+      moduleCount: 0,
     };
   }
 

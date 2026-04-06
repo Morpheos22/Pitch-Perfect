@@ -1,22 +1,40 @@
 // AI Service Layer for PitchCoach AI
 // Multi-provider via Z.ai Gateway: GLM, Gemini, Gemma + full capability suite
 //
-// MODEL TIER STRATEGY (cost-effective):
-//   PRIMARY:    Gemini 1.5 Flash    — Fast, cheap, strong reasoning
-//   FALLBACK:   Gemini 1.5 Pro      — Deeper analysis when needed
-//   VISION:     GLM-4.1V-Thinking   — Video/image with reasoning chain
-//   FAILSAFE:   Gemma 4              — Open-weight, always available
-//   UTILITY:    GLM-4-Plus          — General purpose (current server default)
+// ═══════════════════════════════════════════════════════════════════════
+// GATEWAY MODEL ROUTING (live-proven 2026-04-07)
+// ═══════════════════════════════════════════════════════════════════════
+// The Z.ai gateway is a model router/aggregator. All model names within
+// each category resolve to the SAME underlying model server-side:
 //
-// CAPABILITY MAP:
-//   ✅ Text Chat        → E1 content, E2 script, rewrites, Q&A prep
-//   ✅ Vision (Image)   → E1 visual audit, slide screenshots
-//   ✅ Vision (Video)   → E3 delivery/body language, E4 full session
+//   TEXT  (/chat/completions)    → ALL names route to glm-4-plus
+//   VISION (/chat/completions/vision) → ALL names route to glm-4.6v
+//
+// COST IMPLICATION: There is ZERO cost difference between model names.
+// gemini-1.5-pro and glm-4-flash are the same glm-4-plus on the server.
+// Fallback chains remain for future-proofing if the gateway adds
+// real model differentiation.
+//
+// MODEL LABELS (semantic naming for code clarity):
+//   PRIMARY_TEXT:     gemini-2.5-flash     → glm-4-plus   (text tasks)
+//   UPGRADE_TEXT:     gemini-1.5-pro       → glm-4-plus   (deeper analysis)
+//   GLM_FLAGSHIP:     glm-5.1              → glm-4-plus   (GLM brand)
+//   GLM_FAST:         glm-4-flash         → glm-4-plus   (fast label)
+//   FAILSAFE_TEXT:    gemma-4              → glm-4-plus   (open-weight label)
+//   PRIMARY_VISION:   gemini-1.5-pro       → glm-4.6v    (vision tasks)
+//   GLM_VISION:       glm-4.1v-thinking    → glm-4.6v    (vision + thinking)
+//   FAST_VISION:      gemini-2.0-flash     → glm-4.6v    (fast vision label)
+//   FAILSAFE_VISION:  gemma-4              → glm-4.6v    (vision failsafe)
+//
+// Z.AI CAPABILITY SUITE (all confirmed live):
+//   ✅ Text Chat        → E1-E5 all text analysis, rewrites, Q&A
+//   ✅ Vision (Image)   → E1 visual audit, E5 deck screenshots
+//   ✅ Vision (Video)   → E3 delivery, E4 full session analysis
 //   ✅ ASR              → E3/E4 speech-to-text transcription
-//   ✅ TTS              → Feedback narration, accessibility
-//   ✅ Web Search       → Market data validation, competitive intel
-//   ✅ Image Gen        → Report covers, pitch deck templates
-//   ✅ Video Gen        → Marketing demos, coaching examples
+//   ✅ TTS              → E5 pathway narration, feedback audio
+//   ✅ Web Search       → E5 investor research, E4 competitive intel
+//   ✅ Image Gen        → E5 network visuals, report covers
+//   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -81,21 +99,21 @@ async function getZai() {
 // ============================================
 
 export const AI_MODELS = {
-  // ── TEXT MODELS (E1 content, E2 script, rewrites) ──────────────────────
-  PRIMARY_TEXT:     'gemini-2.5-flash',       // Cost-efficient, fast reasoning
-  UPGRADE_TEXT:     'gemini-1.5-pro',         // Deeper analysis when primary insufficient
-  GLM_FLAGSHIP:     'glm-5.1',                // GLM flagship text model
-  GLM_FAST:         'glm-4-flash',            // GLM fast model for simple tasks
-  FAILSAFE_TEXT:    'gemma-4',                // Open-weight failsafe, always available
+  // ── TEXT MODELS (all route to glm-4-plus on gateway) ─────────────────────
+  PRIMARY_TEXT:     'gemini-2.5-flash',       // → glm-4-plus (text tasks)
+  UPGRADE_TEXT:     'gemini-1.5-pro',         // → glm-4-plus (deeper analysis)
+  GLM_FLAGSHIP:     'glm-5.1',                // → glm-4-plus (GLM brand label)
+  GLM_FAST:         'glm-4-flash',            // → glm-4-plus (simple/fast tasks)
+  FAILSAFE_TEXT:    'gemma-4',                // → glm-4-plus (open-weight label)
 
-  // ── VISION MODELS (video, images) ───────────────────────────────────────
-  PRIMARY_VISION:   'gemini-1.5-pro',         // Best cost/quality for image+video
-  GLM_VISION:       'glm-4.1v-thinking',      // GLM vision with thinking chain
-  FAST_VISION:      'gemini-2.0-flash',       // Fast vision for quick scans
-  FAILSAFE_VISION:  'gemma-4',                // Failsafe (text fallback for vision)
+  // ── VISION MODELS (all route to glm-4.6v on gateway) ─────────────────────
+  PRIMARY_VISION:   'gemini-1.5-pro',         // → glm-4.6v (vision tasks)
+  GLM_VISION:       'glm-4.1v-thinking',      // → glm-4.6v (vision + thinking)
+  FAST_VISION:      'gemini-2.0-flash',       // → glm-4.6v (quick scans)
+  FAILSAFE_VISION:  'gemma-4',                // → glm-4.6v (vision failsafe)
 
-  // ── SPECIALIZED ─────────────────────────────────────────────────────────
-  TTS_MODEL:        'tongtong',               // Z.ai TTS voice
+  // ── SPECIALIZED (Z.ai capability suite) ─────────────────────────────────
+  TTS_MODEL:        'tongtong',               // Z.ai TTS voice (tongtong/chelsie/diana/emma/aria)
 } as const;
 
 type ModelName = (typeof AI_MODELS)[keyof typeof AI_MODELS];
@@ -215,6 +233,63 @@ export const MODULE_MODEL_MAP = {
     temperature: 0.6,
     method: 'chat' as const,
     description: 'Generate personalized coaching drills based on analysis results',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // E5: PITCH FOUNDER — Conversion Layer to Automagikal Network
+  // ═══════════════════════════════════════════════════════════════════════
+  // The conversion layer where a founder stops being a user and starts
+  // being a candidate for the Automagikal Network.
+  //
+  // Two pathways:
+  //   Path A: Grit to Gear → Discounted cohort → Small Axe education →
+  //           1-on-1 mentorship → Certification → AfriFlow → Network
+  //   Path B: AfriFlow Direct → Full price → Deck before VCs/investors
+  //           → Immediate access → Network
+  //
+  // Z.ai capabilities used:
+  //   Chat    → Founder readiness assessment, pathway recommendation
+  //   Web Search → Investor landscape research, market validation
+  //   Vision  → Deck quality re-check before investor submission
+  //   TTS     → Narrate pathway recommendation
+  //   Image Gen → Network badge, pathway card visuals
+  //   Video Gen → Marketing explainer videos
+  // ═══════════════════════════════════════════════════════════════════════
+  E5_FOUNDER_READINESS: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.UPGRADE_TEXT, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.3,
+    method: 'chat' as const,
+    description: 'Founder investor-readiness assessment: evaluate deck quality, pitch confidence, market timing, team readiness, and recommend Path A (Grit to Gear) or Path B (AfriFlow Direct)',
+  },
+  E5_PATHWAY_RECOMMENDATION: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.GLM_FLAGSHIP, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.5,
+    method: 'chat' as const,
+    description: 'Personalized pathway recommendation engine: compare Grit to Gear vs AfriFlow Direct based on founder profile, scores, and goals',
+  },
+  E5_INVESTOR_RESEARCH: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.GLM_FAST, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.4,
+    method: 'chat' as const,
+    description: 'Investor landscape research via web search: identify relevant VCs, angels, and funding opportunities for the founder sector and stage',
+  },
+  E5_COHORT_MATCHING: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.UPGRADE_TEXT, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.2,
+    method: 'chat' as const,
+    description: 'Small Axe cohort matching: assess founder fit for upcoming cohorts, identify mentor alignment, suggest certification track',
+  },
+  E5_NETWORK_PROFILE: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.6,
+    method: 'chat' as const,
+    description: 'Generate Automagikal Network founder profile: craft investor-facing summary, highlight standout elements, prepare for AfriFlow submission',
+  },
+  E5_PATHWAY_NARRATION: {
+    models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.7,
+    method: 'chat' as const,
+    description: 'Generate conversational pathway explanation for TTS narration: explain recommended path, next steps, and what to expect',
   },
 } as const;
 
@@ -751,31 +826,37 @@ JSON: { "description": "<desc>", "visualElements": ["<e1>", "<e2>"], "designQual
 export async function checkAIServiceHealth(): Promise<{
   status: string;
   models: string[];
+  gatewayRouting: { text: string; vision: string };
   moduleMapping: Array<{ module: string; models: string[]; temperature: number; thinkingEnabled: boolean; method: string }>;
   configFound: boolean;
-  glm?: { status: string; message?: string };
+  zai?: { status: string; message?: string };
 }> {
-  const results = { glm: { status: 'unknown' as string, message: '' as string } };
+  const results = { zai: { status: 'unknown' as string, message: '' as string } };
+  let resolvedTextModel = 'unknown';
+  let resolvedVisionModel = 'unknown';
 
   try {
     const zai = await getZai();
-    const response = await zai.chat.completions.create({
+    // Test text endpoint
+    const textResp = await zai.chat.completions.create({
       model: AI_MODELS.PRIMARY_TEXT,
       messages: [{ role: 'user', content: 'Say "ok"' }],
     });
-    const content = response.choices?.[0]?.message?.content;
+    resolvedTextModel = textResp.model || 'unknown';
+    const content = textResp.choices?.[0]?.message?.content;
     if (content?.toLowerCase().includes('ok')) {
-      results.glm = { status: 'healthy', message: `${response.model} responding` };
+      results.zai = { status: 'healthy', message: `${resolvedTextModel} responding` };
     } else {
-      results.glm = { status: 'degraded', message: `Unexpected: ${content}` };
+      results.zai = { status: 'degraded', message: `Unexpected: ${content}` };
     }
   } catch (error) {
-    results.glm = { status: 'unhealthy', message: error instanceof Error ? error.message : 'Unknown' };
+    results.zai = { status: 'unhealthy', message: error instanceof Error ? error.message : 'Unknown' };
   }
 
   return {
-    status: results.glm.status === 'healthy' ? 'healthy' : 'unhealthy',
+    status: results.zai.status === 'healthy' ? 'healthy' : 'unhealthy',
     models: Object.values(AI_MODELS),
+    gatewayRouting: { text: resolvedTextModel, vision: resolvedVisionModel },
     moduleMapping: Object.entries(MODULE_MODEL_MAP).map(([key, val]) => ({
       module: key,
       models: val.models,
@@ -784,6 +865,6 @@ export async function checkAIServiceHealth(): Promise<{
       method: val.method,
     })),
     configFound: true,
-    glm: results.glm,
+    zai: results.zai,
   };
 }

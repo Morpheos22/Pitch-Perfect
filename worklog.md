@@ -30,3 +30,31 @@ Stage Summary:
 - Model tier strategy: Gemini 2.5 Flash (primary, cheap) → Gemini 1.5 Pro (fallback, deep) → Gemma 4 (failsafe, open-weight)
 - All vision models have thinking ENABLED
 - Files modified: src/lib/ai-service.ts, src/lib/zai-capabilities.ts (new)
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: E5 Pitch Founder module mapping + Gateway cost audit
+
+Work Log:
+- Tested 14 model names against both /chat/completions (text) and /chat/completions/vision endpoints
+- CONFIRMED: ALL text models → glm-4-plus (zero cost variance between any text model name)
+- CONFIRMED: ALL vision models → glm-4.6v (zero cost variance between any vision model name)
+- Tested Z.ai capabilities live: TTS (176KB WAV, tongtong voice), Web Search (3 real results), Image Gen (URL output)
+- Read and analyzed pitch-founder-automagikal.html — identified two pathways: Grit to Gear (Path A) and AfriFlow Direct (Path B)
+- Added 6 E5 module configs to MODULE_MODEL_MAP:
+  - E5_FOUNDER_READINESS → founder investor-readiness assessment
+  - E5_PATHWAY_RECOMMENDATION → personalized Path A vs Path B recommendation
+  - E5_INVESTOR_RESEARCH → VC/angel/funding landscape via web search
+  - E5_COHORT_MATCHING → Small Axe cohort fit assessment
+  - E5_NETWORK_PROFILE → Automagikal Network founder profile generation
+  - E5_PATHWAY_NARRATION → TTS narration of recommended pathway
+- Updated file header with accurate gateway routing documentation
+- Updated health check API route (glm → zai, added gatewayRouting field)
+- Updated MODULE_MODEL_MAP total: 21 module configs (E1:2, E2:2, E3:2, E4:2, E5:6, Utility:7)
+
+Stage Summary:
+- **Cost answer**: Z.ai gateway has only 2 actual models (glm-4-plus for text, glm-4.6v for vision). All model names within each category resolve to the same model. There is NO cost difference between gemini-1.5-pro and glm-4-flash — they are the same glm-4-plus.
+- **E5 Pitch Founder** mapped with 6 sub-modules using: Chat (readiness, pathway, cohort, profile), Web Search (investor research), TTS (pathway narration), Image Gen (network visuals), Video Gen (explainer videos)
+- Files modified: src/lib/ai-service.ts, src/app/api/health/route.ts
+- Pre-existing TS errors remain in: onboarding/page.tsx, payment/create-session/route.ts, user/onboarding/route.ts, video/route.ts (not introduced by this change)
