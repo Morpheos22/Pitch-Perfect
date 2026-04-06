@@ -176,37 +176,38 @@ const ZOHO_PLAN_CODES: Record<string, string | undefined> = {
 
 /**
  * Payment Gateway Routing Logic:
- * - South Africa → Paystack (ZAR, local payment methods)
- * - India → Zoho Billing (Zoho's strongest market)
- * - Rest of World → Stripe (cards, Apple Pay, Google Pay)
- * - Fallback → LemonSqueezy (Merchant of Record, handles tax compliance)
+ * - South Africa → Paystack (ZAR, local payment methods: card, EFT, USSD, etc.)
+ * - International → Zoho Billing (primary for all non-African markets)
+ *   Supports multi-currency: USD, EUR, GBP, ZAR, INR, AUD, CAD, etc.
+ * - Fallback → Stripe (international card payments: Visa, Mastercard, Apple Pay, Google Pay)
+ * - Final fallback → LemonSqueezy (Merchant of Record, handles tax compliance globally)
  * 
  * Override: If query param `gateway` is explicitly set, use that.
  */
 export function determinePaymentGateway(country: string, explicitGateway?: string): PaymentGateway {
-  // Allow explicit gateway override (e.g., from frontend)
   if (explicitGateway && ['paystack', 'stripe', 'zoho', 'lemonsqueezy'].includes(explicitGateway)) {
     return explicitGateway as PaymentGateway;
   }
 
   const normalizedCountry = country.toUpperCase();
 
-  // South Africa uses Paystack
+  // South Africa → Paystack (ZAR, local payment methods: card, EFT, USSD, etc.)
   if (PAYSTACK_COUNTRIES.includes(normalizedCountry) || normalizedCountry === 'SOUTH AFRICA') {
     return 'paystack';
   }
 
-  // India / Zoho-preferring markets use Zoho Billing
-  if (ZOHO_BILLING_COUNTRIES.includes(normalizedCountry)) {
+  // International → Zoho Billing (primary for all non-African markets)
+  // Supports multi-currency: USD, EUR, GBP, ZAR, INR, AUD, CAD, etc.
+  if (process.env.ZOHO_BILLING_AUTH_TOKEN || process.env.ZOHO_BILLING_CLIENT_ID) {
     return 'zoho';
   }
 
-  // All other countries use Stripe (international card payments)
-  // LemonSqueezy is available as fallback if Stripe is not configured
+  // Fallback → Stripe (international card payments: Visa, Mastercard, Apple Pay, Google Pay)
   if (process.env.STRIPE_SECRET_KEY) {
     return 'stripe';
   }
 
+  // Final fallback → LemonSqueezy (Merchant of Record, handles tax compliance globally)
   return 'lemonsqueezy';
 }
 

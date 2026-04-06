@@ -109,8 +109,8 @@ export function generateFileKey(
 // ============================================
 
 /** Allowed file extensions by category */
-const DECK_EXTENSIONS = ['.pdf', '.ppt', '.pptx'];
-const SCRIPT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt'];
+const DECK_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.html', '.docx', '.doc', '.txt'];
+const SCRIPT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.html'];
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi'];
 
 /** Allowed MIME types by category */
@@ -118,11 +118,16 @@ const ALLOWED_DECK_TYPES = [
   'application/pdf',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/html',
+  'text/plain',
 ];
 const ALLOWED_SCRIPT_TYPES = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/html',
   'text/plain',
 ];
 const ALLOWED_VIDEO_TYPES = [

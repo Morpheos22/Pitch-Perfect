@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
+import { syncUserToCRM } from "@/lib/zoho-crm";
 
 // Sync Clerk user with database
 // SECURITY: Uses auth() to get authenticated user - NEVER trust client input for userId
@@ -50,6 +51,17 @@ export async function POST(request: NextRequest) {
         avatarUrl,
         lastActiveAt: new Date(),
       },
+    });
+
+    // Sync to Zoho CRM (fire-and-forget — non-blocking)
+    syncUserToCRM({
+      email,
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      country: undefined, // Will be updated when user completes onboarding
+      clerkId,
+    }).catch((crmErr) => {
+      console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
 
     // Ensure subscription exists
