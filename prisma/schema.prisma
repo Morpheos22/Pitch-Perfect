@@ -381,39 +381,7 @@ model FullPitchSession {
 // ============================================
 // E5: PITCH FOUNDER SESSIONS
 // ============================================
-
-model FounderSession {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Module Type
-  moduleType String // FOUNDER_READINESS, PATHWAY_RECOMMENDATION, etc.
-
-  // Status
-  status String @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-
-  // Input/Output
-  inputData           Json?
-  resultData          Json?
-  overallScore        Int?
-  recommendedPathway  String? // GRIT_TO_GEAR or AFRIFLOW_DIRECT
-  audioBase64         String? // TTS narration audio (base64 WAV)
-
-  // AI Metadata
-  modelUsed  String?
-  tokensUsed Int?
-
-  // Timestamps
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  analyzedAt DateTime?
-
-  @@index([userId])
-  @@index([moduleType])
-  @@index([status])
-  @@map("founder_sessions")
-}
+// (See FounderSession model below, after InvestorReadinessLevel + FounderModuleType enums)
 
 enum InvestorReadinessLevel {
   NOT_READY // 0-40
@@ -446,6 +414,10 @@ model FounderSession {
   id     String @id @default(cuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Associated Deck (optional)
+  pitchDeckId String?
+  pitchDeck   PitchDeck? @relation(fields: [pitchDeckId], references: [id])
 
   // Module type
   moduleType FounderModuleType

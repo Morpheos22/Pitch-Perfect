@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      // Create transaction record if not exists
+      // Create transaction record if not exists (idempotent)
+      let txId: string;
       const existingTx = await prisma.transaction.findFirst({
         where: {
           providerReference: orderId,
@@ -62,8 +63,10 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      if (!existingTx) {
-        await prisma.transaction.create({
+      if (existingTx) {
+        txId = existingTx.id;
+      } else {
+        const newTx = await prisma.transaction.create({
           data: {
             userId: user.id,
             type: 'SUBSCRIPTION',
@@ -75,22 +78,29 @@ export async function POST(request: NextRequest) {
             creditsAdded: getModuleCycles(productId),
           },
         });
+        txId = newTx.id;
       }
 
-      // Create module access
-      await prisma.moduleAccess.create({
-        data: {
-          transactionId: existingTx?.id || '',
-          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-          e4Access: ['pitch-deck-live', 'master'].includes(productId),
-          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-          e3Limit: productId === 'master' ? 30 : 3,
-          e4Limit: productId === 'master' ? 10 : 3,
-        },
+      // Create module access if not exists (idempotent)
+      const existingAccess = await prisma.moduleAccess.findUnique({
+        where: { transactionId: txId },
       });
+
+      if (!existingAccess) {
+        await prisma.moduleAccess.create({
+          data: {
+            transactionId: txId,
+            e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+            e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+            e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+            e4Access: ['pitch-deck-live', 'master'].includes(productId),
+            e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+            e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+            e3Limit: productId === 'master' ? 30 : 3,
+            e4Limit: productId === 'master' ? 10 : 3,
+          },
+        });
+      }
 
       // Update user subscription
       await prisma.subscription.upsert({

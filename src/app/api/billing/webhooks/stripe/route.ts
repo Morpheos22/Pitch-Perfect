@@ -3,40 +3,49 @@
 // Handles Stripe Checkout Session events: payment completion, subscription updates
 
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
 import { prisma } from '@/lib/db';
-import { verifyStripeWebhook, parseWebhookPayload, createEntitlementsFromPayment } from '@/lib/payment-service';
+
+function getPlanFromProductId(productId: string | null | undefined): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
+  if (!productId) return 'STARTER';
+  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
+    'pitch-deck': 'STARTER',
+    'elevator-script': 'STARTER',
+    'elevator-live': 'PROFESSIONAL',
+    'pitch-deck-live': 'PROFESSIONAL',
+    'master': 'ENTERPRISE',
+  };
+  return planMap[productId] || 'STARTER';
+}
 
 export async function POST(request: NextRequest) {
   try {
     const signature = request.headers.get('stripe-signature') || '';
     const body = await request.text();
 
-    // Verify webhook signature
-    if (!verifyStripeWebhook(signature, body)) {
+    // Verify webhook signature using official Stripe SDK
+    const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!stripeSecret) {
+      console.error('STRIPE_WEBHOOK_SECRET not configured');
+      return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+    }
+
+    let stripeEvent: Stripe.Event;
+    try {
+      stripeEvent = Stripe.webhooks.constructEvent(body, signature, stripeSecret);
+    } catch (err: any) {
+      console.error('Stripe signature verification failed:', err.message);
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const parsed = parseWebhookPayload('stripe', body, signature);
-    if (!parsed.valid || !parsed.event) {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
-    }
-
-    const { event, data } = parsed;
+    const event = stripeEvent.type;
+    const data = stripeEvent.data.object;
 
     // Handle different Stripe events
     switch (event) {
       case 'checkout.session.completed': {
         // Payment successful — create entitlements
-        const sessionData = data as {
-          id: string;
-          payment_intent?: string;
-          payment_status: string;
-          customer_details?: { email: string };
-          customer_email?: string;
-          metadata?: Record<string, string>;
-          amount_total: number;
-          currency: string;
-        };
+        const sessionData = data as Stripe.Checkout.Session;
 
         if (sessionData.payment_status !== 'paid') {
           return NextResponse.json({ received: true, status: 'not_paid' });
@@ -55,42 +64,50 @@ export async function POST(request: NextRequest) {
             where: { id: transaction.id },
             data: {
               type: 'SUBSCRIPTION',
-              amount: sessionData.amount_total,
-              currency: sessionData.currency,
+              amount: sessionData.amount_total ?? 0,
+              currency: sessionData.currency ?? 'usd',
             },
           });
 
-          // Create module access
+          // Create module access (idempotent)
           const productId = sessionData.metadata?.product_id || transaction.providerAccessCode;
           if (productId) {
-            await prisma.moduleAccess.create({
-              data: {
-                transactionId: transaction.id,
-                e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-                e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-                e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-                e4Access: ['pitch-deck-live', 'master'].includes(productId),
-                e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-                e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-                e3Limit: productId === 'master' ? 30 : 3,
-                e4Limit: productId === 'master' ? 10 : 3,
-              },
+            const existingAccess = await prisma.moduleAccess.findUnique({
+              where: { transactionId: transaction.id },
             });
+            if (!existingAccess) {
+              await prisma.moduleAccess.create({
+                data: {
+                  transactionId: transaction.id,
+                  e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+                  e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+                  e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+                  e4Access: ['pitch-deck-live', 'master'].includes(productId),
+                  e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+                  e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+                  e3Limit: productId === 'master' ? 30 : 3,
+                  e4Limit: productId === 'master' ? 10 : 3,
+                },
+              });
+            }
           }
+
+          // Derive plan from product metadata
+          const planFromProduct = getPlanFromProductId(productId);
 
           // Update subscription plan
           await prisma.subscription.upsert({
             where: { userId: transaction.userId },
             create: {
               userId: transaction.userId,
-              plan: 'STARTER',
+              plan: planFromProduct,
               status: 'ACTIVE',
               stripeCustomerId: sessionData.customer_details?.email || '',
               stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
             update: {
-              plan: 'STARTER',
+              plan: planFromProduct,
               status: 'ACTIVE',
               stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -103,12 +120,7 @@ export async function POST(request: NextRequest) {
 
       case 'customer.subscription.updated': {
         // Subscription status change (upgrade, downgrade, cancellation)
-        const subData = data as {
-          id: string;
-          status: string;
-          metadata?: Record<string, string>;
-          current_period_end?: number;
-        };
+        const subData = data as Stripe.Subscription;
 
         const subscription = await prisma.subscription.findFirst({
           where: { stripeSubscriptionId: subData.id },
@@ -141,7 +153,7 @@ export async function POST(request: NextRequest) {
 
       case 'customer.subscription.deleted': {
         // Subscription cancelled
-        const subData = data as { id: string };
+        const subData = data as Stripe.Subscription;
 
         const subscription = await prisma.subscription.findFirst({
           where: { stripeSubscriptionId: subData.id },
@@ -162,14 +174,15 @@ export async function POST(request: NextRequest) {
 
       case 'invoice.payment_failed': {
         // Payment failure — mark subscription as past due
-        const invoiceData = data as {
-          subscription_id?: string;
-          customer?: string;
-        };
+        const invoiceData = data as Stripe.Invoice;
 
-        if (invoiceData.subscription_id) {
+        const subscriptionId = typeof invoiceData.subscription === 'string'
+          ? invoiceData.subscription
+          : invoiceData.subscription?.id;
+
+        if (subscriptionId) {
           const subscription = await prisma.subscription.findFirst({
-            where: { stripeSubscriptionId: invoiceData.subscription_id },
+            where: { stripeSubscriptionId: subscriptionId },
           });
 
           if (subscription) {

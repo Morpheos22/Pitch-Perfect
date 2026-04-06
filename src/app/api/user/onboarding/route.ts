@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,6 +12,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { country, primaryUseCase } = body;
+
+    // Validate input types and length
+    if (typeof country !== 'string' || country.length > 100 || typeof primaryUseCase !== 'string' || primaryUseCase.length > 100) {
+      return NextResponse.json(
+        { error: "Invalid input" },
+        { status: 400 }
+      );
+    }
 
     if (!country || !primaryUseCase) {
       return NextResponse.json(

@@ -43,20 +43,26 @@ export async function POST(request: NextRequest) {
       // Get product ID from providerAccessCode (where we stored it)
       const productId = transaction.providerAccessCode || '';
 
-      // Create module access based on product
-      await prisma.moduleAccess.create({
-        data: {
-          transactionId: transaction.id,
-          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-          e4Access: ['pitch-deck-live', 'master'].includes(productId),
-          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-          e3Limit: productId === 'master' ? 30 : 3,
-          e4Limit: productId === 'master' ? 10 : 3,
-        },
+      // Create module access based on product (idempotent — skip if already exists)
+      const existingAccess = await prisma.moduleAccess.findUnique({
+        where: { transactionId: transaction.id },
       });
+
+      if (!existingAccess) {
+        await prisma.moduleAccess.create({
+          data: {
+            transactionId: transaction.id,
+            e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+            e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+            e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+            e4Access: ['pitch-deck-live', 'master'].includes(productId),
+            e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+            e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+            e3Limit: productId === 'master' ? 30 : 3,
+            e4Limit: productId === 'master' ? 10 : 3,
+          },
+        });
+      }
 
       // Update user subscription
       await prisma.subscription.upsert({

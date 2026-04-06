@@ -265,10 +265,12 @@ async function triggerExternalWebhooks(payload: SessionWebhookPayload): Promise<
 // ============================================
 
 function generateWebhookSignature(payload: unknown): string {
-  const crypto = require('crypto');
-  const secret = process.env.WEBHOOK_SECRET || 'pitch-perfect-webhook-secret';
-  return crypto
-    .createHmac('sha256', secret)
+  const { createHmac } = require('crypto');
+  const secret = process.env.WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error('WEBHOOK_SECRET environment variable is not set. Webhook signatures cannot be generated.');
+  }
+  return createHmac('sha256', secret)
     .update(JSON.stringify(payload))
     .digest('hex');
 }
