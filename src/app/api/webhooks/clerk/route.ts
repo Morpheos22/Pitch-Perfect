@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { prisma } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/email";
+import { syncUserToCRM } from "@/lib/zoho-crm";
 
 // Clerk webhook events we handle
 // - user.created: Create user record
@@ -144,6 +145,17 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   });
 
   console.log(`User created: ${email} (verified: ${emailVerified})`);
+
+  // Sync to Zoho CRM (fire-and-forget — non-blocking)
+  syncUserToCRM({
+    email,
+    firstName: data.first_name || undefined,
+    lastName: data.last_name || undefined,
+    country: data.public_metadata?.country as string || undefined,
+    clerkId: data.id,
+  }).catch((crmErr) => {
+    console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
+  });
 
   // If email is already verified (e.g., Google SSO), trigger welcome email
   if (emailVerified) {
