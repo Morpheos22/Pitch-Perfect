@@ -212,7 +212,7 @@ export default function HistoryPage() {
           id: f.id, name: f.pitchDeck?.fileName || "Full Pitch Session", module: "full",
           moduleLabel: "Full Session", date: f.createdAt,
           score: f.overallReadinessScore, status: f.status,
-          icon: TrendingUp, href: `/full-session/session/${f.id}`,
+          icon: TrendingUp, href: `/coach/full/session/${f.id}`,
         });
       });
     }

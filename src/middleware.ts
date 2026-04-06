@@ -59,17 +59,16 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // ── Onboarding redirect ──
-  const { userId } = await auth();
+  // Single auth() call to get both userId and sessionClaims
+  const authResult = await auth();
+  const userId = authResult.userId;
 
   if (userId && !isOnboardingOrApi(request) && !isPublicRoute(request)) {
-    const claims = (await auth()).sessionClaims;
+    const claims = authResult.sessionClaims;
     const publicMeta = claims?.public_metadata as { onboardingCompleted?: boolean } | undefined;
     const onboardingCompleted = publicMeta?.onboardingCompleted === true;
 
     // Admin emails in dev mode: respect their chosen mode
-    // If onboardingCompleted is true → skip redirect (dev mode)
-    // If onboardingCompleted is false/missing → redirect to onboarding (client mode)
-    // This lets them toggle via /api/dev/set-mode
     if (process.env.NODE_ENV === "development") {
       const email = claims?.email as string | undefined;
       if (email && isAdminEmail(email) && onboardingCompleted) {
@@ -79,7 +78,8 @@ export default clerkMiddleware(async (auth, request) => {
 
     // All other authenticated users: redirect to onboarding if not completed
     if (!onboardingCompleted) {
-      return NextResponse.redirect(new URL("/onboarding", request.url));
+      const url = new URL("/onboarding", request.url);
+      return NextResponse.redirect(url);
     }
   }
 

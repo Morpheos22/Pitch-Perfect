@@ -22,7 +22,6 @@ export default function SignInPage() {
         }}
         fallbackRedirectUrl="/dashboard"
         signUpFallbackRedirectUrl="/dashboard"
-        forceRedirectUrl="/dashboard"
       />
     </Card>
   );
