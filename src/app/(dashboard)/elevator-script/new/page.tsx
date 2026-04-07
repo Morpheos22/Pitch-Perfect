@@ -19,6 +19,9 @@ const PLAN_LIMITS: Record<string, { e2: number }> = {
   ENTERPRISE: { e2: 999 },
 };
 
+const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024; // Vercel Hobby plan limit
+const MAX_CLIENT_FILE_SIZE = 4 * 1024 * 1024; // 4MB safe limit for client-side
+
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
   { name: "Problem", description: "Clearly identifies the problem being solved" },
@@ -74,15 +77,15 @@ export default function ElevatorScriptNewPage() {
         "text/plain",
         "text/markdown",
       ];
-      const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md", ".key"];
+      const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md"];
       const hasValidExtension = validExtensions.some(ext => selectedFile.name.toLowerCase().endsWith(ext));
       
       if (!validTypes.includes(selectedFile.type) && !hasValidExtension) {
-        toast.error("Only PDF, DOCX, DOC, TXT, MD, and Keynote files are supported");
+        toast.error("Only PDF, DOCX, DOC, TXT, and MD files are supported");
         return;
       }
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        toast.error("File exceeds the 10MB limit");
+      if (selectedFile.size > MAX_CLIENT_FILE_SIZE) {
+        toast.error(`File is too large (${(selectedFile.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is 4MB. Try pasting your script directly.`);
         return;
       }
       setFile(selectedFile);
@@ -109,6 +112,11 @@ export default function ElevatorScriptNewPage() {
       let response: Response;
 
       if (inputTab === "upload" && file) {
+        // Double-check file size before sending (Vercel will reject >4.5MB)
+        if (file.size > VERCEL_BODY_LIMIT) {
+          toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is 4MB. Try pasting your script directly.`);
+          return;
+        }
         // Send file as FormData so server can handle PDF/DOCX/PPTX parsing
         const formData = new FormData();
         formData.append("file", file);
@@ -116,6 +124,7 @@ export default function ElevatorScriptNewPage() {
         formData.append("targetAudience", "investors");
         formData.append("targetDuration", "60");
 
+        console.log("[E2 Upload] Sending file:", file.name, "size:", file.size, "type:", file.type);
         response = await fetch("/api/coach/script", {
           method: "POST",
           body: formData,
@@ -145,6 +154,10 @@ export default function ElevatorScriptNewPage() {
       
     } catch (error: any) {
       console.error("Submit error:", error);
+      if (error?.status === 413) {
+        toast.error("File is too large for upload. Please use a smaller file (under 4MB) or paste your script directly.");
+        return;
+      }
       if (error?.status === 403) {
         toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-script/upgrade");
@@ -264,7 +277,7 @@ export default function ElevatorScriptNewPage() {
                 <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
                   <input
                     type="file"
-                    accept=".pdf,.docx,.doc,.txt,.md,.key"
+                    accept=".pdf,.docx,.doc,.txt,.md"
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
@@ -273,7 +286,7 @@ export default function ElevatorScriptNewPage() {
                     <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="font-medium">Drag your script here, or click to browse</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      PDF, DOCX, DOC, TXT, MD, Keynote (.key) up to 10MB
+                      PDF, DOCX, DOC, TXT, MD up to 4MB
                     </p>
                   </label>
                 </div>

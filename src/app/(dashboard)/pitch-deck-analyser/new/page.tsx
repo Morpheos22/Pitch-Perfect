@@ -136,6 +136,10 @@ export default function PitchDeckAnalyserNewPage() {
       router.push(`/pitch-deck-analyser/session/${data.id}`);
     } catch (error: any) {
       console.error("Upload error:", error);
+      if (error?.status === 413) {
+        toast.error("File is too large for upload. Please use a smaller file (under 4MB) or paste your content directly.");
+        return;
+      }
       if (error?.status === 403) {
         toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
         router.push("/pitch-deck-analyser/upgrade");
