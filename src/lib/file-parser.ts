@@ -41,11 +41,11 @@ async function parseDocxText(file: File): Promise<string> {
 }
 
 async function parsePdfText(file: File): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdf = require('pdf-parse');
+  const pdfParse = await import('pdf-parse');
+  const pdf = (pdfParse as any).default || pdfParse;
   const buffer = Buffer.from(await file.arrayBuffer());
   const result = await pdf(buffer);
-  return result.text;
+  return result.text || '';
 }
 
 export type FileType = 'pdf' | 'pptx' | 'docx' | 'txt' | 'unknown';
@@ -62,27 +62,48 @@ export function detectFileType(fileName: string): FileType {
 }
 
 export async function extractFileText(file: File): Promise<string> {
-  const fileName = file.name || '';
+  const fileName = file.name || 'unknown';
+  const fileSize = file.size || 0;
   const fileType = detectFileType(fileName);
+  console.error(`[file-parser] Parsing: name=${fileName}, size=${fileSize}, type=${fileType}`);
   
-  switch (fileType) {
-    case 'pdf':
-      return parsePdfText(file);
-    case 'pptx':
-      return parsePptxText(file);
-    case 'docx':
-      return parseDocxText(file);
-    case 'txt':
-      return file.text();
-    case 'unknown':
-      // Try PDF first (some files have wrong extensions)
-      try {
-        const text = await file.text();
-        if (text && text.length > 50) return text;
-      } catch {}
-      throw new Error(`Unsupported file type: ${fileName}`);
-    default:
-      throw new Error(`Unsupported file type: ${fileName}`);
+  try {
+    switch (fileType) {
+      case 'pdf': {
+        const text = await parsePdfText(file);
+        if (!text || text.trim().length < 5) {
+          console.error(`[file-parser] PDF returned empty/short text (${text?.length || 0} chars)`);
+        }
+        return text;
+      }
+      case 'pptx':
+        return parsePptxText(file);
+      case 'docx':
+        return parseDocxText(file);
+      case 'txt':
+        return file.text();
+      case 'unknown':
+        // Try raw text first (works for .text, no-extension files)
+        try {
+          const text = await file.text();
+          if (text && text.trim().length > 5) return text;
+        } catch (textErr) {
+          console.error(`[file-parser] file.text() failed for unknown type:`, textErr);
+        }
+        // Try PDF parse (some files have wrong extensions)
+        try {
+          const text = await parsePdfText(file);
+          if (text && text.trim().length > 5) return text;
+        } catch (pdfErr) {
+          console.error(`[file-parser] PDF fallback also failed:`, pdfErr);
+        }
+        throw new Error(`Unsupported file type: ${fileName}. Tried text and PDF parsing.`);
+      default:
+        throw new Error(`Unsupported file type: ${fileName}`);
+    }
+  } catch (error) {
+    console.error(`[file-parser] Failed to parse ${fileType} file '${fileName}':`, error);
+    throw new Error(`Failed to extract text from ${fileType} file: ${fileName}. ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
