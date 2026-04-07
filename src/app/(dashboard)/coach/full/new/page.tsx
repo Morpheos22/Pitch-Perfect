@@ -141,7 +141,7 @@ export default function FullPitchNewPage() {
       analysisFormData.append("duration", "900"); // Default 15 min
 
       if (deckFile) {
-        analysisFormData.append("deckContent", await deckFile.text());
+        analysisFormData.append("deckFile", deckFile);
       }
 
       setUploadProgress(70);

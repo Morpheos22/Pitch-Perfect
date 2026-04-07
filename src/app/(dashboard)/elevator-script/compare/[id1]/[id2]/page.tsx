@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, use } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -10,37 +11,31 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
-const mockComparison = {
-  session1: {
-    id: "1",
-    name: "Elevator Pitch - Investor Meeting",
-    date: "2024-01-18",
-    score: 75,
-    elementScores: {
-      hook: 68,
-      problem: 85,
-      solution: 78,
-      proof: 72,
-      theAsk: 70,
-    },
-  },
-  session2: {
-    id: "2",
-    name: "Elevator Pitch - TechCrunch",
-    date: "2024-01-20",
-    score: 82,
-    elementScores: {
-      hook: 75,
-      problem: 90,
-      solution: 85,
-      proof: 80,
-      theAsk: 78,
-    },
-  },
-};
+interface ScriptSession {
+  id: string;
+  status: string;
+  fileName?: string;
+  createdAt: string;
+  analysis: {
+    scores: {
+      hook?: number;
+      problem?: number;
+      solution?: number;
+      credibility?: number;
+      cta?: number;
+      overall?: number;
+    };
+    metrics?: {
+      wordCount?: number;
+      estimatedDuration?: number;
+    };
+  };
+}
 
 function getDelta(before: number, after: number) {
   const delta = after - before;
@@ -58,7 +53,7 @@ function DeltaBadge({ delta }: { delta: ReturnType<typeof getDelta> }) {
       </Badge>
     );
   }
-  
+
   return (
     <Badge
       variant="outline"
@@ -79,9 +74,117 @@ function DeltaBadge({ delta }: { delta: ReturnType<typeof getDelta> }) {
   );
 }
 
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function CompareScriptPage({ params }: { params: Promise<{ id1: string; id2: string }> }) {
-  const { session1, session2 } = mockComparison;
-  const overallDelta = getDelta(session1.score, session2.score);
+  const { id1, id2 } = use(params);
+  const [session1, setSession1] = useState<ScriptSession | null>(null);
+  const [session2, setSession2] = useState<ScriptSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchSessions() {
+      try {
+        const [res1, res2] = await Promise.all([
+          fetch(`/api/coach/script?id=${id1}`),
+          fetch(`/api/coach/script?id=${id2}`),
+        ]);
+
+        if (!res1.ok || !res2.ok) {
+          const errBody1 = !res1.ok ? await res1.json().catch(() => ({})) : {};
+          const errBody2 = !res2.ok ? await res2.json().catch(() => ({})) : {};
+          const missing = [];
+          if (!res1.ok) missing.push(`Session 1: ${errBody1.error || res1.status}`);
+          if (!res2.ok) missing.push(`Session 2: ${errBody2.error || res2.status}`);
+          setError(missing.join(" | "));
+          return;
+        }
+
+        const data1 = await res1.json();
+        const data2 = await res2.json();
+
+        if (!data1 || !data2) {
+          setError("One or both sessions could not be loaded.");
+          return;
+        }
+
+        setSession1(data1);
+        setSession2(data2);
+      } catch (err) {
+        setError("Failed to load session data. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchSessions();
+  }, [id1, id2]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/elevator-script/history">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <MessageSquare className="w-6 h-6 text-accent" />
+              Script Comparison
+            </h1>
+          </div>
+        </div>
+        <Card className="border-destructive/40">
+          <CardContent className="p-6 flex items-center gap-4">
+            <AlertTriangle className="w-6 h-6 text-destructive shrink-0" />
+            <div>
+              <p className="font-medium text-destructive">Error loading comparison</p>
+              <p className="text-sm text-muted-foreground mt-1">{error}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <div className="flex justify-center gap-4">
+          <Link href="/elevator-script/history">
+            <Button variant="outline">Back to History</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session1 || !session2) return null;
+
+  const scores1 = session1.analysis?.scores || {};
+  const scores2 = session2.analysis?.scores || {};
+
+  const overallBefore = scores1.overall || 0;
+  const overallAfter = scores2.overall || 0;
+  const overallDelta = getDelta(overallBefore, overallAfter);
+
+  const elementKeys = [
+    { key: "hook", label: "Hook" },
+    { key: "problem", label: "Problem" },
+    { key: "solution", label: "Solution" },
+    { key: "credibility", label: "Credibility" },
+    { key: "cta", label: "Call to Action" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -109,28 +212,28 @@ export default function CompareScriptPage({ params }: { params: Promise<{ id1: s
           <CardContent className="py-4">
             <div>
               <p className="text-sm text-muted-foreground">Before</p>
-              <p className="font-medium">{session1.name}</p>
-              <p className="text-xs text-muted-foreground">{session1.date}</p>
+              <p className="font-medium">{session1.fileName || `Session ${session1.id.slice(0, 8)}`}</p>
+              <p className="text-xs text-muted-foreground">{formatDate(session1.createdAt)}</p>
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-accent/10 border-accent/20">
           <CardContent className="py-4 text-center">
             <p className="text-sm text-muted-foreground mb-1">Overall Change</p>
             <div className="flex items-center justify-center gap-2">
-              <span className="text-3xl font-bold">{session2.score}</span>
+              <span className="text-3xl font-bold">{overallAfter}</span>
               <DeltaBadge delta={overallDelta} />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-muted/30">
           <CardContent className="py-4">
             <div>
               <p className="text-sm text-muted-foreground">After</p>
-              <p className="font-medium">{session2.name}</p>
-              <p className="text-xs text-muted-foreground">{session2.date}</p>
+              <p className="font-medium">{session2.fileName || `Session ${session2.id.slice(0, 8)}`}</p>
+              <p className="text-xs text-muted-foreground">{formatDate(session2.createdAt)}</p>
             </div>
           </CardContent>
         </Card>
@@ -143,14 +246,14 @@ export default function CompareScriptPage({ params }: { params: Promise<{ id1: s
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {Object.entries(session1.elementScores).map(([key, beforeValue]) => {
-              const afterValue = session2.elementScores[key as keyof typeof session2.elementScores];
+            {elementKeys.map(({ key, label }) => {
+              const beforeValue = (scores1 as Record<string, number | undefined>)[key] || 0;
+              const afterValue = (scores2 as Record<string, number | undefined>)[key] || 0;
               const delta = getDelta(beforeValue, afterValue);
-              const elementName = key === "theAsk" ? "The Ask" : key.charAt(0).toUpperCase() + key.slice(1);
-              
+
               return (
                 <div key={key} className="grid grid-cols-[1fr,60px,1fr,1fr,60px] items-center gap-4">
-                  <span className="text-sm font-medium">{elementName}</span>
+                  <span className="text-sm font-medium">{label}</span>
                   <span className="text-sm text-muted-foreground text-right">{beforeValue}</span>
                   <Progress value={beforeValue} className="h-2" />
                   <Progress value={afterValue} className="h-2 bg-accent/20" />

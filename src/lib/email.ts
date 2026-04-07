@@ -178,7 +178,6 @@ export async function sendWelcomeEmail({ email, firstName }: WelcomeEmailProps) 
       return { success: false, error };
     }
 
-    console.log(`Welcome email sent to ${email}`, data);
     return { success: true, data };
   } catch (error) {
     console.error('Error sending welcome email:', error);

@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         break;
 
       default:
-        console.log(`Unhandled webhook event type: ${type}`);
+        // Unhandled event — silently ignore
     }
 
     return NextResponse.json({ success: true, type });
@@ -144,8 +144,6 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     data: { userId: user.id },
   });
 
-  console.log(`User created: ${email} (verified: ${emailVerified})`);
-
   // Sync to Zoho CRM (fire-and-forget — non-blocking)
   syncUserToCRM({
     email,
@@ -159,7 +157,6 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
 
   // If email is already verified (e.g., Google SSO), trigger welcome email
   if (emailVerified) {
-    console.log(`Sending welcome email to verified user: ${email}`);
     await sendWelcomeEmail({ email, firstName: data.first_name });
   }
 }
@@ -199,11 +196,8 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
     },
   });
 
-  console.log(`User updated: ${email} (verified: ${emailVerified})`);
-
   // If email was just verified, trigger welcome email
   if (wasJustVerified) {
-    console.log(`🎉 Email just verified for: ${email}`);
     await sendWelcomeEmail({ email, firstName: data.first_name });
   }
 }

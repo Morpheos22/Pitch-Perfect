@@ -57,7 +57,6 @@ export async function POST(request: NextRequest) {
           videoFile, user.id, 'video', videoFile.name, videoFile.type
         );
         analysisVideoUrl = uploadResult.url;
-        console.log(`[E3] Video uploaded: ${uploadResult.url} (${uploadResult.fileSize} bytes)`);
       } catch (uploadErr) {
         console.error('[E3] Video upload failed:', uploadErr);
         return NextResponse.json(
@@ -67,8 +66,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate duration
-    if (duration < 10) {
+    // Validate duration (guard against NaN / non-finite values)
+    if (!Number.isFinite(duration) || duration < 10) {
       return NextResponse.json(
         { error: "Video too short. Minimum duration is 10 seconds." },
         { status: 400 }
@@ -87,12 +86,12 @@ export async function POST(request: NextRequest) {
       // Allow internal mock URLs (dev) and all known storage backends
       if (analysisVideoUrl.startsWith('mock://') && process.env.NODE_ENV === 'development') {
         // Mock storage URL — skip SSRF check in development
-        console.warn('[E3] Using mock storage URL. Video analysis may have limited results.');
+        console.error('[E3] Using mock storage URL. Video analysis may have limited results.');
       } else {
         const allowedVideoHosts = [
           'workdrive.zoho.com', 'zoho.com',
-          'vercel.app', 'vercel-storage.com',
-          'cloudinary.com', 'cloudfront.net',
+          'blob.vercel-storage.com',
+          'public.blob.vercel-storage.com',
         ];
         try {
           const parsedUrl = new URL(analysisVideoUrl);
@@ -156,6 +155,13 @@ export async function POST(request: NextRequest) {
         transcript: analysis.transcript,
         analyzedAt: new Date(),
       },
+    });
+
+    // Increment usage counter
+    await prisma.usage.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, e3LivePitchSessions: 1 },
+      update: { e3LivePitchSessions: { increment: 1 } },
     });
 
     // Return real result

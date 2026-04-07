@@ -124,6 +124,7 @@ model Usage {
   e2ScriptCoachSessions Int @default(0)
   e3LivePitchSessions   Int @default(0)
   e4FullPitchSessions   Int @default(0)
+  e5FounderSessions     Int @default(0)
 
   // AI Token Usage (for cost tracking)
   zaiTokensUsed    Int @default(0) // Z.ai Gateway token usage

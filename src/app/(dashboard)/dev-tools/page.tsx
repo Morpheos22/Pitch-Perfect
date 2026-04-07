@@ -20,6 +20,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+import { isAdminEmail } from '@/lib/dev-auth';
+
 const DEV_MODE_CHECK = process.env.NODE_ENV === "development";
 
 const moduleLinks = [
@@ -31,11 +33,6 @@ const moduleLinks = [
 ];
 
 type Mode = "dev" | "client" | "unknown" | "loading";
-
-function isAdminEmail(email: string): boolean {
-  const lower = email.toLowerCase();
-  return lower === "helloautomagikal@gmail.com" || lower === "morphylee22@gmail.com";
-}
 
 export default function DevToolsPage() {
   const router = useRouter();

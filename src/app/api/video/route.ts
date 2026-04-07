@@ -15,6 +15,29 @@ import {
   isVercelBlobConfigured,
 } from '@/lib/storage';
 
+// SSRF protection: check if a URL resolves to a private/reserved IP range
+function isPrivateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return true; // Only allow https
+    const hostname = parsed.hostname;
+    // Block localhost and common private patterns
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return true;
+    // Block private IP ranges via regex (simple check on hostname)
+    const privatePatterns = [
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[0-1])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^127\./,
+      /^0\./,
+    ];
+    return privatePatterns.some(p => p.test(hostname));
+  } catch {
+    return true; // Invalid URLs are rejected
+  }
+}
+
 // POST: Upload video to WorkDrive
 export async function POST(request: NextRequest) {
   try {
@@ -88,7 +111,6 @@ export async function POST(request: NextRequest) {
       );
       downloadUrl = uploadResult.downloadUrl;
       fileId = uploadResult.fileId;
-      console.log(`[Video] Uploaded to WorkDrive: ${fileId}`);
     }
     // ── STRATEGY 2: Vercel Blob (fallback) ──
     else if (isVercelBlobConfigured()) {
@@ -100,7 +122,6 @@ export async function POST(request: NextRequest) {
       });
       downloadUrl = blobResult.url;
       fileId = blobResult.pathname;
-      console.log(`[Video] Uploaded to Vercel Blob: ${blobResult.url}`);
     }
     // ── STRATEGY 3: No storage available ──
     else {
@@ -194,7 +215,24 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      const downloadUrl = getWorkDriveFileUrl(fileId);
+      // Use stored URL directly for Vercel Blob uploads; only generate WorkDrive URL for WorkDrive files
+      let downloadUrl: string;
+      if (video.fileUrl && (
+        video.fileUrl.startsWith('https://blob.vercel-storage.com') ||
+        video.fileUrl.startsWith('https://public.blob.vercel-storage.com') ||
+        !video.fileUrl.includes('workdrive.zoho.com')
+      )) {
+        downloadUrl = video.fileUrl;
+      } else {
+        downloadUrl = getWorkDriveFileUrl(fileId);
+      }
+      // SSRF protection on the resolved URL
+      if (isPrivateUrl(downloadUrl)) {
+        return NextResponse.json(
+          { error: 'Invalid video URL' },
+          { status: 400 }
+        );
+      }
       return NextResponse.json({ downloadUrl });
     }
 
@@ -209,6 +247,14 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           { error: 'Video not found' },
           { status: 404 }
+        );
+      }
+
+      // SSRF protection on the resolved URL
+      if (isPrivateUrl(video.fileUrl)) {
+        return NextResponse.json(
+          { error: 'Invalid video URL' },
+          { status: 400 }
         );
       }
 
