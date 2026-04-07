@@ -73,6 +73,7 @@ async function callGatewayText(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Z-AI-From': 'Z',
   };
   // Primary auth: API Key as Bearer token
   if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
@@ -119,14 +120,15 @@ async function callGatewayVision(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Z-AI-From': 'Z',
   };
   if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
   if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
-  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions (vision) with model ${model}`);
+  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions/vision with model ${model}`);
 
-  const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
+  const resp = await fetch(`${GATEWAY_URL}/chat/completions/vision`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -231,18 +233,20 @@ export async function getZai() {
 // ============================================
 
 export const AI_MODELS = {
-  // ── TEXT MODELS (all route to glm-4-plus on gateway) ─────────────────────
-  PRIMARY_TEXT:     'gemini-2.5-flash',       // → glm-4-plus (text tasks)
-  UPGRADE_TEXT:     'gemini-1.5-pro',         // → glm-4-plus (deeper analysis)
-  GLM_FLAGSHIP:     'glm-5.1',                // → glm-4-plus (GLM brand label)
-  GLM_FAST:         'glm-4-flash',            // → glm-4-plus (simple/fast tasks)
-  FAILSAFE_TEXT:    'gemma-4',                // → glm-4-plus (open-weight label)
+  // ── TEXT MODELS (gateway uses its default model for all) ──────────────
+  // The Z.ai gateway ignores model names and routes to its default text model.
+  // We still send a model field for logging/tracking purposes.
+  PRIMARY_TEXT:     'glm-4-plus',            // Text analysis (default gateway model)
+  UPGRADE_TEXT:     'glm-4-plus',            // Deeper analysis
+  GLM_FLAGSHIP:     'glm-4-plus',            // GLM brand
+  GLM_FAST:         'glm-4-plus',            // Fast tasks
+  FAILSAFE_TEXT:    'glm-4-plus',            // Failsafe
 
-  // ── VISION MODELS (all route to glm-4.6v on gateway) ─────────────────────
-  PRIMARY_VISION:   'gemini-1.5-pro',         // → glm-4.6v (vision tasks)
-  GLM_VISION:       'glm-4.1v-thinking',      // → glm-4.6v (vision + thinking)
-  FAST_VISION:      'gemini-2.0-flash',       // → glm-4.6v (quick scans)
-  FAILSAFE_VISION:  'gemma-4',                // → glm-4.6v (vision failsafe)
+  // ── VISION MODELS (gateway routes to its default vision model) ──────────
+  PRIMARY_VISION:   'glm-4.6v',              // Vision tasks
+  GLM_VISION:       'glm-4.6v',              // Vision + thinking
+  FAST_VISION:      'glm-4.6v',              // Quick scans
+  FAILSAFE_VISION:  'glm-4.6v',              // Vision failsafe
 
   // ── SPECIALIZED (Z.ai capability suite) ─────────────────────────────────
   TTS_MODEL:        'tongtong',               // Z.ai TTS voice (tongtong/chelsie/diana/emma/aria)
