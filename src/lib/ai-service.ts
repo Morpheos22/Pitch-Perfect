@@ -41,6 +41,102 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 // ============================================
+// DIRECT HTTP FALLBACK CONFIGURATION
+// ============================================
+// Bypass the SDK entirely and call the Z.ai gateway via standard fetch.
+// This ensures AI works even if the SDK has initialization/auth issues.
+
+const GATEWAY_URL = process.env.ZAI_BASE_URL || 'https://zukijufuzu.xyz/api/v1';
+const GATEWAY_API_KEY = process.env.ZAI_API_KEY || '';
+const GATEWAY_TOKEN = process.env.ZAI_TOKEN || '';
+
+/** Whether we have minimum credentials for direct HTTP calls */
+function hasDirectCredentials(): boolean {
+  return !!GATEWAY_API_KEY || !!GATEWAY_TOKEN;
+}
+
+/** Call the Z.ai gateway text endpoint directly via fetch */
+async function callGatewayText(
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  temperature: number,
+  maxTokens?: number
+): Promise<any> {
+  if (!hasDirectCredentials()) {
+    throw new Error('No gateway credentials (ZAI_API_KEY or ZAI_TOKEN)');
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+
+  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions with model ${model}`);
+
+  const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens || 4096,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => 'unknown');
+    throw new Error(`Gateway ${resp.status}: ${body.slice(0, 300)}`);
+  }
+
+  return resp.json();
+}
+
+/** Call the Z.ai gateway vision endpoint directly via fetch */
+async function callGatewayVision(
+  model: string,
+  messages: Array<{
+    role: string;
+    content: string | Array<{ type: string; text?: string; image_url?: { url: string }; video_url?: { url: string }; file_url?: { url: string } }>;
+  }>,
+  temperature: number,
+  maxTokens?: number
+): Promise<any> {
+  if (!hasDirectCredentials()) {
+    throw new Error('No gateway credentials (ZAI_API_KEY or ZAI_TOKEN)');
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+
+  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions (vision) with model ${model}`);
+
+  const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens || 4096,
+    }),
+    signal: AbortSignal.timeout(180_000),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => 'unknown');
+    throw new Error(`Gateway ${resp.status}: ${body.slice(0, 300)}`);
+  }
+
+  return resp.json();
+}
+
+// ============================================
 // Z.AI SDK INITIALIZATION
 // ============================================
 
@@ -73,7 +169,7 @@ function createZaiConfig(): boolean {
 
   // Build config: existing values as defaults, env vars override only if set
   const config: Record<string, string | undefined> = {
-    baseUrl: process.env.ZAI_BASE_URL || existingConfig.baseUrl || 'https://open.bigmodel.cn/api/paas/v4',
+    baseUrl: process.env.ZAI_BASE_URL || existingConfig.baseUrl || 'https://zukijufuzu.xyz/api/v1',
     apiKey: process.env.ZAI_API_KEY || existingConfig.apiKey,
     chatId: process.env.ZAI_CHAT_ID || existingConfig.chatId,
     userId: process.env.ZAI_USER_ID || existingConfig.userId,
@@ -350,6 +446,7 @@ export async function executeWithFallback(
   const config = MODULE_MODEL_MAP[moduleKey];
   const lastError: Error[] = [];
 
+  // ── STRATEGY 1: Try SDK with model fallback chain ──
   for (const model of config.models) {
     try {
       const zai = await getZai();
@@ -379,12 +476,47 @@ export async function executeWithFallback(
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       lastError.push(err);
-      console.warn(`[ZAI] Model ${model} failed for ${moduleKey}: ${err.message}. Trying next...`);
+      console.warn(`[ZAI-SDK] Model ${model} failed for ${moduleKey}: ${err.message}. Trying next...`);
+    }
+  }
+
+  // ── STRATEGY 2: Direct HTTP fallback to gateway (bypass SDK) ──
+  console.warn(`[ZAI] All SDK models failed for ${moduleKey}. Trying direct HTTP fallback to ${GATEWAY_URL}...`);
+
+  for (const model of config.models) {
+    try {
+      const request = buildRequest(model);
+
+      let response;
+      if (config.method === 'vision') {
+        const vr = request as VisionRequest;
+        response = await callGatewayVision(
+          vr.model,
+          vr.messages as any,
+          vr.temperature || config.temperature,
+          vr.max_tokens
+        );
+      } else {
+        const cr = request as ChatRequest;
+        response = await callGatewayText(
+          cr.model,
+          cr.messages as any,
+          cr.temperature || config.temperature,
+          cr.max_tokens
+        );
+      }
+
+      console.log(`[ZAI-HTTP] Direct HTTP succeeded with model ${model} for ${moduleKey}`);
+      return { response, modelUsed: `${model} (direct)`, moduleKey };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      lastError.push(err);
+      console.warn(`[ZAI-HTTP] Model ${model} direct call failed for ${moduleKey}: ${err.message}. Trying next...`);
     }
   }
 
   throw new Error(
-    `All models failed for ${moduleKey}: ${lastError.map(e => e.message).join(' → ')}`
+    `All models failed for ${moduleKey} (SDK + direct HTTP): ${lastError.map(e => e.message).join(' → ')}`
   );
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
+import { uploadFile, isStorageConfigured } from "@/lib/storage";
 
 // E3: Live Elevator Pitch Coach API
 // Analyzes video recordings for delivery and body language using REAL AI
@@ -43,11 +44,27 @@ export async function POST(request: NextRequest) {
     // Validate video URL if provided
     let analysisVideoUrl = videoUrl;
     
+    // If video file uploaded, store it and get a URL
     if (videoFile && !videoUrl) {
-      return NextResponse.json(
-        { error: "Video file upload requires storage configuration" },
-        { status: 400 }
-      );
+      if (!isStorageConfigured()) {
+        return NextResponse.json(
+          { error: "Video upload requires storage configuration. Please contact support or provide a video URL from an external source (Cloudinary, etc.)." },
+          { status: 400 }
+        );
+      }
+      try {
+        const uploadResult = await uploadFile(
+          videoFile, user.id, 'video', videoFile.name, videoFile.type
+        );
+        analysisVideoUrl = uploadResult.url;
+        console.log(`[E3] Video uploaded: ${uploadResult.url} (${uploadResult.fileSize} bytes)`);
+      } catch (uploadErr) {
+        console.error('[E3] Video upload failed:', uploadErr);
+        return NextResponse.json(
+          { error: `Video upload failed: ${uploadErr instanceof Error ? uploadErr.message : 'Unknown error'}` },
+          { status: 500 }
+        );
+      }
     }
 
     // Validate duration

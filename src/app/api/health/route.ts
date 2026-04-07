@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { prisma } from '@/lib/db';
+import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
 
 interface HealthChecks {
   api: { status: string; timestamp: string };
   database: { status: string; message: string };
+  storage: {
+    status: string;
+    backend: string;
+    workdrive: boolean;
+    vercelBlob: boolean;
+  };
   ai: {
     status: string;
     message: string;
@@ -27,6 +34,12 @@ export async function GET() {
   const checks: HealthChecks = {
     api: { status: 'checking', timestamp: new Date().toISOString() },
     database: { status: 'checking', message: '' },
+    storage: {
+      status: 'checking',
+      backend: 'none',
+      workdrive: false,
+      vercelBlob: false,
+    },
     ai: {
       status: 'checking',
       message: '',
@@ -63,7 +76,15 @@ export async function GET() {
     };
   }
 
-  // Check 3: Z.ai config status (before attempting AI call)
+  // Check 3: Storage backend
+  checks.storage = {
+    status: isStorageConfigured() ? 'ok' : 'degraded',
+    backend: getStorageBackend(),
+    workdrive: isWorkDriveConfigured(),
+    vercelBlob: isVercelBlobConfigured(),
+  };
+
+  // Check 4: Z.ai config status (before attempting AI call)
   checks.ai.configStatus = getZaiConfigStatus();
   checks.ai.configFound = checks.ai.configStatus.configCreated;
 

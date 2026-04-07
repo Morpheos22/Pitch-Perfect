@@ -261,7 +261,7 @@ export default function LandingPage() {
                         className={`w-full ${product.featured ? "bg-primary hover:bg-primary/90" : ""}`}
                         variant={product.featured ? "default" : "outline"}
                       >
-                        <Link href={product.moduleHref}>
+                        <Link href={product.href}>
                           {product.price}
                           <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>

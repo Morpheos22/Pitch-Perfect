@@ -1,5 +1,10 @@
-// Zoho WorkDrive Storage Utilities
-// Handles file uploads for PDF, PPTX, DOCX, and video files via Zoho WorkDrive API
+// Storage Utilities for Pitch Perfect × Automagikal
+// Multi-backend: Zoho WorkDrive (primary) → Vercel Blob (fallback) → Mock (dev)
+//
+// STORAGE PRIORITY:
+//   1. Zoho WorkDrive — if ZOHO_WORKDRIVE_* env vars are configured
+//   2. Vercel Blob       — if BLOB_READ_WRITE_TOKEN is set (auto on Vercel)
+//   3. Mock (in-memory)  — development only, not persistent
 
 // ============================================
 // ZOHO WORKDRIVE CONFIGURATION
@@ -26,6 +31,23 @@ export function isWorkDriveConfigured(): boolean {
     WORKDRIVE_REFRESH_TOKEN &&
     WORKDRIVE_FOLDER_ID
   );
+}
+
+/** Check if Vercel Blob is configured */
+export function isVercelBlobConfigured(): boolean {
+  return !!process.env.BLOB_READ_WRITE_TOKEN;
+}
+
+/** Check if ANY real storage backend is available */
+export function isStorageConfigured(): boolean {
+  return isWorkDriveConfigured() || isVercelBlobConfigured();
+}
+
+/** Get active storage backend name */
+export function getStorageBackend(): string {
+  if (isWorkDriveConfigured()) return 'zoho-workdrive';
+  if (isVercelBlobConfigured()) return 'vercel-blob';
+  return 'mock';
 }
 
 // ============================================
@@ -388,9 +410,9 @@ export async function uploadFile(
 
   const key = generateFileKey(userId, type, originalName);
 
+  // ── STRATEGY 1: Zoho WorkDrive ──
   if (isWorkDriveConfigured()) {
     const result = await uploadToWorkDrive(buffer, originalName, WORKDRIVE_FOLDER_ID!);
-
     return {
       key,
       url: result.downloadUrl,
@@ -401,8 +423,32 @@ export async function uploadFile(
     };
   }
 
-  // Fallback: local mock storage (development only)
-  console.warn('Zoho WorkDrive not configured, using mock storage');
+  // ── STRATEGY 2: Vercel Blob (real persistent storage) ──
+  if (isVercelBlobConfigured()) {
+    try {
+      const { put } = await import('@vercel/blob');
+      const blob = new Blob([buffer], { type: mimeType });
+      const blobResult = await put(key, blob, {
+        access: 'public',
+        addRandomSuffix: true,
+      });
+      console.log(`[Storage] Uploaded to Vercel Blob: ${blobResult.url}`);
+      return {
+        key,
+        url: blobResult.url,
+        fileName: originalName,
+        fileSize,
+        fileType: mimeType,
+        fileId: blobResult.pathname,
+      };
+    } catch (blobError) {
+      console.error('[Storage] Vercel Blob upload failed:', blobError);
+      // Fall through to mock
+    }
+  }
+
+  // ── STRATEGY 3: Mock storage (development only, NOT persistent) ──
+  console.warn('[Storage] No real storage configured (WorkDrive or Vercel Blob). Using mock storage. Files will NOT persist across server restarts.');
   mockStorage.set(key, {
     buffer,
     metadata: { originalName, mimeType, fileSize },
