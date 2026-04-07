@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
+  "/api/debug(.*)",
 ]);
 
 // Routes that should not redirect to onboarding
