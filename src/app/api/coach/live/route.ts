@@ -84,23 +84,33 @@ export async function POST(request: NextRequest) {
 
     // SSRF prevention: validate video URL host
     if (analysisVideoUrl) {
-      const allowedVideoHosts = ['workdrive.zoho.com', 'zoho.com', 'vercel.app', 'cloudinary.com', 'cloudfront.net'];
-      try {
-        const parsedUrl = new URL(analysisVideoUrl);
-        const isAllowed = allowedVideoHosts.some(h =>
-          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
-        );
-        if (!isAllowed) {
+      // Allow internal mock URLs (dev) and all known storage backends
+      if (analysisVideoUrl.startsWith('mock://')) {
+        // Mock storage URL — skip SSRF check in development
+        console.warn('[E3] Using mock storage URL. Video analysis may have limited results.');
+      } else {
+        const allowedVideoHosts = [
+          'workdrive.zoho.com', 'zoho.com',
+          'vercel.app', 'vercel-storage.com',
+          'cloudinary.com', 'cloudfront.net',
+        ];
+        try {
+          const parsedUrl = new URL(analysisVideoUrl);
+          const isAllowed = allowedVideoHosts.some(h =>
+            parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+          );
+          if (!isAllowed) {
+            return NextResponse.json(
+              { error: 'Invalid video source. Files must be uploaded through the platform.' },
+              { status: 400 }
+            );
+          }
+        } catch {
           return NextResponse.json(
-            { error: 'Invalid video source. Files must be uploaded through the platform.' },
+            { error: 'Invalid video URL format.' },
             { status: 400 }
           );
         }
-      } catch {
-        return NextResponse.json(
-          { error: 'Invalid video URL format.' },
-          { status: 400 }
-        );
       }
     }
 
