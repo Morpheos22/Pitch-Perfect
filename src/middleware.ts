@@ -35,7 +35,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   // ── Rate Limiting (API routes only) ──
   if (pathname.startsWith("/api/")) {
-    const rateLimitResponse = rateLimitMiddleware(request, userId);
+    const rateLimitResponse = rateLimitMiddleware(request, userId ?? undefined);
     if (rateLimitResponse) return rateLimitResponse;
   }
 
@@ -86,11 +86,9 @@ export default clerkMiddleware(async (auth, request) => {
       }
     } catch (error) {
       console.error("[middleware] Onboarding check error:", error);
-      // Fail-closed: if Clerk API is unreachable, redirect to onboarding
-      if (!isOnboardingOrApi(request)) {
-        const url = new URL("/onboarding", request.url);
-        return NextResponse.redirect(url);
-      }
+      // Fail-OPEN: if Clerk API is unreachable, let the user through.
+      // The onboarding page will handle re-checking server-side.
+      // A fail-closed redirect here caused login loops when Clerk API was slow.
     }
   }
 

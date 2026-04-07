@@ -260,7 +260,7 @@ export interface Entitlement {
   }>;
   purchasedAt: Date;
   expiresAt?: Date;
-  paymentGateway: 'paystack' | 'lemonsqueezy';
+  paymentGateway: 'paystack' | 'lemonsqueezy' | 'stripe' | 'zoho';
   transactionId: string;
 }
 
@@ -299,7 +299,7 @@ export async function getEntitlement(userId: string, productId: string): Promise
       modules: JSON.parse(record.Modules as string),
       purchasedAt: new Date(record.Purchased_At as string),
       expiresAt: record.Expires_At ? new Date(record.Expires_At as string) : undefined,
-      paymentGateway: record.Payment_Gateway as 'paystack' | 'lemonsqueezy',
+      paymentGateway: record.Payment_Gateway as 'paystack' | 'lemonsqueezy' | 'stripe' | 'zoho',
       transactionId: record.Transaction_ID as string,
     };
   } catch {
