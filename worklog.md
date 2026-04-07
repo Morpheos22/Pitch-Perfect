@@ -144,3 +144,26 @@ Stage Summary:
 - Build passes clean, pushed to GitHub, Vercel deployment triggered via Git push
 - REMAINING: ZAI_API_KEY and ZAI_TOKEN must be set as Vercel env vars for AI to work in production
 - REMAINING: BLOB_READ_WRITE_TOKEN auto-set by Vercel when Blob store is created in dashboard
+---
+Task ID: 1
+Agent: Main Agent
+Task: Full debugging sweep of Pitch Perfect codebase, fix bugs, deploy
+
+Work Log:
+- Read and audited all critical source files: ai-service.ts (1042 lines), storage.ts (522 lines), all 5 coach API routes, homepage, middleware, zai-capabilities.ts, health endpoint, package.json
+- Identified 3 bugs:
+  1. SSRF allowlist in E3/E4 video routes missing vercel-storage.com — uploaded videos stored in Vercel Blob would be rejected
+  2. SSRF check also blocked mock:// URLs preventing dev testing
+  3. Health endpoint showed misleading warning about ZAI_TOKEN (which is optional/not needed)
+- Fixed all 3 bugs
+- Verified build passes clean (0 errors, 0 warnings)
+- Committed and pushed to GitHub
+- Triggered fresh Vercel deployment (dpl_DCfygo312oVTvRBjfYdG3QzyhGb5)
+
+Stage Summary:
+- ai-service.ts: Confirmed dual-strategy (SDK → HTTP fallback) is correctly wired. Gateway URL hardcoded to https://zukijufuzu.xyz/api/v1. Only ZAI_API_KEY required. All E1-E5 module configs verified.
+- storage.ts: Confirmed fallback chain (WorkDrive → Vercel Blob → Mock) works correctly.
+- All API routes confirmed to call real AI functions (not fake/mock data).
+- Homepage auth bypass confirmed fixed (SignedIn links go to pricing page).
+- Middleware route protection confirmed solid.
+- Dependencies confirmed present (z-ai-web-dev-sdk, @vercel/blob).
