@@ -46,10 +46,7 @@ export async function POST(request: NextRequest) {
     
     if (videoFile && !videoUrl) {
       return NextResponse.json(
-        { 
-          error: "Video file upload requires storage configuration",
-          message: "Please provide a video URL instead, or configure video storage (Zoho WorkDrive).",
-        },
+        { error: "Video file upload requires storage configuration" },
         { status: 400 }
       );
     }
@@ -57,11 +54,7 @@ export async function POST(request: NextRequest) {
     // Validate duration for full pitch
     if (duration < 180) {
       return NextResponse.json(
-        { 
-          error: "Video too short for full pitch analysis",
-          message: "Full pitch sessions should be at least 3 minutes. For shorter pitches, use the Live Pitch Coach.",
-          suggestedEndpoint: "/api/coach/live"
-        },
+        { error: "Video too short for full pitch analysis" },
         { status: 400 }
       );
     }
@@ -71,6 +64,28 @@ export async function POST(request: NextRequest) {
         { error: "Video too long. Maximum duration is 60 minutes." },
         { status: 400 }
       );
+    }
+
+    // SSRF prevention: validate video URL host
+    if (analysisVideoUrl) {
+      const allowedVideoHosts = ['workdrive.zoho.com', 'zoho.com', 'vercel.app', 'cloudinary.com', 'cloudfront.net'];
+      try {
+        const parsedUrl = new URL(analysisVideoUrl);
+        const isAllowed = allowedVideoHosts.some(h =>
+          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+        );
+        if (!isAllowed) {
+          return NextResponse.json(
+            { error: 'Invalid video source. Files must be uploaded through the platform.' },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid video URL format.' },
+          { status: 400 }
+        );
+      }
     }
 
     // Get deck analysis if provided
@@ -92,13 +107,8 @@ export async function POST(request: NextRequest) {
       analysis = await analyzeFullPitchSession(analysisVideoUrl!, duration, deckAnalysis);
     } catch (aiError) {
       console.error("AI full pitch analysis failed:", aiError);
-      const errorMessage = aiError instanceof Error ? aiError.message : "Unknown AI error";
       return NextResponse.json(
-        { 
-          error: "AI analysis failed", 
-          message: errorMessage,
-          details: "The AI service encountered an error analyzing your pitch session. Ensure the video URL is publicly accessible."
-        },
+        { error: "AI analysis failed" },
         { status: 500 }
       );
     }
@@ -161,9 +171,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Full session analysis error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to analyze full session", message: errorMessage },
+      { error: "Failed to analyze full session" },
       { status: 500 }
     );
   }

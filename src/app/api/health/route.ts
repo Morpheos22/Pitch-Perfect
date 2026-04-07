@@ -45,10 +45,9 @@ export async function GET() {
       message: 'Database connection successful',
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
     checks.database = {
       status: 'unhealthy',
-      message: `Database connection failed: ${errorMessage}`,
+      message: 'Database connection failed',
     };
   }
 
@@ -64,10 +63,9 @@ export async function GET() {
       moduleCount: aiHealth.moduleMapping.length,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown AI error';
     checks.ai = {
       status: 'unhealthy',
-      message: errorMessage,
+      message: 'AI service check failed',
       configFound: false,
       gatewayRouting: { text: 'unknown', vision: 'unknown' },
       zai: { status: 'unknown', message: 'Health check failed' },

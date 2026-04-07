@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Validate each file
     for (const file of uniqueFiles) {
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-      if (!ALLOWED_EXTENSIONS.includes(ext) && !ALLOWED_MIME_TYPES.includes(file.type)) {
+      if (!ALLOWED_EXTENSIONS.includes(ext) || !ALLOWED_MIME_TYPES.includes(file.type)) {
         return NextResponse.json(
           { error: `Invalid file type: "${file.name}". Allowed types: PDF, PPTX, PPT, DOCX, DOC, HTML, TXT` },
           { status: 400 }
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(
-      { error: 'Upload failed', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Upload failed' },
       { status: 500 }
     );
   }

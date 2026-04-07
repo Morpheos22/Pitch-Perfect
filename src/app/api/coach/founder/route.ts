@@ -422,6 +422,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { moduleType, input } = body;
 
+    // Input validation
+    if (typeof input !== 'object' || input === null) {
+      return NextResponse.json({ error: 'Invalid input format' }, { status: 400 });
+    }
+    const inputStr = JSON.stringify(input);
+    if (inputStr.length > 50000) {
+      return NextResponse.json({ error: 'Input exceeds maximum allowed size' }, { status: 400 });
+    }
+    if (typeof moduleType !== 'string' || !moduleType) {
+      return NextResponse.json({ error: 'Invalid module type' }, { status: 400 });
+    }
+
     const moduleKey = E5_MODULE_KEYS[moduleType];
     if (!moduleKey) {
       return NextResponse.json(
@@ -608,13 +620,8 @@ export async function POST(request: NextRequest) {
       });
 
       console.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
-      const errorMsg =
-        aiError instanceof Error ? aiError.message : "Unknown AI error";
       return NextResponse.json(
-        {
-          error: "AI analysis failed",
-          message: errorMsg,
-        },
+        { error: "AI analysis failed" },
         { status: 500 }
       );
     }

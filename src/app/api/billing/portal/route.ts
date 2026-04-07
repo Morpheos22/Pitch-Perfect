@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Billing portal error:', error);
     return NextResponse.json(
-      { error: 'Failed to load billing portal', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to load billing portal' },
       { status: 500 }
     );
   }

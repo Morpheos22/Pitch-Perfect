@@ -55,13 +55,8 @@ export async function POST(request: NextRequest) {
       analysis = await analyzePitchScript(script, targetAudience, targetDuration);
     } catch (aiError) {
       console.error("AI script analysis failed:", aiError);
-      const errorMessage = aiError instanceof Error ? aiError.message : "Unknown AI error";
       return NextResponse.json(
-        { 
-          error: "AI analysis failed", 
-          message: errorMessage,
-          details: "The AI service encountered an error analyzing your script. Please try again."
-        },
+        { error: "AI analysis failed" },
         { status: 500 }
       );
     }
@@ -113,9 +108,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Script analysis error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to analyze script", message: errorMessage },
+      { error: "Failed to analyze script" },
       { status: 500 }
     );
   }

@@ -177,17 +177,17 @@ export function validateFileTypeByCategory(
 
   switch (type) {
     case 'deck':
-      if (!ALLOWED_DECK_TYPES.includes(mimeType) && !DECK_EXTENSIONS.includes(ext)) {
+      if (!ALLOWED_DECK_TYPES.includes(mimeType) || !DECK_EXTENSIONS.includes(ext)) {
         return { valid: false, error: 'Invalid file type. Please upload a PDF or PowerPoint file.' };
       }
       break;
     case 'script':
-      if (!ALLOWED_SCRIPT_TYPES.includes(mimeType) && !SCRIPT_EXTENSIONS.includes(ext)) {
+      if (!ALLOWED_SCRIPT_TYPES.includes(mimeType) || !SCRIPT_EXTENSIONS.includes(ext)) {
         return { valid: false, error: 'Invalid file type. Please upload a PDF, Word, or text file.' };
       }
       break;
     case 'video':
-      if (!ALLOWED_VIDEO_TYPES.includes(mimeType) && !VIDEO_EXTENSIONS.includes(ext)) {
+      if (!ALLOWED_VIDEO_TYPES.includes(mimeType) || !VIDEO_EXTENSIONS.includes(ext)) {
         return { valid: false, error: 'Invalid file type. Please upload an MP4, WebM, MOV, or AVI file.' };
       }
       break;

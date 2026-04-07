@@ -45,11 +45,7 @@ export async function POST(request: NextRequest) {
     
     if (videoFile && !videoUrl) {
       return NextResponse.json(
-        { 
-          error: "Video file upload requires storage configuration",
-          message: "Please provide a video URL instead, or configure video storage (Zoho WorkDrive).",
-          details: "Direct video file analysis requires the video to be accessible via URL."
-        },
+        { error: "Video file upload requires storage configuration" },
         { status: 400 }
       );
     }
@@ -64,14 +60,31 @@ export async function POST(request: NextRequest) {
 
     if (duration > 180) {
       return NextResponse.json(
-        { 
-          error: "Video too long for elevator pitch analysis",
-          message: "This video exceeds 3 minutes. Please use the Full Pitch Session analysis for longer presentations.",
-          duration: duration,
-          suggestedEndpoint: "/api/coach/full"
-        },
+        { error: "Video too long for elevator pitch analysis" },
         { status: 400 }
       );
+    }
+
+    // SSRF prevention: validate video URL host
+    if (analysisVideoUrl) {
+      const allowedVideoHosts = ['workdrive.zoho.com', 'zoho.com', 'vercel.app', 'cloudinary.com', 'cloudfront.net'];
+      try {
+        const parsedUrl = new URL(analysisVideoUrl);
+        const isAllowed = allowedVideoHosts.some(h =>
+          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+        );
+        if (!isAllowed) {
+          return NextResponse.json(
+            { error: 'Invalid video source. Files must be uploaded through the platform.' },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid video URL format.' },
+          { status: 400 }
+        );
+      }
     }
 
     // Run REAL AI video analysis
@@ -80,13 +93,8 @@ export async function POST(request: NextRequest) {
       analysis = await analyzePitchVideo(analysisVideoUrl!, duration);
     } catch (aiError) {
       console.error("AI video analysis failed:", aiError);
-      const errorMessage = aiError instanceof Error ? aiError.message : "Unknown AI error";
       return NextResponse.json(
-        { 
-          error: "AI video analysis failed", 
-          message: errorMessage,
-          details: "The AI service encountered an error analyzing your video. Ensure the video URL is publicly accessible."
-        },
+        { error: "AI video analysis failed" },
         { status: 500 }
       );
     }
@@ -150,9 +158,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Live pitch analysis error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to analyze video", message: errorMessage },
+      { error: "Failed to analyze video" },
       { status: 500 }
     );
   }

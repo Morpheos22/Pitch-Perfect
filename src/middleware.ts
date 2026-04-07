@@ -17,7 +17,7 @@ const isPublicRoute = createRouteMatcher([
   "/cookies",
   "/api/webhooks(.*)",
   "/api/health",
-  "/api/user/sync",
+  "/api/contact",
 ]);
 
 // Routes that should not redirect to onboarding
@@ -26,33 +26,15 @@ const isOnboardingOrApi = createRouteMatcher([
   "/api(.*)",
 ]);
 
-/**
- * Auth middleware with onboarding redirect.
- *
- * RULES:
- * 1. Public routes → no auth required
- * 2. API routes → no onboarding redirect (but auth required for non-public APIs)
- * 3. Onboarding page → no redirect (prevents infinite loop)
- * 4. Admin emails (Helloautomagikal@gmail.com, Morphylee22@gmail.com) → ALWAYS bypass onboarding
- * 5. All other users → redirect to /onboarding if onboardingCompleted is not true
- *
- * Uses a HYBRID approach:
- * - Fast path: check JWT claims (zero latency)
- * - Slow path: call Clerk API for fresh user data if JWT is inconclusive
- * - This handles stale JWTs where claims were issued before metadata was set
- */
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
 
+  // ── Auth: call ONCE and reuse result ──
+  const authResult = await auth();
+  const userId = authResult.userId;
+
   // ── Rate Limiting (API routes only) ──
   if (pathname.startsWith("/api/")) {
-    let userId: string | undefined;
-    try {
-      const authResult = await auth();
-      userId = authResult.userId || undefined;
-    } catch {
-      userId = undefined;
-    }
     const rateLimitResponse = rateLimitMiddleware(request, userId);
     if (rateLimitResponse) return rateLimitResponse;
   }
@@ -63,9 +45,6 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // ── Onboarding redirect ──
-  const authResult = await auth();
-  const userId = authResult.userId;
-
   if (userId && !isOnboardingOrApi(request) && !isPublicRoute(request)) {
     // FAST PATH: Check JWT claims first (zero latency)
     const claims = authResult.sessionClaims;
@@ -107,7 +86,11 @@ export default clerkMiddleware(async (auth, request) => {
       }
     } catch (error) {
       console.error("[middleware] Onboarding check error:", error);
-      // Fail-open: if Clerk API is unreachable, let the request through
+      // Fail-closed: if Clerk API is unreachable, redirect to onboarding
+      if (!isOnboardingOrApi(request)) {
+        const url = new URL("/onboarding", request.url);
+        return NextResponse.redirect(url);
+      }
     }
   }
 

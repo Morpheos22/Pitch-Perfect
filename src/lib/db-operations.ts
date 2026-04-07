@@ -1,28 +1,42 @@
-// Database Operations for Pitch Perfect × Automagikal
-// Only contains functions actively used by API routes
+// Database Operations
+// Helper functions for user management with Clerk authentication
 
-import { prisma } from './db';
 import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
+/**
+ * Get the current authenticated user from Clerk, or create them in the database if they don't exist.
+ * Throws an Error with message 'Unauthorized' if no user is authenticated.
+ */
 export async function getOrCreateUser() {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkId } = await auth();
+
+  if (!clerkId) {
     throw new Error('Unauthorized');
   }
 
-  // Get user from database by clerkId
   let user = await prisma.user.findUnique({
-    where: { clerkId: userId },
-    include: {
-      subscription: true,
-      usage: true,
-    },
+    where: { clerkId },
   });
 
-  // If user doesn't exist, we need to create them
-  // This should normally be handled by the /api/user/sync webhook
   if (!user) {
-    throw new Error('User not found in database. Please sync user first.');
+    // Get Clerk user details for creation
+    const { clerkClient } = await import('@clerk/nextjs/server');
+    const client = await clerkClient();
+    const clerkUser = await client.users.getUser(clerkId);
+
+    const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+    const firstName = clerkUser.firstName || '';
+    const lastName = clerkUser.lastName || '';
+
+    user = await prisma.user.create({
+      data: {
+        clerkId,
+        email,
+        firstName,
+        lastName,
+      },
+    });
   }
 
   return user;

@@ -29,13 +29,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true, status: 'not_paid' });
       }
 
-      // Extract custom data
+      // Extract custom data — DO NOT trust client-supplied userId
       const customData = (orderAttributes.custom_data as Record<string, unknown>) || {};
-      const userId = customData.userId as string;
       const productId = customData.productId as string;
 
-      if (!userId || !productId) {
-        return NextResponse.json({ error: 'Missing user or product ID' }, { status: 400 });
+      if (!productId) {
+        return NextResponse.json({ error: 'Missing product ID' }, { status: 400 });
       }
 
       // Verify payment with LemonSqueezy API
@@ -45,9 +44,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Payment not successful' }, { status: 400 });
       }
 
-      // Find user
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
+      // Look up user by customer email (from LemonSqueezy, not client-supplied)
+      const customerEmail = orderAttributes.user_email as string
+        || orderAttributes.customer_email as string
+        || orderAttributes.email as string;
+
+      if (!customerEmail) {
+        return NextResponse.json({ error: 'Customer email not found in order' }, { status: 400 });
+      }
+
+      const user = await prisma.user.findFirst({
+        where: { email: customerEmail },
       });
 
       if (!user) {
@@ -104,9 +111,9 @@ export async function POST(request: NextRequest) {
 
       // Update user subscription
       await prisma.subscription.upsert({
-        where: { userId },
+        where: { userId: user.id },
         create: {
-          userId,
+          userId: user.id,
           plan: getPlanFromProduct(productId),
           status: 'ACTIVE',
         },
