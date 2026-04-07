@@ -45,14 +45,19 @@ import { homedir } from 'os';
 // ============================================
 // Bypass the SDK entirely and call the Z.ai gateway via standard fetch.
 // This ensures AI works even if the SDK has initialization/auth issues.
+//
+// REQUIRED: ZAI_API_KEY (your API Key from the Z.ai platform)
+// OPTIONAL: ZAI_TOKEN  (secondary X-Token header, not needed for most setups)
+// OPTIONAL: ZAI_USER_ID (maps to your API ID from the Z.ai platform)
 
 const GATEWAY_URL = process.env.ZAI_BASE_URL || 'https://zukijufuzu.xyz/api/v1';
 const GATEWAY_API_KEY = process.env.ZAI_API_KEY || '';
 const GATEWAY_TOKEN = process.env.ZAI_TOKEN || '';
+const GATEWAY_USER_ID = process.env.ZAI_USER_ID || '';
 
 /** Whether we have minimum credentials for direct HTTP calls */
 function hasDirectCredentials(): boolean {
-  return !!GATEWAY_API_KEY || !!GATEWAY_TOKEN;
+  return !!GATEWAY_API_KEY;
 }
 
 /** Call the Z.ai gateway text endpoint directly via fetch */
@@ -63,14 +68,18 @@ async function callGatewayText(
   maxTokens?: number
 ): Promise<any> {
   if (!hasDirectCredentials()) {
-    throw new Error('No gateway credentials (ZAI_API_KEY or ZAI_TOKEN)');
+    throw new Error('No gateway credentials. Set ZAI_API_KEY env var.');
   }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  // Primary auth: API Key as Bearer token
   if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+  // Secondary auth: X-Token (optional, only if configured)
+  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  // Optional: User/API ID for request attribution
+  if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
   console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions with model ${model}`);
 
@@ -105,14 +114,15 @@ async function callGatewayVision(
   maxTokens?: number
 ): Promise<any> {
   if (!hasDirectCredentials()) {
-    throw new Error('No gateway credentials (ZAI_API_KEY or ZAI_TOKEN)');
+    throw new Error('No gateway credentials. Set ZAI_API_KEY env var.');
   }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
   if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
   console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions (vision) with model ${model}`);
 
@@ -178,11 +188,12 @@ function createZaiConfig(): boolean {
 
   // Validate minimum requirements
   if (!config.apiKey) {
-    console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var or ensure .z-ai-config has an apiKey field.');
+    console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var.');
     return false;
   }
-  if (!config.token) {
-    console.warn('[ZAI] No auth token configured. Set ZAI_TOKEN env var or ensure .z-ai-config has a token field. AI endpoints may return 401.');
+  // ZAI_TOKEN is optional — used as secondary X-Token header only
+  if (config.token) {
+    console.log('[ZAI] X-Token configured (optional secondary auth).');
   }
 
   const configJson = JSON.stringify(config);
