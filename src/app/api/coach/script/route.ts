@@ -3,6 +3,23 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
 
+// PDF text extraction for binary PDF files
+async function extractPdfText(file: File): Promise<string> {
+  try {
+    const pdfParse = (await import('pdf-parse')).default;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const data = await pdfParse(buffer);
+    const text = (data.text || "").trim();
+    if (!text || text.length < 20) {
+      return "";
+    }
+    return text;
+  } catch (e) {
+    console.error("PDF extraction failed, falling back to text():", e);
+    return await file.text();
+  }
+}
+
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
 
@@ -23,8 +40,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const body = await request.json();
-    const { script, targetAudience, targetDuration, sessionName } = body;
+    // Accept both JSON body (pasted text) and FormData (file upload)
+    let script: string;
+    let targetAudience: string | undefined;
+    let targetDuration: number | undefined;
+    let sessionName: string | null = null;
+
+    const contentType = request.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      // FormData: file upload
+      const formData = await request.formData();
+      const file = formData.get("file") as File | null;
+      sessionName = formData.get("sessionName") as string | null;
+      targetAudience = (formData.get("targetAudience") as string) || undefined;
+      targetDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string) : undefined;
+
+      if (!file) {
+        return NextResponse.json(
+          { error: "File is required" },
+          { status: 400 }
+        );
+      }
+
+      // Extract text from file (PDF-aware)
+      const fileName = (file.name || "").toLowerCase();
+      if (fileName.endsWith(".pdf")) {
+        script = await extractPdfText(file);
+      } else {
+        script = await file.text();
+      }
+
+      if (!script || script.trim().length < 20) {
+        return NextResponse.json(
+          { error: "Could not extract text from file. Please try pasting your script directly." },
+          { status: 400 }
+        );
+      }
+    } else {
+      // JSON: pasted text
+      const body = await request.json();
+      script = body.script;
+      targetAudience = body.targetAudience;
+      targetDuration = body.targetDuration;
+      sessionName = body.sessionName;
+    }
 
     if (!script || typeof script !== "string") {
       return NextResponse.json(
