@@ -121,8 +121,16 @@ export async function GET() {
   const allHealthy = Object.values(checks).every(c => c.status === 'ok' || c.status === 'healthy');
   const anyUnhealthy = Object.values(checks).some(c => c.status === 'unhealthy');
 
-  // Token warning: AI may be partially functional without token (text might work, vision won't)
-  const tokenWarning = !checks.ai.configStatus.hasToken && checks.ai.configStatus.configCreated;
+  // Warnings collection
+  const warnings: string[] = [];
+
+  if (!checks.ai.configStatus.hasApiKey) {
+    warnings.push('ZAI_API_KEY not configured. AI analysis will fail. Set it in Vercel env vars.');
+  }
+
+  if (checks.storage.backend === 'mock') {
+    warnings.push('No persistent storage configured (WorkDrive/Blob). File uploads will not persist across serverless cold starts.');
+  }
 
   const overallStatus = allHealthy
     ? 'healthy'
@@ -132,9 +140,7 @@ export async function GET() {
 
   return NextResponse.json({
     status: overallStatus,
-    warnings: tokenWarning
-      ? ['Z.ai token not configured. Text endpoints may work but vision endpoints will return 401.']
-      : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
     checks,
     timestamp: new Date().toISOString(),
     responseTime: `${responseTime}ms`,
