@@ -73,3 +73,28 @@ Stage Summary:
 - PDF uploads now work for E1 (deck) and E3 (script)
 - Video uploads work on Vercel via Blob fallback
 - All modules verified functional end-to-end
+
+---
+Task ID: final-debug
+Agent: Main Agent
+Task: Final root cause analysis, bug fixes, deployment verification
+
+Work Log:
+- Discovered I was targeting the WRONG Vercel project (prj_tCb2nnNoAl3sBI2RoNC6wNpEWPh0 had 0 env vars)
+- Found correct project: prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3 (pitchcoach-ai) with 29 env vars
+- Checked production health endpoint - found DB connected, AI responding, storage OK
+- Discovered missing founder_sessions table in production database
+- Discovered Vercel Hobby plan has 10s function timeout (AI analysis needs 10-30s)
+- Added vercel.json with maxDuration=120s for coach/video API routes
+- Updated health check to verify ALL tables exist (not just connection)
+- Added auto-migration: health check creates missing tables via raw SQL DDL
+- Added detailed error logging to E1 Deck API (input extraction, AI timing, DB save)
+- Deployed and verified: health status changed from unhealthy → healthy
+
+Stage Summary:
+- Production health: healthy (all 8 tables exist, auto-created founder_sessions)
+- AI gateway: glm-4-plus responding (text), vision unknown (needs Vercel-side test)
+- Storage: zoho-workdrive + vercel-blob both configured
+- Function timeouts: 120s for AI routes (was 10s default)
+- 3 commits pushed: e27b5d5, 515335d (latest)
+- Latest deployment: dpl_CCkivyz7AKjGti8kb9zEfcgwfNCp (READY)
