@@ -110,9 +110,30 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
-      include: {
-        subscription: true,
-        usage: true,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        onboardingCompleted: true,
+        subscription: {
+          select: {
+            plan: true,
+            status: true,
+            stripeCustomerId: true,
+            paystackCustomerId: true,
+          },
+        },
+        usage: {
+          select: {
+            e1DeckAnalyses: true,
+            e2ScriptCoachSessions: true,
+            e3LivePitchSessions: true,
+            e4FullPitchSessions: true,
+            e5FounderSessions: true,
+          },
+        },
       },
     });
 

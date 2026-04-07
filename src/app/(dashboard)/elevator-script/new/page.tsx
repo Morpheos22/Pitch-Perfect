@@ -97,8 +97,8 @@ export default function ElevatorScriptNewPage() {
       toast.error("Please upload a file");
       return;
     }
-    if (inputTab === "paste" && wordCount < 20) {
-      toast.error("Your script seems too short. Please enter at least 20 words.");
+    if (inputTab === "paste" && wordCount < 30) {
+      toast.error("Your script seems too short. Please enter at least 30 words.");
       return;
     }
 
@@ -311,7 +311,7 @@ export default function ElevatorScriptNewPage() {
                 </div>
                 <span>{scriptText.length}/5000</span>
               </div>
-              {wordCount > 0 && wordCount < 20 && (
+              {wordCount > 0 && wordCount < 30 && (
                 <p className="text-sm text-yellow-500 mt-2">
                   Your script seems very short. Are you sure you&apos;re ready to submit?
                 </p>
@@ -328,7 +328,7 @@ export default function ElevatorScriptNewPage() {
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!sessionName.trim() || (inputTab === "upload" ? !file : wordCount < 20) || submitting}
+          disabled={!sessionName.trim() || (inputTab === "upload" ? !file : wordCount < 30) || submitting}
           className="bg-primary hover:bg-primary/90"
         >
           {submitting ? (

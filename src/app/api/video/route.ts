@@ -156,12 +156,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // If fileId provided directly, generate download URL
+    // If fileId provided, verify user owns the file before returning URL
     if (fileId) {
-      const downloadUrl = getWorkDriveFileUrl(fileId);
-      return NextResponse.json({
-        downloadUrl,
+      const video = await db.pitchVideo.findFirst({
+        where: {
+          userId: user.id,
+          OR: [
+            { fileUrl: { contains: fileId } },
+            { r2Key: fileId },
+          ],
+        },
+        select: { fileUrl: true },
       });
+      if (!video) {
+        return NextResponse.json(
+          { error: 'Video not found' },
+          { status: 404 }
+        );
+      }
+      const downloadUrl = getWorkDriveFileUrl(fileId);
+      return NextResponse.json({ downloadUrl });
     }
 
     // If videoId provided, look up the file from database

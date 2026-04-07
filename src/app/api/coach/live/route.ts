@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // SSRF prevention: validate video URL host
     if (analysisVideoUrl) {
       // Allow internal mock URLs (dev) and all known storage backends
-      if (analysisVideoUrl.startsWith('mock://')) {
+      if (analysisVideoUrl.startsWith('mock://') && process.env.NODE_ENV === 'development') {
         // Mock storage URL — skip SSRF check in development
         console.warn('[E3] Using mock storage URL. Video analysis may have limited results.');
       } else {
