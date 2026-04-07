@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     "sharp",
     "z-ai-web-dev-sdk",
     "resend",
+    "pdf-parse",
+    "mammoth",
+    "jszip",
   ],
 };
 
