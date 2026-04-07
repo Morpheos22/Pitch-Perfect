@@ -108,3 +108,39 @@ Apply 5 critical fixes: Z.ai SDK config preservation, homepage product card auth
 - `src/app/api/health/route.ts` — config status + token warnings
 
 **Lint:** 0 errors, 1 pre-existing warning (unrelated)
+
+---
+Task ID: 1-6
+Agent: Main Agent (Super Z)
+Task: Fix critical security vulnerability (homepage auth bypass), fix AI service (non-functional), fix file upload/storage (fake/mock), full sweep, push to GitHub, deploy
+
+Work Log:
+- Audited all critical source files: ai-service.ts, storage.ts, page.tsx, middleware.ts, all 4 coach API routes, upload route, health check
+- Diagnosed root causes:
+  1. Homepage: SignedIn product links used moduleHref (direct to modules) instead of href (pricing page), bypassing payment verification
+  2. AI Service: z-ai-web-dev-sdk initialization fails on Vercel (file system read-only, missing env vars, wrong default gateway URL)
+  3. Storage: Zoho WorkDrive env vars not configured → falls to in-memory mock storage that evaporates on serverless restart
+  4. Video routes (E3/E4): Reject video file uploads outright with "requires storage configuration" error
+
+- Fix 1 (Homepage Auth): Changed SignedIn product card links from product.moduleHref to product.href so users go through pricing first
+- Fix 2 (AI Service): Added dual-strategy execution in executeWithFallback():
+  - Strategy 1: Try z-ai-web-dev-sdk with model fallback chain
+  - Strategy 2: Direct HTTP fallback to Z.ai gateway using fetch() with proper auth headers
+  - Fixed default ZAI_BASE_URL from open.bigmodel.cn to zukijufuzu.xyz/api/v1
+- Fix 3 (Storage): Added Vercel Blob (@vercel/blob) as persistent storage fallback:
+  - Priority: Zoho WorkDrive → Vercel Blob → Mock (dev only)
+  - Added isStorageConfigured(), isVercelBlobConfigured(), getStorageBackend() functions
+- Fix 4 (Video Routes): Updated coach/live and coach/full to accept video file uploads using the storage layer instead of rejecting them
+- Fix 5 (Health Check): Added storage backend status reporting
+- Fix 6 (.env.example): Updated default ZAI_BASE_URL to correct gateway
+- Build verification: next build passes clean (compiled in 10.1s)
+- Pushed to GitHub: Morpheos22/Pitch-Perfect (commit 12e576d + deploy trigger c158652)
+- Verified site live: https://perfectpitch-ai.vercel.app returns 200
+
+Stage Summary:
+- All 3 critical issues addressed: auth bypass, AI non-functional, storage fake
+- AI service now has bulletproof dual-strategy: SDK + direct HTTP fallback
+- Storage now has real persistent backend (Vercel Blob) when WorkDrive isn't configured
+- Build passes clean, pushed to GitHub, Vercel deployment triggered via Git push
+- REMAINING: ZAI_API_KEY and ZAI_TOKEN must be set as Vercel env vars for AI to work in production
+- REMAINING: BLOB_READ_WRITE_TOKEN auto-set by Vercel when Blob store is created in dashboard
