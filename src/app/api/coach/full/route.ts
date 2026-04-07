@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
+import { extractFileText } from '@/lib/file-parser';
 
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const videoUrl = formData.get("videoUrl") as string;
     const videoFile = formData.get("video") as File;
-    const deckContent = formData.get("deckContent") as string;
+    const deckFile = formData.get("deckFile") as File | null;
     const durationStr = formData.get("duration") as string;
     const videoId = formData.get("videoId") as string;
     const existingDeckId = formData.get("deckId") as string;
@@ -58,7 +59,6 @@ export async function POST(request: NextRequest) {
           videoFile, user.id, 'video', videoFile.name, videoFile.type
         );
         analysisVideoUrl = uploadResult.url;
-        console.log(`[E4] Video uploaded: ${uploadResult.url} (${uploadResult.fileSize} bytes)`);
       } catch (uploadErr) {
         console.error('[E4] Video upload failed:', uploadErr);
         return NextResponse.json(
@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate duration for full pitch
-    if (duration < 180) {
+    // Validate duration for full pitch (guard against NaN / non-finite values)
+    if (!Number.isFinite(duration) || duration < 180) {
       return NextResponse.json(
         { error: "Video too short for full pitch analysis" },
         { status: 400 }
@@ -88,12 +88,12 @@ export async function POST(request: NextRequest) {
       // Allow internal mock URLs (dev) and all known storage backends
       if (analysisVideoUrl.startsWith('mock://') && process.env.NODE_ENV === 'development') {
         // Mock storage URL — skip SSRF check in development
-        console.warn('[E4] Using mock storage URL. Video analysis may have limited results.');
+        console.error('[E4] Using mock storage URL. Video analysis may have limited results.');
       } else {
         const allowedVideoHosts = [
           'workdrive.zoho.com', 'zoho.com',
-          'vercel.app', 'vercel-storage.com',
-          'cloudinary.com', 'cloudfront.net',
+          'blob.vercel-storage.com',
+          'public.blob.vercel-storage.com',
         ];
         try {
           const parsedUrl = new URL(analysisVideoUrl);
@@ -117,12 +117,40 @@ export async function POST(request: NextRequest) {
 
     // Get deck analysis if provided
     let deckAnalysis: DeckAnalysisResult | undefined;
-    
-    if (existingDeckId) {
+
+    if (deckFile && deckFile.size > 0) {
+      // Parse uploaded deck file server-side
+      try {
+        const deckText = await extractFileText(deckFile);
+        // Build a minimal DeckAnalysisResult from extracted text so the AI can use it as context
+        deckAnalysis = {
+          overallScore: 0,
+          strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
+          weaknesses: [],
+          recommendations: [],
+          problemClarityScore: 0,
+          solutionClarityScore: 0,
+          marketOpportunityScore: 0,
+          businessModelScore: 0,
+          teamCredibilityScore: 0,
+          tractionScore: 0,
+          financialsScore: 0,
+          askClarityScore: 0,
+          designConsistencyScore: 0,
+          readabilityScore: 0,
+          visualHierarchyScore: 0,
+          colorSchemeScore: 0,
+          typographyScore: 0,
+        };
+      } catch (parseErr) {
+        console.error('[E4] Deck file parsing failed:', parseErr);
+        // Non-fatal: continue without deck context
+      }
+    } else if (existingDeckId) {
       const existingDeck = await prisma.pitchDeck.findFirst({
         where: { id: existingDeckId, userId: user.id },
       });
-      
+
       if (existingDeck && existingDeck.rawAnalysis) {
         deckAnalysis = existingDeck.rawAnalysis as unknown as DeckAnalysisResult;
       }
@@ -158,7 +186,12 @@ export async function POST(request: NextRequest) {
         tractionMilestones: analysis.tractionMilestones,
         deliveryPresence: analysis.deliveryPresence,
         overallReadinessScore: analysis.overallReadinessScore,
-        investorReadinessLevel: analysis.investorReadinessLevel as any,
+        investorReadinessLevel: (() => {
+          const validLevels = ['NOT_READY', 'EARLY_STAGE', 'DEVELOPING', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
+          return validLevels.includes(analysis.investorReadinessLevel)
+            ? analysis.investorReadinessLevel
+            : 'DEVELOPING';
+        })() as any,
         contentScores: analysis.contentScores,
         deliveryScores: analysis.deliveryScores,
         strengths: analysis.strengths,
@@ -170,6 +203,13 @@ export async function POST(request: NextRequest) {
         transcript: analysis.transcript,
         analyzedAt: new Date(),
       },
+    });
+
+    // Increment usage counter
+    await prisma.usage.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, e4FullPitchSessions: 1 },
+      update: { e4FullPitchSessions: { increment: 1 } },
     });
 
     // Return real result

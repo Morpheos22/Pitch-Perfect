@@ -79,10 +79,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(
-      `[dev/set-mode] User ${email} switched to ${mode} mode (onboardingCompleted: ${onboardingCompleted})`,
-    );
-
     return NextResponse.json({
       success: true,
       mode,

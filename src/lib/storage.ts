@@ -432,7 +432,6 @@ export async function uploadFile(
         access: 'public',
         addRandomSuffix: true,
       });
-      console.log(`[Storage] Uploaded to Vercel Blob: ${blobResult.url}`);
       return {
         key,
         url: blobResult.url,
@@ -472,14 +471,44 @@ export async function uploadFile(
  * Supports both Zoho WorkDrive download URLs and generic URLs.
  */
 export async function getFileContent(fileUrl: string): Promise<Buffer> {
-  // Handle mock:// URLs from dev storage
+  // Block mock:// URLs in production
   if (fileUrl.startsWith('mock://')) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Mock URLs not allowed in production');
+    }
     const key = fileUrl.replace('mock://', '');
     const entry = mockStorage.get(key);
     if (!entry) {
       throw new Error(`Mock file not found: ${key}`);
     }
     return entry.buffer;
+  }
+
+  // SSRF protection: block private IPs and non-https schemes
+  try {
+    const parsedUrl = new URL(fileUrl);
+    if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+      throw new Error(`Unsupported URL scheme: ${parsedUrl.protocol}`);
+    }
+    const hostname = parsedUrl.hostname;
+    // Block private IP ranges
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+      hostname.startsWith('169.254.') ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1'
+    ) {
+      throw new Error('Access to private/internal URLs is blocked');
+    }
+  } catch (ssrfError) {
+    if (ssrfError instanceof TypeError) {
+      throw new Error(`Invalid URL: ${fileUrl}`);
+    }
+    throw ssrfError;
   }
 
   // Handle Zoho WorkDrive download URLs
@@ -501,7 +530,7 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
     return Buffer.from(arrayBuffer);
   }
 
-  // Generic URL fetch
+  // Generic URL fetch (now SSRF-protected by the check above)
   const response = await fetch(fileUrl);
   if (!response.ok) {
     throw new Error(

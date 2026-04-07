@@ -83,8 +83,6 @@ async function callGatewayText(
   // Optional: User/API ID for request attribution
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
-  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions with model ${model}`);
-
   const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
     method: 'POST',
     headers,
@@ -94,7 +92,7 @@ async function callGatewayText(
       temperature,
       max_tokens: maxTokens || 4096,
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!resp.ok) {
@@ -131,8 +129,6 @@ async function callGatewayVision(
   }
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
-  console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions/vision with model ${model}`);
-
   const resp = await fetch(`${GATEWAY_URL}/chat/completions/vision`, {
     method: 'POST',
     headers,
@@ -142,7 +138,7 @@ async function callGatewayVision(
       temperature,
       max_tokens: maxTokens || 4096,
     }),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!resp.ok) {
@@ -177,7 +173,6 @@ function createZaiConfig(): boolean {
     try {
       const raw = readFileSync(p, 'utf-8');
       existingConfig = JSON.parse(raw);
-      console.log(`[ZAI] Found existing config at: ${p}`);
       break; // Use first found
     } catch {
       /* not found, continue */
@@ -200,8 +195,6 @@ function createZaiConfig(): boolean {
     console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var.');
     return false;
   }
-  console.log(`[ZAI] Config created. API key: ${apiKey ? 'set' : 'MISSING'}, X-Token: ${config.token ? 'set' : 'MISSING'}`);
-
   const configJson = JSON.stringify(config);
 
   // Ensure HOME is set (Vercel sets it to '/')
@@ -525,7 +518,6 @@ export async function executeWithFallback(
         );
       }
 
-      console.log(`[ZAI-HTTP] Direct HTTP succeeded with model ${model} for ${moduleKey}`);
       return { response, modelUsed: `${model} (direct)`, moduleKey };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -543,13 +535,78 @@ export async function executeWithFallback(
 // HELPER: Parse JSON from AI response
 // ============================================
 
-function parseJsonResponse<T>(content: string): T {
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('[ZAI] Failed to parse AI response:', content.slice(0, 500));
-    throw new Error('No valid JSON found in AI response');
+function extractJsonFromContent(content: string): string | null {
+  // Try to extract from markdown code block first
+  const codeBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    const jsonStr = codeBlockMatch[1].trim();
+    if (jsonStr.startsWith('{') || jsonStr.startsWith('[')) {
+      return jsonStr;
+    }
   }
-  return JSON.parse(jsonMatch[0]) as T;
+
+  // Balanced brace matching
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"' && !escape) {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return content.substring(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseJsonResponse<T>(content: string): T {
+  const jsonStr = extractJsonFromContent(content);
+  if (!jsonStr) {
+    console.error('[ZAI] Failed to parse AI response:', content.slice(0, 500));
+    throw new Error('No JSON object found in AI response');
+  }
+  return JSON.parse(jsonStr) as T;
+}
+
+// ============================================
+// HELPER: Validate and clamp AI response values
+// ============================================
+
+function clampScore(value: unknown, min = 0, max = 100): number {
+  const num = typeof value === 'number' && Number.isFinite(value) ? value : 50;
+  return Math.round(Math.min(max, Math.max(min, num)));
+}
+
+function validateStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string') return [value];
+  return [];
 }
 
 // ============================================
@@ -640,9 +697,28 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   const content = response.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from AI');
 
-  const result = parseJsonResponse<DeckAnalysisResult>(content);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = modelUsed;
+  const parsed = parseJsonResponse<Record<string, unknown>>(content);
+  const result: DeckAnalysisResult = {
+    problemClarityScore: clampScore(parsed.problemClarityScore),
+    solutionClarityScore: clampScore(parsed.solutionClarityScore),
+    marketOpportunityScore: clampScore(parsed.marketOpportunityScore),
+    businessModelScore: clampScore(parsed.businessModelScore),
+    teamCredibilityScore: clampScore(parsed.teamCredibilityScore),
+    tractionScore: clampScore(parsed.tractionScore),
+    financialsScore: clampScore(parsed.financialsScore),
+    askClarityScore: clampScore(parsed.askClarityScore),
+    overallScore: clampScore(parsed.overallScore),
+    designConsistencyScore: clampScore(parsed.designConsistencyScore),
+    readabilityScore: clampScore(parsed.readabilityScore),
+    visualHierarchyScore: clampScore(parsed.visualHierarchyScore),
+    colorSchemeScore: clampScore(parsed.colorSchemeScore),
+    typographyScore: clampScore(parsed.typographyScore),
+    strengths: validateStringArray(parsed.strengths),
+    weaknesses: validateStringArray(parsed.weaknesses),
+    recommendations: validateStringArray(parsed.recommendations),
+    tokensUsed: response.usage?.totalTokens,
+    modelUsed,
+  };
   return result;
 }
 
@@ -729,11 +805,32 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   const content = response.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from AI');
 
-  const result = parseJsonResponse<ScriptAnalysisResult>(content);
+  const parsed = parseJsonResponse<Record<string, unknown>>(content);
+  const improvements = (parsed.improvements && typeof parsed.improvements === 'object' && !Array.isArray(parsed.improvements))
+    ? parsed.improvements as Record<string, unknown> : {};
+  const result: ScriptAnalysisResult = {
+    hookScore: clampScore(parsed.hookScore),
+    problemScore: clampScore(parsed.problemScore),
+    solutionScore: clampScore(parsed.solutionScore),
+    credibilityScore: clampScore(parsed.credibilityScore),
+    ctaScore: clampScore(parsed.ctaScore),
+    overallScore: clampScore(parsed.overallScore),
+    wordCount: 0,
+    estimatedDuration: 0,
+    improvements: {
+      hook: validateStringArray(improvements.hook),
+      problem: validateStringArray(improvements.problem),
+      solution: validateStringArray(improvements.solution),
+      credibility: validateStringArray(improvements.credibility),
+      cta: validateStringArray(improvements.cta),
+    },
+    rewrittenScript: typeof parsed.rewrittenScript === 'string' ? parsed.rewrittenScript : '',
+    alternativeHooks: validateStringArray(parsed.alternativeHooks),
+    tokensUsed: response.usage?.totalTokens,
+    modelUsed,
+  };
   result.wordCount = scriptText.split(/\s+/).filter(Boolean).length;
   result.estimatedDuration = Math.round(result.wordCount / 2.5);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = modelUsed;
   return result;
 }
 
@@ -835,9 +932,34 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   const content = response.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from AI');
 
-  const result = parseJsonResponse<VideoAnalysisResult>(content);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = modelUsed;
+  const parsed = parseJsonResponse<Record<string, unknown>>(content);
+  const result: VideoAnalysisResult = {
+    paceScore: clampScore(parsed.paceScore),
+    clarityScore: clampScore(parsed.clarityScore),
+    fillerWordScore: clampScore(parsed.fillerWordScore),
+    energyScore: clampScore(parsed.energyScore),
+    confidenceScore: clampScore(parsed.confidenceScore),
+    overallDeliveryScore: clampScore(parsed.overallDeliveryScore),
+    eyeContactScore: clampScore(parsed.eyeContactScore),
+    facialExpressionScore: clampScore(parsed.facialExpressionScore),
+    gestureScore: clampScore(parsed.gestureScore),
+    postureScore: clampScore(parsed.postureScore),
+    overallBodyLanguageScore: clampScore(parsed.overallBodyLanguageScore),
+    wordsPerMinute: Math.max(0, Math.round(typeof parsed.wordsPerMinute === 'number' ? parsed.wordsPerMinute : 150)),
+    fillerWordCount: Math.max(0, Math.round(typeof parsed.fillerWordCount === 'number' ? parsed.fillerWordCount : 0)),
+    fillerWords: (parsed.fillerWords && typeof parsed.fillerWords === 'object' && !Array.isArray(parsed.fillerWords))
+      ? Object.fromEntries(Object.entries(parsed.fillerWords as Record<string, unknown>).map(([k, v]) => [k, Math.max(0, Number(v) || 0)])) : {},
+    deliveryFeedback: typeof parsed.deliveryFeedback === 'string' ? parsed.deliveryFeedback : '',
+    bodyLanguageFeedback: typeof parsed.bodyLanguageFeedback === 'string' ? parsed.bodyLanguageFeedback : '',
+    keyMoments: Array.isArray(parsed.keyMoments) ? parsed.keyMoments.map((m: any) => ({
+      timestamp: String(m?.timestamp ?? ''),
+      description: String(m?.description ?? ''),
+      type: m?.type === 'positive' ? 'positive' as const : 'improvement' as const,
+    })) : [],
+    transcript: typeof parsed.transcript === 'string' ? parsed.transcript : '',
+    tokensUsed: response.usage?.totalTokens,
+    modelUsed,
+  };
   return result;
 }
 
@@ -945,9 +1067,62 @@ JSON structure (no markdown):
   const content = response.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from AI');
 
-  const result = parseJsonResponse<FullPitchAnalysisResult>(content);
-  result.tokensUsed = response.usage?.totalTokens;
-  result.modelUsed = modelUsed;
+  const parsed = parseJsonResponse<Record<string, unknown>>(content);
+  const rawContentScores = (parsed.contentScores && typeof parsed.contentScores === 'object' && !Array.isArray(parsed.contentScores))
+    ? parsed.contentScores as Record<string, unknown> : {};
+  const rawDeliveryScores = (parsed.deliveryScores && typeof parsed.deliveryScores === 'object' && !Array.isArray(parsed.deliveryScores))
+    ? parsed.deliveryScores as Record<string, unknown> : {};
+  const rawCompetitive = (parsed.competitiveAnalysis && typeof parsed.competitiveAnalysis === 'object' && !Array.isArray(parsed.competitiveAnalysis))
+    ? parsed.competitiveAnalysis as Record<string, unknown> : {};
+  const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'] as const;
+  const rawLevel = typeof parsed.investorReadinessLevel === 'string' ? parsed.investorReadinessLevel.toUpperCase() : '';
+  const result: FullPitchAnalysisResult = {
+    problemSolutionFit: clampScore(parsed.problemSolutionFit),
+    marketOpportunity: clampScore(parsed.marketOpportunity),
+    businessModelViability: clampScore(parsed.businessModelViability),
+    teamCredibility: clampScore(parsed.teamCredibility),
+    tractionMilestones: clampScore(parsed.tractionMilestones),
+    deliveryPresence: clampScore(parsed.deliveryPresence),
+    overallReadinessScore: clampScore(parsed.overallReadinessScore),
+    investorReadinessLevel: validReadinessLevels.includes(rawLevel as any) ? rawLevel as any : 'NEEDS_WORK',
+    contentScores: {
+      problemClarity: clampScore(rawContentScores.problemClarity),
+      solutionDifferentiation: clampScore(rawContentScores.solutionDifferentiation),
+      marketSizing: clampScore(rawContentScores.marketSizing),
+      competitivePositioning: clampScore(rawContentScores.competitivePositioning),
+      businessModel: clampScore(rawContentScores.businessModel),
+      financialProjections: clampScore(rawContentScores.financialProjections),
+      teamPresentation: clampScore(rawContentScores.teamPresentation),
+      tractionEvidence: clampScore(rawContentScores.tractionEvidence),
+      askClarity: clampScore(rawContentScores.askClarity),
+    },
+    deliveryScores: {
+      pace: clampScore(rawDeliveryScores.pace),
+      clarity: clampScore(rawDeliveryScores.clarity),
+      confidence: clampScore(rawDeliveryScores.confidence),
+      engagement: clampScore(rawDeliveryScores.engagement),
+      handlingQuestions: clampScore(rawDeliveryScores.handlingQuestions),
+    },
+    strengths: validateStringArray(parsed.strengths),
+    weaknesses: validateStringArray(parsed.weaknesses),
+    investorConcerns: validateStringArray(parsed.investorConcerns),
+    recommendedActions: validateStringArray(parsed.recommendedActions),
+    anticipatedQuestions: Array.isArray(parsed.anticipatedQuestions)
+      ? (parsed.anticipatedQuestions as any[]).map((q: any) => ({
+          question: String(q?.question ?? ''),
+          suggestedAnswer: String(q?.suggestedAnswer ?? ''),
+          difficulty: q?.difficulty === 'easy' ? 'easy' as const : q?.difficulty === 'hard' ? 'hard' as const : 'medium' as const,
+        }))
+      : [],
+    competitiveAnalysis: {
+      percentileVsPeers: clampScore(rawCompetitive.percentileVsPeers),
+      standoutElements: validateStringArray(rawCompetitive.standoutElements),
+      commonMistakes: validateStringArray(rawCompetitive.commonMistakes),
+    },
+    transcript: typeof parsed.transcript === 'string' ? parsed.transcript : '',
+    tokensUsed: response.usage?.totalTokens,
+    modelUsed,
+  };
   return result;
 }
 

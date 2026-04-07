@@ -21,10 +21,14 @@ export async function POST(request: NextRequest) {
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(clerkId);
 
-    const email = clerkUser.emailAddresses[0]?.emailAddress;
+    // SECURITY: Use the first VERIFIED email, not just the first in the list
+    const verifiedEmail = clerkUser.emailAddresses.find(
+      (e) => e.verification?.status === 'verified'
+    );
+    const email = verifiedEmail?.emailAddress;
     if (!email) {
       return NextResponse.json(
-        { error: "No email found for user" },
+        { error: "No verified email found for user" },
         { status: 400 }
       );
     }
@@ -64,27 +68,28 @@ export async function POST(request: NextRequest) {
       console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
 
-    // Ensure subscription exists
-    const existingSubscription = await prisma.subscription.findUnique({
-      where: { userId: user.id },
-    });
-
-    if (!existingSubscription) {
-      await prisma.subscription.create({
-        data: { userId: user.id },
+    // Ensure subscription + usage records exist in a single transaction
+    await prisma.$transaction(async (tx) => {
+      const existingSubscription = await tx.subscription.findUnique({
+        where: { userId: user.id },
       });
-    }
 
-    // Ensure usage record exists
-    const existingUsage = await prisma.usage.findUnique({
-      where: { userId: user.id },
-    });
+      if (!existingSubscription) {
+        await tx.subscription.create({
+          data: { userId: user.id },
+        });
+      }
 
-    if (!existingUsage) {
-      await prisma.usage.create({
-        data: { userId: user.id },
+      const existingUsage = await tx.usage.findUnique({
+        where: { userId: user.id },
       });
-    }
+
+      if (!existingUsage) {
+        await tx.usage.create({
+          data: { userId: user.id },
+        });
+      }
+    });
 
     return NextResponse.json({ success: true, user });
   } catch (error) {
@@ -121,8 +126,6 @@ export async function GET() {
           select: {
             plan: true,
             status: true,
-            stripeCustomerId: true,
-            paystackCustomerId: true,
           },
         },
         usage: {

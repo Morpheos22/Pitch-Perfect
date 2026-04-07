@@ -2,24 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, DeckAnalysisResult } from "@/lib/ai-service";
-
-// PDF text extraction for binary PDF files
-async function extractPdfText(file: File): Promise<string> {
-  try {
-    const pdfParse = (await import('pdf-parse')).default;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const data = await pdfParse(buffer);
-    const text = (data.text || "").trim();
-    if (!text || text.length < 20) {
-      return "";
-    }
-    return text;
-  } catch (e) {
-    console.error("PDF extraction failed, falling back to text():", e);
-    // Fallback: try raw text extraction
-    return await file.text();
-  }
-}
+import { extractFileText, detectFileType } from "@/lib/file-parser";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
@@ -74,7 +57,7 @@ export async function POST(request: NextRequest) {
       }
 
       const maxSize = 50 * 1024 * 1024;
-      if (file.size > maxSize) {
+      if (!Number.isFinite(file.size) || file.size > maxSize) {
         return NextResponse.json(
           { error: "File too large. Maximum size is 50MB." },
           { status: 400 }
@@ -84,19 +67,10 @@ export async function POST(request: NextRequest) {
 
     // Get content for analysis
     let analysisContent = deckContent || "";
-    console.log(`[E1] Input received: ${file ? `file=${file.name} (${file.size}B, type=${file.type})` : `paste=${deckContent?.length || 0}chars`}`);
-    
+
     if (file && !deckContent) {
       try {
-        // Use PDF parser for binary PDFs, raw text() for other formats
-        const fileName = (file.name || "").toLowerCase();
-        if (fileName.endsWith(".pdf")) {
-          analysisContent = await extractPdfText(file);
-          console.log(`[E1] PDF extracted: ${analysisContent.length} chars`);
-        } else {
-          analysisContent = await file.text();
-          console.log(`[E1] Text extracted: ${analysisContent.length} chars`);
-        }
+        analysisContent = await extractFileText(file);
       } catch (e) {
         console.error("[E1] Failed to extract file content:", e);
         return NextResponse.json(
@@ -104,6 +78,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    // Truncate if content exceeds maximum length
+    const MAX_CONTENT_LENGTH = 50000;
+    if (analysisContent.length > MAX_CONTENT_LENGTH) {
+      analysisContent = analysisContent.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated at 50,000 characters]";
     }
 
     if (!analysisContent || analysisContent.length < 100) {
@@ -114,31 +94,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Run REAL AI analysis
-    console.log(`[E1] Starting AI analysis with ${analysisContent.length} chars of content...`);
     let analysis: DeckAnalysisResult;
     try {
-      const aiStart = Date.now();
       analysis = await analyzePitchDeck(analysisContent);
-      console.log(`[E1] AI analysis completed in ${Date.now() - aiStart}ms, model: ${analysis.modelUsed}`);
     } catch (aiError: any) {
       console.error("[E1] AI deck analysis FAILED:", aiError);
       const msg = aiError?.message || String(aiError);
       console.error(`[E1] Full error:`, msg);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
+      // Full error already logged server-side above; do not expose details to client
       return NextResponse.json(
-        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again.", debug: msg.slice(0, 500) },
+        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
         { status: 503 }
       );
     }
 
     // Store analysis in database
-    console.log(`[E1] Saving to database: overallScore=${analysis.overallScore}`);
     const savedDeck = await prisma.pitchDeck.create({
       data: {
         userId: user.id,
         fileName: sessionName || file?.name || "text-input",
-        fileUrl: "",
-        fileSize: file?.size || 0,
+        fileUrl: file ? file.name : "",
+        fileSize: Number.isFinite(file?.size) ? file!.size : 0,
         fileType: file?.type || "text/plain",
         status: "COMPLETED",
         problemClarityScore: analysis.problemClarityScore,
@@ -161,6 +138,12 @@ export async function POST(request: NextRequest) {
         rawAnalysis: analysis as any,
         analyzedAt: new Date(),
       },
+    });
+
+    // Increment usage counter
+    await prisma.usage.update({
+      where: { userId: user.id },
+      data: { e1DeckAnalyses: { increment: 1 } },
     });
 
     // Return real result

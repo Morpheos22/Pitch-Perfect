@@ -2,23 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
-
-// PDF text extraction for binary PDF files
-async function extractPdfText(file: File): Promise<string> {
-  try {
-    const pdfParse = (await import('pdf-parse')).default;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const data = await pdfParse(buffer);
-    const text = (data.text || "").trim();
-    if (!text || text.length < 20) {
-      return "";
-    }
-    return text;
-  } catch (e) {
-    console.error("PDF extraction failed, falling back to text():", e);
-    return await file.text();
-  }
-}
+import { extractFileText, detectFileType } from "@/lib/file-parser";
 
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
@@ -54,7 +38,8 @@ export async function POST(request: NextRequest) {
       const file = formData.get("file") as File | null;
       sessionName = formData.get("sessionName") as string | null;
       targetAudience = (formData.get("targetAudience") as string) || undefined;
-      targetDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string) : undefined;
+      const rawDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string, 10) : undefined;
+      targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
 
       if (!file) {
         return NextResponse.json(
@@ -63,12 +48,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Extract text from file (PDF-aware)
-      const fileName = (file.name || "").toLowerCase();
-      if (fileName.endsWith(".pdf")) {
-        script = await extractPdfText(file);
-      } else {
-        script = await file.text();
+      // Extract text from file using unified parser
+      try {
+        script = await extractFileText(file);
+      } catch (e) {
+        console.error("[E2] Failed to extract file text:", e);
+        return NextResponse.json(
+          { error: "Could not extract text from file. Please try pasting your script directly." },
+          { status: 400 }
+        );
       }
 
       if (!script || script.trim().length < 20) {
@@ -82,7 +70,8 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       script = body.script;
       targetAudience = body.targetAudience;
-      targetDuration = body.targetDuration;
+      const rawDuration = body.targetDuration;
+      targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
       sessionName = body.sessionName;
     }
 
@@ -122,6 +111,12 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
+
+    // Increment usage counter
+    await prisma.usage.update({
+      where: { userId: user.id },
+      data: { e2ScriptCoachSessions: { increment: 1 } },
+    });
 
     // Store analysis in database using correct schema fields
     const savedScript = await prisma.pitchScript.create({

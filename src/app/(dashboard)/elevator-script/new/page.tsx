@@ -106,26 +106,37 @@ export default function ElevatorScriptNewPage() {
     setSubmitting(true);
     
     try {
-      // Extract script text from file or use pasted text
-      let scriptContent = scriptText;
+      let response: Response;
+
       if (inputTab === "upload" && file) {
-        scriptContent = await file.text();
-      }
+        // Send file as FormData so server can handle PDF/DOCX/PPTX parsing
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("sessionName", sessionName);
+        formData.append("targetAudience", "investors");
+        formData.append("targetDuration", "60");
 
-      if (!scriptContent || scriptContent.trim().length < 20) {
-        throw new Error("Script content is too short. Please provide at least 20 words.");
-      }
+        response = await fetch("/api/coach/script", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        // Send pasted text as JSON
+        if (scriptText.trim().length < 20) {
+          throw new Error("Script content is too short. Please provide at least 20 words.");
+        }
 
-      const response = await fetch("/api/coach/script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          script: scriptContent,
-          sessionName: sessionName,
-          targetAudience: "investors",
-          targetDuration: 60,
-        }),
-      });
+        response = await fetch("/api/coach/script", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            script: scriptText,
+            sessionName: sessionName,
+            targetAudience: "investors",
+            targetDuration: 60,
+          }),
+        });
+      }
 
       const data = await safeJson(response);
 
