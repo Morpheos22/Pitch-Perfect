@@ -224,6 +224,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("id");
+
+    // Single session lookup by ID (for session detail page)
+    if (sessionId) {
+      const session = await prisma.fullPitchSession.findFirst({
+        where: { id: sessionId, userId: user.id },
+      });
+
+      if (!session) {
+        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        id: session.id,
+        status: session.status,
+        createdAt: session.createdAt,
+        analyzedAt: session.analyzedAt,
+        duration: session.duration,
+        investorReadinessLevel: session.investorReadinessLevel,
+        overallReadinessScore: session.overallReadinessScore,
+        problemSolutionFit: session.problemSolutionFit,
+        marketOpportunity: session.marketOpportunity,
+        businessModelViability: session.businessModelViability,
+        teamCredibility: session.teamCredibility,
+        tractionMilestones: session.tractionMilestones,
+        deliveryPresence: session.deliveryPresence,
+        contentScores: session.contentScores,
+        deliveryScores: session.deliveryScores,
+        strengths: session.strengths,
+        weaknesses: session.weaknesses,
+        investorConcerns: session.investorConcerns,
+        recommendedActions: session.recommendedActions,
+        anticipatedQuestions: session.anticipatedQuestions,
+        competitiveAnalysis: session.competitiveAnalysis,
+        transcript: session.transcript,
+      });
+    }
+
+    // List all sessions (for history page)
     const sessions = await prisma.fullPitchSession.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },

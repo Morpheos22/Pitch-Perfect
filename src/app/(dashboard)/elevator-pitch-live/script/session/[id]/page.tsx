@@ -4,14 +4,13 @@ import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Download, 
-  Share2, 
   ArrowRight, 
   ArrowLeft, 
   CheckCircle2,
   Video,
-  Clock,
   Loader2,
   AlertTriangle,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,27 +18,29 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-interface ScriptLiveSession {
+interface ScriptSession {
   id: string;
+  status: string;
   fileName?: string;
-  status?: string;
-  overallDeliveryScore?: number | null;
-  overallBodyLanguageScore?: number | null;
-  paceScore?: number | null;
-  clarityScore?: number | null;
-  fillerWordScore?: number | null;
-  energyScore?: number | null;
-  confidenceScore?: number | null;
-  eyeContactScore?: number | null;
-  facialExpressionScore?: number | null;
-  gestureScore?: number | null;
-  postureScore?: number | null;
-  wordsPerMinute?: number | null;
-  duration?: number;
-  createdAt?: string;
-  deliveryFeedback?: string | null;
-  bodyLanguageFeedback?: string | null;
-  type?: string;
+  createdAt: string;
+  targetAudience?: string;
+  analysis: {
+    scores: {
+      hook: number;
+      problem: number;
+      solution: number;
+      credibility: number;
+      cta: number;
+      overall: number;
+    };
+    metrics: {
+      wordCount: number;
+      estimatedDuration: number;
+    };
+    improvements: Record<string, string[]>;
+    rewrittenScript: string;
+    alternativeHooks: string[];
+  };
 }
 
 function getScoreColor(score: number) {
@@ -59,7 +60,7 @@ function getScoreLabel(score: number) {
 export default function LiveScriptSessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const [session, setSession] = useState<ScriptLiveSession | null>(null);
+  const [session, setSession] = useState<ScriptSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -67,17 +68,15 @@ export default function LiveScriptSessionPage({ params }: { params: Promise<{ id
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const res = await fetch(`/api/coach/live?id=${id}`);
+        const res = await fetch(`/api/coach/script?id=${id}`);
         if (!res.ok) {
           if (res.status === 401) { router.push("/sign-in"); return; }
           if (res.status === 404) { setError("Session not found"); return; }
           throw new Error("Failed to fetch session");
         }
         const result = await res.json();
-        if (result.session) {
-          setSession(result.session);
-        } else if (result.data) {
-          setSession(result.data);
+        if (result.id) {
+          setSession(result);
         } else {
           setError("Session not found");
         }
@@ -91,7 +90,7 @@ export default function LiveScriptSessionPage({ params }: { params: Promise<{ id
   }, [id, router]);
 
   const handleCopy = () => {
-    const text = session?.deliveryFeedback || "No feedback available";
+    const text = session?.analysis?.rewrittenScript || "No script available";
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -123,17 +122,19 @@ export default function LiveScriptSessionPage({ params }: { params: Promise<{ id
     );
   }
 
-  const overallScore = session.overallDeliveryScore ?? 0;
+  const scores = session.analysis?.scores;
+  const overallScore = scores?.overall ?? 0;
   const sessionDate = session.createdAt
     ? new Date(session.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     : "—";
 
-  const vocalScores = [
-    { name: "Pacing", score: session.paceScore },
-    { name: "Clarity", score: session.clarityScore },
-    { name: "Energy", score: session.energyScore },
-    { name: "Confidence", score: session.confidenceScore },
-  ].filter(s => s.score !== null && s.score !== undefined && s.score > 0);
+  const elementScores = [
+    { name: "Hook", score: scores?.hook ?? 0, key: "hook" },
+    { name: "Problem", score: scores?.problem ?? 0, key: "problem" },
+    { name: "Solution", score: scores?.solution ?? 0, key: "solution" },
+    { name: "Credibility", score: scores?.credibility ?? 0, key: "credibility" },
+    { name: "Call to Action", score: scores?.cta ?? 0, key: "cta" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -145,15 +146,15 @@ export default function LiveScriptSessionPage({ params }: { params: Promise<{ id
           </Button>
           <div>
             <h1 className="text-2xl font-bold">
-              {session.fileName || "Script Practice Session"}
+              {session.fileName || "Script Analysis Session"}
             </h1>
-            <p className="text-muted-foreground">Live Script Analysis • {sessionDate}</p>
+            <p className="text-muted-foreground">Script Coaching • {sessionDate}</p>
           </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2" onClick={handleCopy}>
-            {copied ? <CheckCircle2 className="w-4 h-4 text-secondary" /> : <Download className="w-4 h-4" />}
-            {copied ? "Copied" : "Copy Feedback"}
+            {copied ? <CheckCircle2 className="w-4 h-4 text-secondary" /> : <Copy className="w-4 h-4" />}
+            {copied ? "Copied" : "Copy Script"}
           </Button>
           <Button variant="outline" className="gap-2" onClick={handleDownload}>
             <Download className="w-4 h-4" />
@@ -165,45 +166,88 @@ export default function LiveScriptSessionPage({ params }: { params: Promise<{ id
       {/* Score Overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="pt-6 text-center"><p className="text-4xl font-bold text-secondary">{overallScore}</p><p className="text-sm text-muted-foreground">Overall Score</p></CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-4xl font-bold">{session.wordsPerMinute ?? "—"}</p><p className="text-sm text-muted-foreground">Words/Min</p></CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-4xl font-bold flex items-center justify-center gap-1"><Clock className="w-5 h-5 text-muted-foreground" />{session.duration ?? "—"}</p><p className="text-sm text-muted-foreground">Duration (s)</p></CardContent></Card>
+        <Card><CardContent className="pt-6 text-center"><p className="text-4xl font-bold">{session.analysis?.metrics?.wordCount ?? "—"}</p><p className="text-sm text-muted-foreground">Words</p></CardContent></Card>
+        <Card><CardContent className="pt-6 text-center"><p className="text-4xl font-bold">{session.analysis?.metrics?.estimatedDuration ?? "—"}s</p><p className="text-sm text-muted-foreground">Est. Duration</p></CardContent></Card>
         <Card><CardContent className="pt-6 text-center"><Badge variant="secondary" className="text-lg px-4 py-2 bg-secondary/10 text-secondary">{getScoreLabel(overallScore)}</Badge></CardContent></Card>
       </div>
 
-      {/* Vocal Delivery Scores */}
-      {vocalScores.length > 0 && (
+      {/* Element Scores */}
+      <Card>
+        <CardHeader>
+          <CardTitle>5-Element Framework Scores</CardTitle>
+          <CardDescription>Your script scored against the elevator pitch framework</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {elementScores.map(({ name, score }) => (
+              <div key={name} className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">{name}</span>
+                  <span className={`font-medium ${getScoreColor(score)}`}>{score}/100</span>
+                </div>
+                <Progress value={score} className="h-2" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Improvements */}
+      {session.analysis?.improvements && Object.keys(session.analysis.improvements).length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Delivery Scores</CardTitle>
-            <CardDescription>Your vocal delivery breakdown</CardDescription>
+            <CardTitle>Improvements</CardTitle>
+            <CardDescription>Specific suggestions for each element</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {Object.entries(session.analysis.improvements).map(([element, tips]) => (
+              Array.isArray(tips) && tips.length > 0 && (
+                <div key={element} className="space-y-2">
+                  <p className="font-medium capitalize">{element}</p>
+                  <ul className="space-y-1">
+                    {tips.map((tip, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <ArrowRight className="w-3 h-3 mt-1 shrink-0" />
+                        <span>{tip}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Rewritten Script */}
+      {session.analysis?.rewrittenScript && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI-Rewritten Script</CardTitle>
+            <CardDescription>An improved version of your elevator pitch</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {vocalScores.map(({ name, score }) => (
-                <div key={name} className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium">{name}</span>
-                    <span className="font-medium">{score}/100</span>
-                  </div>
-                  <Progress value={score} className="h-2" />
-                </div>
-              ))}
+            <div className="p-4 rounded-lg bg-muted/50 whitespace-pre-wrap text-sm leading-relaxed">
+              {session.analysis.rewrittenScript}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Feedback */}
-      {session.deliveryFeedback && (
+      {/* Alternative Hooks */}
+      {session.analysis?.alternativeHooks && session.analysis.alternativeHooks.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>AI Coach Feedback</CardTitle>
-            <CardDescription>Personalized recommendations for your pitch</CardDescription>
+            <CardTitle>Alternative Hooks</CardTitle>
+            <CardDescription>Different ways to open your pitch</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="p-4 rounded-lg bg-muted/50 whitespace-pre-wrap text-sm leading-relaxed">
-              {session.deliveryFeedback}
-            </div>
+          <CardContent className="space-y-2">
+            {session.analysis.alternativeHooks.map((hook, index) => (
+              <div key={index} className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">{index + 1}</span>
+                <span className="text-sm">{hook}</span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

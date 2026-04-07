@@ -211,6 +211,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get("id");
+
+    // Single video lookup by ID (for session detail page)
+    if (videoId) {
+      const video = await prisma.pitchVideo.findFirst({
+        where: { id: videoId, userId: user.id },
+      });
+
+      if (!video) {
+        return NextResponse.json({ error: "Video session not found" }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        id: video.id,
+        status: video.status,
+        fileName: video.fileName || undefined,
+        type: video.type || undefined,
+        duration: video.duration || undefined,
+        createdAt: video.createdAt,
+        overallDeliveryScore: video.overallDeliveryScore,
+        overallBodyLanguageScore: video.overallBodyLanguageScore,
+        paceScore: video.paceScore,
+        clarityScore: video.clarityScore,
+        fillerWordScore: video.fillerWordScore,
+        energyScore: video.energyScore,
+        confidenceScore: video.confidenceScore,
+        eyeContactScore: video.eyeContactScore,
+        facialExpressionScore: video.facialExpressionScore,
+        gestureScore: video.gestureScore,
+        postureScore: video.postureScore,
+        wordsPerMinute: video.wordsPerMinute,
+        fillerWordCount: video.fillerWordCount,
+        fillerWords: video.fillerWords,
+        deliveryFeedback: video.deliveryFeedback,
+        bodyLanguageFeedback: video.bodyLanguageFeedback,
+        keyMoments: video.keyMoments,
+        transcript: video.transcript,
+      });
+    }
+
+    // List all videos (for history page)
     const videos = await prisma.pitchVideo.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
