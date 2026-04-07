@@ -41,11 +41,17 @@ async function parseDocxText(file: File): Promise<string> {
 }
 
 async function parsePdfText(file: File): Promise<string> {
-  const pdfParse = await import('pdf-parse');
-  const pdf = (pdfParse as any).default || pdfParse;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const result = await pdf(buffer);
-  return result.text || '';
+  const { PDFParse } = await import('pdf-parse');
+  const arrayBuffer = await file.arrayBuffer();
+  const uint8 = new Uint8Array(arrayBuffer);
+  const parser = new PDFParse(uint8);
+  try {
+    const result = await parser.getText();
+    // result.text contains full text, result.pages[] has per-page text
+    return result.text || '';
+  } finally {
+    parser.destroy();
+  }
 }
 
 export type FileType = 'pdf' | 'pptx' | 'docx' | 'txt' | 'unknown';
