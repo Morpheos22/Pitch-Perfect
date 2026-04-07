@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
 import { Logo } from "./logo";
 
 const footerLinks = {
   product: [
-    { label: "Pitch Deck Analyser", href: "/pitch-deck-analyser" },
-    { label: "Script Check", href: "/elevator-script" },
-    { label: "Elevator Pitch Live", href: "/elevator-pitch-live" },
-    { label: "Full Pitch Session", href: "/coach/full" },
-    { label: "Founder Coaching", href: "/founder" },
+    { label: "Pitch Deck Analyser", href: "/pitch-deck-analyser", pricingHref: "/pricing#pitch-deck" },
+    { label: "Script Check", href: "/elevator-script", pricingHref: "/pricing#elevator-script" },
+    { label: "Elevator Pitch Live", href: "/elevator-pitch-live", pricingHref: "/pricing#elevator-live" },
+    { label: "Full Pitch Session", href: "/coach/full", pricingHref: "/pricing#pitch-live" },
+    { label: "Founder Coaching", href: "/founder", pricingHref: "/pricing#master" },
   ],
   company: [
     { label: "About", href: "/about" },
@@ -36,18 +37,28 @@ export function Footer() {
             </p>
           </div>
 
-          {/* Products */}
+          {/* Products — Auth-gated: signed-in users go to product, guests go to pricing */}
           <div>
             <h3 className="font-semibold text-foreground mb-4">Products</h3>
             <ul className="space-y-2">
               {footerLinks.product.map((link) => (
                 <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                  >
-                    {link.label}
-                  </Link>
+                  <SignedIn>
+                    <Link
+                      href={link.href}
+                      className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  </SignedIn>
+                  <SignedOut>
+                    <Link
+                      href={link.pricingHref}
+                      className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  </SignedOut>
                 </li>
               ))}
             </ul>
