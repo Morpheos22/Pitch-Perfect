@@ -98,3 +98,25 @@ Stage Summary:
 - Function timeouts: 120s for AI routes (was 10s default)
 - 3 commits pushed: e27b5d5, 515335d (latest)
 - Latest deployment: dpl_CCkivyz7AKjGti8kb9zEfcgwfNCp (READY)
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix "Unexpected token 'R', Request En... is not valid JSON" error across all modules
+
+Work Log:
+- Investigated correct Vercel project prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3 - confirmed all env vars present
+- Identified root cause: Vercel Hobby plan has 4.5MB body size limit. Files > 4.5MB return "Request Entity Too Large" as plain text
+- Frontend code called response.json() before checking response.ok, crashing on non-JSON error responses
+- Created src/lib/safe-fetch.ts utility with FetchError class and safeJson() function
+- Fixed 6 files: pitch-deck-analyser/new, elevator-script/new, elevator-pitch-live/script/new, coach/full/new, contact page
+- Added 4.5MB client-side file size check to prevent Vercel 413 entirely
+- Build: 0 errors, 0 warnings
+- Committed 3cad07c, pushed to GitHub, deployed dpl_8kR7x4DYTvXHcqwuLkCq2wH6PGPw (READY)
+
+Stage Summary:
+- Root cause: response.json() called on non-JSON error responses from Vercel platform
+- Fix: safeJson() utility that checks content-type before parsing, handles text/HTML errors gracefully
+- All 6 affected pages now use safeJson() + proper error handling with status code routing
+- Client-side 4.5MB limit prevents the 413 from ever reaching Vercel
+- Deployed to https://perfectpitch-ai.vercel.app
