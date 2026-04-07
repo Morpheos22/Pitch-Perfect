@@ -49,7 +49,7 @@ export default function FullPitchAnalysingPage() {
         const response = await fetch(`/api/coach/full?id=${sessionId}`);
         const data = await response.json();
         
-        if (data.success && data.data?.status === "COMPLETED") {
+        if (data.status === "COMPLETED") {
           clearInterval(pollInterval);
           clearInterval(progressInterval);
           clearInterval(statusInterval);

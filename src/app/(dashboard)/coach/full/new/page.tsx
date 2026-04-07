@@ -107,66 +107,51 @@ export default function FullPitchNewPage() {
     setUploadProgress(0);
 
     try {
-      // Step 1: Get presigned URL for video upload
+      // Step 1: Upload video to storage via /api/video (FormData with actual file)
+      setUploadProgress(5);
+      const videoFormData = new FormData();
+      videoFormData.append("video", videoFile);
+      videoFormData.append("type", "full");
+
       const videoUploadRes = await fetch("/api/video", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: videoFile.name,
-          mimeType: videoFile.type,
-          fileSize: videoFile.size,
-          type: "full",
-        }),
+        body: videoFormData,
       });
 
       if (!videoUploadRes.ok) {
         const error = await videoUploadRes.json();
-        throw new Error(error.error || "Failed to get upload URL");
+        throw new Error(error.error || "Failed to upload video");
       }
 
-      const { uploadUrl, key, videoId } = await videoUploadRes.json();
-
-      // Step 2: Upload video directly to R2
-      setUploadProgress(10);
-      const videoBuffer = await videoFile.arrayBuffer();
-      
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": videoFile.type },
-        body: videoBuffer,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error("Failed to upload video to storage");
-      }
-
-      setUploadProgress(50);
+      const { videoId, downloadUrl } = await videoUploadRes.json();
+      setUploadProgress(40);
       setVideoUploading(false);
 
-      // Step 3: Confirm video upload
+      // Step 2: Confirm video upload
       await fetch("/api/video", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, duration: 0 }), // Duration will be set later
+        body: JSON.stringify({ videoId, duration: 0 }),
       });
 
       setUploadProgress(60);
 
-      // Step 4: Submit for analysis
-      const formData = new FormData();
-      formData.append("videoId", videoId);
-      formData.append("r2Key", key);
-      formData.append("sessionName", sessionName);
-      
+      // Step 3: Submit for AI analysis via /api/coach/full (FormData)
+      const analysisFormData = new FormData();
+      analysisFormData.append("videoUrl", downloadUrl);
+      analysisFormData.append("videoId", videoId);
+      analysisFormData.append("sessionName", sessionName);
+      analysisFormData.append("duration", "900"); // Default 15 min
+
       if (deckFile) {
-        formData.append("deck", deckFile);
+        analysisFormData.append("deckContent", await deckFile.text());
       }
 
       setUploadProgress(70);
-      
+
       const analysisRes = await fetch("/api/coach/full", {
         method: "POST",
-        body: formData,
+        body: analysisFormData,
       });
 
       const analysisData = await analysisRes.json();
@@ -177,14 +162,19 @@ export default function FullPitchNewPage() {
           router.push("/pricing");
           return;
         }
+        if (analysisRes.status === 401) {
+          toast.error("Please sign in to continue");
+          router.push("/sign-in");
+          return;
+        }
         throw new Error(analysisData.error || "Analysis failed");
       }
 
       setUploadProgress(100);
-      toast.success("Analysis started!");
+      toast.success("Analysis complete!");
       
-      // Navigate to analysing page
-      router.push(`/coach/full/analysing?sessionId=${analysisData.data.id}`);
+      // Navigate to session results page directly (API is synchronous)
+      router.push(`/coach/full/session/${analysisData.id}`);
 
     } catch (error) {
       console.error("Upload error:", error);

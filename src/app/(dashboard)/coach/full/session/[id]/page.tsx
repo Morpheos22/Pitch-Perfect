@@ -103,8 +103,8 @@ export default function FullPitchSessionPage() {
       const response = await fetch(`/api/coach/full?id=${sessionId}`);
       const data = await response.json();
       
-      if (response.ok && data.success) {
-        setSession(data.data);
+      if (response.ok && data.id) {
+        setSession(data);
       } else {
         toast.error("Session not found");
         router.push("/coach/full");

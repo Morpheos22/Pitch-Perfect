@@ -87,11 +87,8 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
           throw new Error("Failed to fetch session");
         }
         const result = await res.json();
-        if (result.session) {
-          setSession(result.session);
-        } else if (result.data) {
-          // Some responses return data directly
-          setSession(result.data);
+        if (result.id) {
+          setSession(result);
         } else {
           setError("Session not found");
         }
