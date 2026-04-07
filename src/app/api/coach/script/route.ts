@@ -42,15 +42,27 @@ export async function POST(request: NextRequest) {
       targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
 
       if (!file) {
+        console.error("[E2] No file received in FormData");
         return NextResponse.json(
           { error: "File is required" },
           { status: 400 }
         );
       }
 
+      console.log("[E2] File received:", { name: file.name, size: file.size, type: file.type });
+
+      // Server-side body size guard
+      if (file.size > 4.5 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: "File too large. Maximum size is 4MB. Please paste your script directly." },
+          { status: 413 }
+        );
+      }
+
       // Extract text from file using unified parser
       try {
         script = await extractFileText(file);
+        console.log("[E2] Text extracted successfully, length:", script.length);
       } catch (e) {
         console.error("[E2] Failed to extract file text:", e);
         return NextResponse.json(

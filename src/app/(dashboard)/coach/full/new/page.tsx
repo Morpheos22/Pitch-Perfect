@@ -161,6 +161,10 @@ export default function FullPitchNewPage() {
 
     } catch (error: any) {
       console.error("Upload error:", error);
+      if (error?.status === 413) {
+        toast.error("File is too large for direct upload. Please use a smaller file or provide a URL instead.");
+        return;
+      }
       if (error?.status === 403) {
         toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
         router.push("/pricing");
