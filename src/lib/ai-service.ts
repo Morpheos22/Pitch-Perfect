@@ -75,10 +75,11 @@ async function callGatewayText(
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
   };
-  // Primary auth: API Key as Bearer token
-  if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
-  // Secondary auth: X-Token (optional, only if configured)
-  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  // Auth: API Key as Bearer + X-Token (use ZAI_TOKEN if set, else API key)
+  if (GATEWAY_API_KEY) {
+    headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+    headers['X-Token'] = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  }
   // Optional: User/API ID for request attribution
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
@@ -122,8 +123,12 @@ async function callGatewayVision(
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
   };
-  if (GATEWAY_API_KEY) headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
-  if (GATEWAY_TOKEN) headers['X-Token'] = GATEWAY_TOKEN;
+  // Vision endpoint REQUIRES X-Token header (returns 401 without it)
+  // Use ZAI_TOKEN if set, otherwise fall back to ZAI_API_KEY
+  if (GATEWAY_API_KEY) {
+    headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+    headers['X-Token'] = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  }
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
 
   console.log(`[ZAI-HTTP] Calling ${GATEWAY_URL}/chat/completions/vision with model ${model}`);
@@ -180,12 +185,14 @@ function createZaiConfig(): boolean {
   }
 
   // Build config: existing values as defaults, env vars override only if set
+  const apiKey = process.env.ZAI_API_KEY || existingConfig.apiKey;
   const config: Record<string, string | undefined> = {
     baseUrl: process.env.ZAI_BASE_URL || existingConfig.baseUrl || 'https://zukijufuzu.xyz/api/v1',
-    apiKey: process.env.ZAI_API_KEY || existingConfig.apiKey,
+    apiKey: apiKey,
     chatId: process.env.ZAI_CHAT_ID || existingConfig.chatId,
     userId: process.env.ZAI_USER_ID || existingConfig.userId,
-    token: process.env.ZAI_TOKEN || existingConfig.token,
+    // Vision endpoint REQUIRES X-Token — use ZAI_TOKEN if set, else apiKey
+    token: process.env.ZAI_TOKEN || existingConfig.token || apiKey,
   };
 
   // Validate minimum requirements
@@ -193,10 +200,7 @@ function createZaiConfig(): boolean {
     console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var.');
     return false;
   }
-  // ZAI_TOKEN is optional — used as secondary X-Token header only
-  if (config.token) {
-    console.log('[ZAI] X-Token configured (optional secondary auth).');
-  }
+  console.log(`[ZAI] Config created. API key: ${apiKey ? 'set' : 'MISSING'}, X-Token: ${config.token ? 'set' : 'MISSING'}`);
 
   const configJson = JSON.stringify(config);
 
