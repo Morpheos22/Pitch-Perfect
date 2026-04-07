@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { MODULE_MODEL_MAP, type ModuleModelKey } from "@/lib/ai-service";
+import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/lib/ai-service";
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 
 // E5: Pitch Founder API
@@ -321,7 +321,7 @@ Write ONLY the narration text (no JSON, no markdown). Just the speech text to be
 }
 
 // ============================================
-// AI EXECUTION HELPER
+// AI EXECUTION HELPER — uses shared fallback chain
 // ============================================
 
 async function executeAIAnalysis(
@@ -330,74 +330,33 @@ async function executeAIAnalysis(
   userPrompt: string,
   parseAsJson = true
 ) {
-  const { default: ZAI } = await import("z-ai-web-dev-sdk");
-  const config = MODULE_MODEL_MAP[moduleKey];
-  const { writeFileSync } = await import("fs");
-  const { join } = await import("path");
+  const { response, modelUsed, moduleKey: mk } = await executeWithFallback(moduleKey, (model) => ({
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: MODULE_MODEL_MAP[moduleKey].temperature,
+  }));
 
-  // Ensure z-ai-config exists
-  const zaiConfig = {
-    baseUrl: process.env.ZAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4",
-    apiKey: process.env.ZAI_API_KEY || "Z.ai",
-    chatId: process.env.ZAI_CHAT_ID,
-    userId: process.env.ZAI_USER_ID,
-    token: process.env.ZAI_TOKEN,
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) throw new Error('No response from AI');
+
+  if (parseAsJson) {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No valid JSON in AI response');
+    return {
+      result: JSON.parse(jsonMatch[0]),
+      modelUsed,
+      tokensUsed: response.usage?.totalTokens,
+    };
+  }
+
+  return {
+    result: content,
+    modelUsed,
+    tokensUsed: response.usage?.totalTokens,
   };
-  if (!process.env.HOME || process.env.HOME === "/") process.env.HOME = "/tmp";
-  for (const loc of [
-    join(process.cwd(), ".z-ai-config"),
-    join(process.env.HOME!, ".z-ai-config"),
-  ]) {
-    try {
-      writeFileSync(loc, JSON.stringify(zaiConfig));
-      break;
-    } catch (_e) {
-      /* continue */
-    }
-  }
-
-  const zai = await ZAI.create();
-  const lastError: Error[] = [];
-
-  for (const model of config.models) {
-    try {
-      const response = await zai.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: config.temperature,
-      });
-
-      const content = response.choices?.[0]?.message?.content;
-      if (!content) throw new Error("No response from AI");
-
-      if (parseAsJson) {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("No valid JSON in AI response");
-        return {
-          result: JSON.parse(jsonMatch[0]),
-          modelUsed: model,
-          tokensUsed: response.usage?.totalTokens,
-        };
-      }
-
-      return {
-        result: content,
-        modelUsed: model,
-        tokensUsed: response.usage?.totalTokens,
-      };
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      lastError.push(err);
-      console.warn(`[E5] Model ${model} failed for ${moduleKey}: ${err.message}`);
-    }
-  }
-
-  throw new Error(
-    `All models failed for ${moduleKey}: ${lastError.map((e) => e.message).join(" → ")}`
-  );
 }
 
 // ============================================

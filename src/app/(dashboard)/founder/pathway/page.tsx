@@ -69,9 +69,10 @@ export default function PathwayPage() {
   useEffect(() => {
     async function loadReadinessData() {
       try {
+        let data: any = null;
         const res = await fetch("/api/coach/founder?moduleType=FOUNDER_READINESS");
         if (res.ok) {
-          const data = await res.json();
+          data = await res.json();
           const session = data.allSessions?.find((s: any) => s.status === "COMPLETED");
           if (session) {
             const detail = await fetch(`/api/coach/founder?id=${session.id}`);
@@ -90,14 +91,16 @@ export default function PathwayPage() {
           }
         }
         // Also check for existing pathway result
-        const pathwaySession = data.allSessions?.find(
-          (s: any) => s.moduleType === "PATHWAY_RECOMMENDATION" && s.status === "COMPLETED"
-        );
-        if (pathwaySession) {
-          const detail = await fetch(`/api/coach/founder?id=${pathwaySession.id}`);
-          if (detail.ok) {
-            const d = await detail.json();
-            setResult(d.resultData);
+        if (data) {
+          const pathwaySession = data.allSessions?.find(
+            (s: any) => s.moduleType === "PATHWAY_RECOMMENDATION" && s.status === "COMPLETED"
+          );
+          if (pathwaySession) {
+            const detail = await fetch(`/api/coach/founder?id=${pathwaySession.id}`);
+            if (detail.ok) {
+              const d = await detail.json();
+              setResult(d.resultData);
+            }
           }
         }
       } catch (err) {

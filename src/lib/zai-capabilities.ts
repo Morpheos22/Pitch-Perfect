@@ -2,8 +2,9 @@
 // Full suite: ASR, TTS, Web Search, Image Gen, Video Gen
 // All powered by the z-ai-web-dev-sdk
 
-import { writeFileSync } from 'fs';
-import { join } from 'path';
+// NOTE: Z.ai SDK initialization (config writing) is handled centrally in ai-service.ts.
+// This module creates its own SDK instance for capability functions but shares
+// the same config file that ai-service.ts writes.
 
 // ============================================
 // SHARED SDK INSTANCE
@@ -12,25 +13,12 @@ import { join } from 'path';
 type ZAIInstance = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>;
 
 let _zai: ZAIInstance | null = null;
-let _configReady = false;
 
 async function getZai(): Promise<ZAIInstance> {
   if (_zai) return _zai;
-  // Reuse ai-service config if available
-  if (!_configReady) {
-    const config = {
-      baseUrl: process.env.ZAI_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-      apiKey: process.env.ZAI_API_KEY || 'Z.ai',
-      chatId: process.env.ZAI_CHAT_ID,
-      userId: process.env.ZAI_USER_ID,
-      token: process.env.ZAI_TOKEN,
-    };
-    const json = JSON.stringify(config);
-    if (!process.env.HOME || process.env.HOME === '/') process.env.HOME = '/tmp';
-    for (const loc of [join(process.cwd(), '.z-ai-config'), join(process.env.HOME, '.z-ai-config')]) {
-      try { writeFileSync(loc, json); _configReady = true; break; } catch (_e) { /* next */ }
-    }
-  }
+  // ai-service.ts handles config creation on first call;
+  // trigger it by importing to ensure .z-ai-config exists
+  await import('./ai-service');
   const { default: ZAI } = await import('z-ai-web-dev-sdk');
   _zai = await ZAI.create();
   return _zai;

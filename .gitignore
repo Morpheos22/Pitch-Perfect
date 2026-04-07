@@ -50,3 +50,15 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Non-source directories
+/upload/
+/download/
+/pitchcoach-ai/
+/mini-services/
+
+# Environment artifacts
+/.accesslog
+/.config.juicefs
+/.stats
+/.zscripts

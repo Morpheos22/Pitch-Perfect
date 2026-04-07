@@ -85,7 +85,7 @@ function createZaiConfig(): boolean {
   return success;
 }
 
-async function getZai() {
+export async function getZai() {
   if (!zaiInstance) {
     createZaiConfig();
     const { default: ZAI } = await import('z-ai-web-dev-sdk');
@@ -318,7 +318,7 @@ interface VisionRequest {
   thinking?: { type: 'enabled' | 'disabled' };
 }
 
-async function executeWithFallback(
+export async function executeWithFallback(
   moduleKey: ModuleModelKey,
   buildRequest: (model: string) => ChatRequest | VisionRequest
 ): Promise<{ response: any; modelUsed: string; moduleKey: string }> {
