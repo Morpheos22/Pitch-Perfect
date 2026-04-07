@@ -64,9 +64,54 @@ export default function ElevatorPitchLiveScriptNewPage() {
     }
 
     setSubmitting(true);
-    setTimeout(() => {
-      router.push("/elevator-pitch-live/script/analysing");
-    }, 1500);
+
+    try {
+      // Extract script text from file or use pasted text
+      let scriptContent = scriptText;
+      if (inputTab === "upload" && file) {
+        scriptContent = await file.text();
+      }
+
+      if (!scriptContent || scriptContent.trim().length < 20) {
+        throw new Error("Script content is too short. Please provide at least 20 words.");
+      }
+
+      const response = await fetch("/api/coach/script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: scriptContent,
+          sessionName: sessionName,
+          targetAudience: "investors",
+          targetDuration: 60,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
+          router.push("/elevator-pitch-live/upgrade");
+          return;
+        }
+        if (response.status === 401) {
+          toast.error("Please sign in to continue");
+          router.push("/sign-in");
+          return;
+        }
+        throw new Error(data.error || "Analysis failed");
+      }
+
+      toast.success("Analysis complete!");
+      router.push(`/elevator-pitch-live/script/session/${data.id}`);
+
+    } catch (error) {
+      console.error("Submit error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to analyze script");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -216,7 +261,14 @@ export default function ElevatorPitchLiveScriptNewPage() {
           disabled={!sessionName.trim() || (inputTab === "upload" ? !file : wordCount < 20) || submitting}
           className="bg-primary hover:bg-primary/90"
         >
-          {submitting ? "Submitting..." : "Analyse Script"}
+          {submitting ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+              Submitting...
+            </>
+          ) : (
+            "Analyse Script"
+          )}
         </Button>
       </div>
     </div>
