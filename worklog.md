@@ -64,3 +64,47 @@ Stage Summary:
 - Site is LIVE at https://perfectpitch-ai.vercel.app/
 - Production deployment ID: dpl_C5d6d7egBhW5W6YYBosFjUQPBwfk (READY, PROMOTED)
 - Commit: b2a6084 "fix: vulnerability sweep & login loop fix"
+---
+## Task ID: fixes-1-5
+### Agent: Super Z (Fix Agent)
+### Work Task
+Apply 5 critical fixes: Z.ai SDK config preservation, homepage product card auth gating, upload storage base64 fallback, improved AI error handling, health check enhancements.
+
+### Work Summary
+
+**FIX 1: Z.ai SDK Config (`src/lib/ai-service.ts`)**
+- Root cause: `createZaiConfig()` was overwriting the `/etc/.z-ai-config` values (baseUrl, apiKey) with hardcoded defaults, while `ZAI_TOKEN` env var was never set — causing all AI calls to return 401.
+- Fix: Now reads existing config from `process.cwd()/.z-ai-config` → `os.homedir()/.z-ai-config` → `/etc/.z-ai-config` (priority order) before writing. Merges existing values as defaults; env vars only override if set (not undefined/empty). Added validation warnings for missing apiKey (error) and token (warning).
+- Added `getZaiConfigStatus()` export for health check diagnostics.
+
+**FIX 2: Homepage Product Card Auth (`src/app/page.tsx`)**
+- Root cause: All 5 product cards linked to `/pricing#anchor` for all users (no auth check). Anchor IDs don't exist on the pricing page.
+- Fix: Wrapped each product card's `<CardFooter>` with Clerk `<SignedOut>` (shows "Get Started" → `/sign-up`) and `<SignedIn>` (shows price → actual module page). Added `moduleHref` to each product object mapping to correct module routes.
+
+**FIX 3: Upload Storage Base64 (`src/app/api/upload/route.ts`)**
+- Root cause: Mock storage uses in-memory Map that doesn't persist between Vercel serverless invocations.
+- Fix: When WorkDrive isn't configured (mock:// URL), the upload route now reads file content as base64 and includes it in the response. The `base64Content` and `mimeType` fields are returned so clients can pass file content to analysis endpoints directly.
+
+**FIX 4: AI Error Handling (5 module routes)**
+- Applied to all 5 routes: `/api/coach/deck`, `/api/coach/script`, `/api/coach/live`, `/api/coach/full`, `/api/coach/founder`
+- Changed generic `"AI analysis failed"` (500) to context-aware messages (503):
+  - Auth errors (401/X-Token/unauthorized): "AI service authentication error. Please contact support."
+  - Other errors: "AI analysis failed. Please try again."
+
+**FIX 5: Health Check Endpoint (`src/app/api/health/route.ts`)**
+- Added `configStatus` to AI health response: `configCreated`, `hasToken`, `hasApiKey`, `configSource`
+- Added `warnings` array at top level when token is missing (text may work but vision will 401)
+- Config status checked before AI call attempt for faster diagnostics
+
+**Files Modified:**
+- `src/lib/ai-service.ts` — config init logic, config status export, health check signature
+- `src/app/page.tsx` — product cards auth gating
+- `src/app/api/upload/route.ts` — base64 content for mock storage
+- `src/app/api/coach/deck/route.ts` — error handling
+- `src/app/api/coach/script/route.ts` — error handling
+- `src/app/api/coach/live/route.ts` — error handling
+- `src/app/api/coach/full/route.ts` — error handling
+- `src/app/api/coach/founder/route.ts` — error handling
+- `src/app/api/health/route.ts` — config status + token warnings
+
+**Lint:** 0 errors, 1 pre-existing warning (unrelated)

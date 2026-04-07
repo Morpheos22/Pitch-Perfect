@@ -91,11 +91,13 @@ export async function POST(request: NextRequest) {
     let analysis: DeckAnalysisResult;
     try {
       analysis = await analyzePitchDeck(analysisContent);
-    } catch (aiError) {
+    } catch (aiError: any) {
       console.error("AI deck analysis failed:", aiError);
+      const msg = aiError?.message || String(aiError);
+      const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
-        { error: "AI analysis failed" },
-        { status: 500 }
+        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
+        { status: 503 }
       );
     }
 
