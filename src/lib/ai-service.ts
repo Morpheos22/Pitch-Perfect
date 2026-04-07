@@ -36,8 +36,9 @@
 //   ✅ Image Gen        → E5 network visuals, report covers
 //   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
-import { writeFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 
 // ============================================
 // Z.AI SDK INITIALIZATION
@@ -51,38 +52,62 @@ let configCreated = false;
 function createZaiConfig(): boolean {
   if (configCreated) return true;
 
-  // Z.ai gateway reads from /etc/.z-ai-config (pre-configured in this environment)
-  // For Vercel/deployed: uses env vars to write to /tmp/.z-ai-config
-  const config = {
-    baseUrl: process.env.ZAI_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: process.env.ZAI_API_KEY || 'Z.ai',
-    chatId: process.env.ZAI_CHAT_ID,
-    userId: process.env.ZAI_USER_ID,
-    token: process.env.ZAI_TOKEN,
+  // Try to read existing config from known locations (highest priority first)
+  let existingConfig: Record<string, string | undefined> = {};
+  const readPaths = [
+    join(process.cwd(), '.z-ai-config'),
+    join(homedir(), '.z-ai-config'),
+    '/etc/.z-ai-config',
+  ];
+
+  for (const p of readPaths) {
+    try {
+      const raw = readFileSync(p, 'utf-8');
+      existingConfig = JSON.parse(raw);
+      console.log(`[ZAI] Found existing config at: ${p}`);
+      break; // Use first found
+    } catch {
+      /* not found, continue */
+    }
+  }
+
+  // Build config: existing values as defaults, env vars override only if set
+  const config: Record<string, string | undefined> = {
+    baseUrl: process.env.ZAI_BASE_URL || existingConfig.baseUrl || 'https://open.bigmodel.cn/api/paas/v4',
+    apiKey: process.env.ZAI_API_KEY || existingConfig.apiKey,
+    chatId: process.env.ZAI_CHAT_ID || existingConfig.chatId,
+    userId: process.env.ZAI_USER_ID || existingConfig.userId,
+    token: process.env.ZAI_TOKEN || existingConfig.token,
   };
+
+  // Validate minimum requirements
+  if (!config.apiKey) {
+    console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var or ensure .z-ai-config has an apiKey field.');
+    return false;
+  }
+  if (!config.token) {
+    console.warn('[ZAI] No auth token configured. Set ZAI_TOKEN env var or ensure .z-ai-config has a token field. AI endpoints may return 401.');
+  }
 
   const configJson = JSON.stringify(config);
 
+  // Ensure HOME is set (Vercel sets it to '/')
   if (!process.env.HOME || process.env.HOME === '/') {
     process.env.HOME = '/tmp';
   }
 
-  const cwd = process.cwd();
-  const homeDir = process.env.HOME;
-  const locations = [join(cwd, '.z-ai-config'), join(homeDir, '.z-ai-config')];
-
-  let success = false;
-  for (const loc of locations) {
+  // Write config to accessible locations
+  const writePaths = [join(process.cwd(), '.z-ai-config'), join(homedir(), '.z-ai-config')];
+  for (const loc of writePaths) {
     try {
       writeFileSync(loc, configJson);
-      success = true;
-    } catch (_e) {
-      // Continue to next location
+    } catch {
+      /* read-only fs, continue */
     }
   }
 
-  if (success) configCreated = true;
-  return success;
+  configCreated = true;
+  return true;
 }
 
 export async function getZai() {
@@ -776,6 +801,48 @@ JSON structure (no markdown):
 }
 
 // ============================================
+// CONFIG STATUS (for health check diagnostics)
+// ============================================
+
+export function getZaiConfigStatus(): {
+  configCreated: boolean;
+  hasToken: boolean;
+  hasApiKey: boolean;
+  configSource: string;
+} {
+  // Check if config was successfully created
+  if (!configCreated) {
+    return { configCreated: false, hasToken: false, hasApiKey: false, configSource: 'none' };
+  }
+
+  // Try to read the current config from the written location
+  let hasToken = false;
+  let hasApiKey = false;
+  let configSource = 'none';
+
+  const checkPaths = [
+    join(process.cwd(), '.z-ai-config'),
+    join(homedir(), '.z-ai-config'),
+    '/etc/.z-ai-config',
+  ];
+
+  for (const p of checkPaths) {
+    try {
+      const raw = readFileSync(p, 'utf-8');
+      const cfg = JSON.parse(raw);
+      configSource = p;
+      hasToken = !!cfg.token;
+      hasApiKey = !!cfg.apiKey;
+      break;
+    } catch {
+      /* not found, continue */
+    }
+  }
+
+  return { configCreated: true, hasToken, hasApiKey, configSource };
+}
+
+// ============================================
 // HEALTH CHECK
 // ============================================
 
@@ -785,6 +852,7 @@ export async function checkAIServiceHealth(): Promise<{
   gatewayRouting: { text: string; vision: string };
   moduleMapping: Array<{ module: string; models: string[]; temperature: number; thinkingEnabled: boolean; method: string }>;
   configFound: boolean;
+  configStatus: ReturnType<typeof getZaiConfigStatus>;
   zai?: { status: string; message?: string };
 }> {
   const results = { zai: { status: 'unknown' as string, message: '' as string } };
@@ -821,6 +889,7 @@ export async function checkAIServiceHealth(): Promise<{
       method: val.method,
     })),
     configFound: true,
+    configStatus: getZaiConfigStatus(),
     zai: results.zai,
   };
 }

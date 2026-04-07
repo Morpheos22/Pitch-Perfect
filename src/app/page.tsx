@@ -53,6 +53,7 @@ const products = [
     price: "From $15",
     featured: true,
     href: "/pricing#pitch-deck",
+    moduleHref: "/pitch-deck-analyser/new",
   },
   {
     id: "elevator-script",
@@ -63,6 +64,7 @@ const products = [
     price: "From $10",
     featured: false,
     href: "/pricing#elevator-script",
+    moduleHref: "/elevator-script/new",
   },
   {
     id: "elevator-live",
@@ -73,6 +75,7 @@ const products = [
     price: "From $25",
     featured: false,
     href: "/pricing#elevator-live",
+    moduleHref: "/elevator-pitch-live/new",
   },
   {
     id: "pitch-live",
@@ -83,6 +86,7 @@ const products = [
     price: "From $40",
     featured: false,
     href: "/pricing#pitch-live",
+    moduleHref: "/coach/full/new",
   },
   {
     id: "master",
@@ -93,6 +97,7 @@ const products = [
     price: "From $60",
     featured: false,
     href: "/pricing#master",
+    moduleHref: "/dashboard",
   },
 ];
 
@@ -238,16 +243,30 @@ export default function LandingPage() {
                     </div>
                   </CardContent>
                   <CardFooter>
-                    <Button 
-                      asChild 
-                      className={`w-full ${product.featured ? "bg-primary hover:bg-primary/90" : ""}`}
-                      variant={product.featured ? "default" : "outline"}
-                    >
-                      <Link href={product.href}>
-                        {product.price}
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Link>
-                    </Button>
+                    <SignedOut>
+                      <Button 
+                        asChild 
+                        className={`w-full ${product.featured ? "bg-primary hover:bg-primary/90" : ""}`}
+                        variant={product.featured ? "default" : "outline"}
+                      >
+                        <Link href="/sign-up">
+                          Get Started
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </SignedOut>
+                    <SignedIn>
+                      <Button 
+                        asChild 
+                        className={`w-full ${product.featured ? "bg-primary hover:bg-primary/90" : ""}`}
+                        variant={product.featured ? "default" : "outline"}
+                      >
+                        <Link href={product.moduleHref}>
+                          {product.price}
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </SignedIn>
                   </CardFooter>
                 </Card>
               ))}

@@ -102,7 +102,14 @@ export async function POST(request: NextRequest) {
     const results = await Promise.all(
       uniqueFiles.map(async (file) => {
         try {
-          return await uploadFile(file, user.id, type, file.name, file.type);
+          const result = await uploadFile(file, user.id, type, file.name, file.type);
+          // If mock storage (mock:// URL), include base64 content for persistence
+          if (result.url.startsWith('mock://')) {
+            const arrayBuffer = await file.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString('base64');
+            return { ...result, base64Content: base64, mimeType: file.type };
+          }
+          return result;
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Upload failed';
           return { error: message, fileName: file.name };
@@ -110,18 +117,26 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const successes = results.filter((r): r is NonNullable<typeof r> & { key: string; url: string; fileName: string; fileSize: number; fileType: string } => !('error' in r));
+    const successes = results.filter((r): r is NonNullable<typeof r> & { key: string; url: string; fileName: string; fileSize: number; fileType: string; base64Content?: string; mimeType?: string } => !('error' in r));
     const failures = results.filter((r): r is { error: string; fileName: string } => 'error' in r);
 
     return NextResponse.json({
       success: failures.length === 0,
-      files: successes.map((s) => ({
-        key: s.key,
-        url: s.url,
-        fileName: s.fileName,
-        fileSize: s.fileSize,
-        fileType: s.fileType,
-      })),
+      files: successes.map((s) => {
+        const fileData: Record<string, unknown> = {
+          key: s.key,
+          url: s.url,
+          fileName: s.fileName,
+          fileSize: s.fileSize,
+          fileType: s.fileType,
+        };
+        // Include base64 content when mock storage is used (no WorkDrive)
+        if (s.base64Content) {
+          fileData.base64Content = s.base64Content;
+          fileData.mimeType = s.mimeType;
+        }
+        return fileData;
+      }),
       errors: failures.length > 0 ? failures.map((f) => `${f.fileName}: ${f.error}`) : undefined,
       summary: {
         uploaded: successes.length,

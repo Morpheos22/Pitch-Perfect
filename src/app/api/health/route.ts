@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkAIServiceHealth } from '@/lib/ai-service';
+import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { prisma } from '@/lib/db';
 
 interface HealthChecks {
@@ -9,6 +9,12 @@ interface HealthChecks {
     status: string;
     message: string;
     configFound: boolean;
+    configStatus: {
+      configCreated: boolean;
+      hasToken: boolean;
+      hasApiKey: boolean;
+      configSource: string;
+    };
     gatewayRouting: { text: string; vision: string };
     zai: { status: string; message?: string };
     moduleCount: number;
@@ -25,6 +31,12 @@ export async function GET() {
       status: 'checking',
       message: '',
       configFound: false,
+      configStatus: {
+        configCreated: false,
+        hasToken: false,
+        hasApiKey: false,
+        configSource: 'none',
+      },
       gatewayRouting: { text: 'unknown', vision: 'unknown' },
       zai: { status: 'unknown' },
       moduleCount: 0,
@@ -51,13 +63,18 @@ export async function GET() {
     };
   }
 
-  // Check 3: AI Service (Z.ai Gateway)
+  // Check 3: Z.ai config status (before attempting AI call)
+  checks.ai.configStatus = getZaiConfigStatus();
+  checks.ai.configFound = checks.ai.configStatus.configCreated;
+
+  // Check 4: AI Service (Z.ai Gateway)
   try {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
       status: aiHealth.status,
       message: aiHealth.zai?.message || '',
       configFound: aiHealth.configFound || false,
+      configStatus: aiHealth.configStatus,
       gatewayRouting: aiHealth.gatewayRouting,
       zai: aiHealth.zai || { status: 'unknown' },
       moduleCount: aiHealth.moduleMapping.length,
@@ -67,6 +84,12 @@ export async function GET() {
       status: 'unhealthy',
       message: 'AI service check failed',
       configFound: false,
+      configStatus: {
+        configCreated: false,
+        hasToken: false,
+        hasApiKey: false,
+        configSource: 'none',
+      },
       gatewayRouting: { text: 'unknown', vision: 'unknown' },
       zai: { status: 'unknown', message: 'Health check failed' },
       moduleCount: 0,
@@ -77,12 +100,20 @@ export async function GET() {
   const allHealthy = Object.values(checks).every(c => c.status === 'ok' || c.status === 'healthy');
   const anyUnhealthy = Object.values(checks).some(c => c.status === 'unhealthy');
 
-  const overallStatus = allHealthy ? 'healthy' : (anyUnhealthy ? 'unhealthy' : 'degraded');
+  // Token warning: AI may be partially functional without token (text might work, vision won't)
+  const tokenWarning = !checks.ai.configStatus.hasToken && checks.ai.configStatus.configCreated;
+
+  const overallStatus = allHealthy
+    ? 'healthy'
+    : (anyUnhealthy ? 'unhealthy' : 'degraded');
 
   const responseTime = Date.now() - startTime;
 
   return NextResponse.json({
     status: overallStatus,
+    warnings: tokenWarning
+      ? ['Z.ai token not configured. Text endpoints may work but vision endpoints will return 401.']
+      : undefined,
     checks,
     timestamp: new Date().toISOString(),
     responseTime: `${responseTime}ms`,

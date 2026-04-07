@@ -91,11 +91,13 @@ export async function POST(request: NextRequest) {
     let analysis: VideoAnalysisResult;
     try {
       analysis = await analyzePitchVideo(analysisVideoUrl!, duration);
-    } catch (aiError) {
+    } catch (aiError: any) {
       console.error("AI video analysis failed:", aiError);
+      const msg = aiError?.message || String(aiError);
+      const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
-        { error: "AI video analysis failed" },
-        { status: 500 }
+        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
+        { status: 503 }
       );
     }
 
