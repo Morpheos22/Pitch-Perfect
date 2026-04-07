@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
 
     // Get content for analysis
     let analysisContent = deckContent || "";
+    console.log(`[E1] Input received: ${file ? `file=${file.name} (${file.size}B, type=${file.type})` : `paste=${deckContent?.length || 0}chars`}`);
     
     if (file && !deckContent) {
       try {
@@ -91,11 +92,13 @@ export async function POST(request: NextRequest) {
         const fileName = (file.name || "").toLowerCase();
         if (fileName.endsWith(".pdf")) {
           analysisContent = await extractPdfText(file);
+          console.log(`[E1] PDF extracted: ${analysisContent.length} chars`);
         } else {
           analysisContent = await file.text();
+          console.log(`[E1] Text extracted: ${analysisContent.length} chars`);
         }
       } catch (e) {
-        console.error("Failed to extract file content:", e);
+        console.error("[E1] Failed to extract file content:", e);
         return NextResponse.json(
           { error: "Failed to read file content. Please try a different file or paste content directly." },
           { status: 400 }
@@ -111,20 +114,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Run REAL AI analysis
+    console.log(`[E1] Starting AI analysis with ${analysisContent.length} chars of content...`);
     let analysis: DeckAnalysisResult;
     try {
+      const aiStart = Date.now();
       analysis = await analyzePitchDeck(analysisContent);
+      console.log(`[E1] AI analysis completed in ${Date.now() - aiStart}ms, model: ${analysis.modelUsed}`);
     } catch (aiError: any) {
-      console.error("AI deck analysis failed:", aiError);
+      console.error("[E1] AI deck analysis FAILED:", aiError);
       const msg = aiError?.message || String(aiError);
+      console.error(`[E1] Full error:`, msg);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
-        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
+        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again.", debug: msg.slice(0, 500) },
         { status: 503 }
       );
     }
 
     // Store analysis in database
+    console.log(`[E1] Saving to database: overallScore=${analysis.overallScore}`);
     const savedDeck = await prisma.pitchDeck.create({
       data: {
         userId: user.id,

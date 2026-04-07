@@ -5,7 +5,7 @@ import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercel
 
 interface HealthChecks {
   api: { status: string; timestamp: string };
-  database: { status: string; message: string };
+  database: { status: string; message: string; tables?: Record<string, boolean> };
   storage: {
     status: string;
     backend: string;
@@ -27,6 +27,18 @@ interface HealthChecks {
     moduleCount: number;
   };
 }
+
+// Tables to verify (mapped from Prisma @@map names)
+const CRITICAL_TABLES = [
+  'users',
+  'subscriptions',
+  'usage',
+  'pitch_decks',
+  'pitch_scripts',
+  'pitch_videos',
+  'full_pitch_sessions',
+  'founder_sessions',
+];
 
 export async function GET() {
   const startTime = Date.now();
@@ -62,17 +74,41 @@ export async function GET() {
     timestamp: new Date().toISOString(),
   };
 
-  // Check 2: Database connection
+  // Check 2: Database connection AND table existence
   try {
     await prisma.$queryRaw`SELECT 1`;
+    
+    // Now verify critical tables actually exist
+    const tableChecks: Record<string, boolean> = {};
+    let allTablesExist = true;
+    
+    for (const table of CRITICAL_TABLES) {
+      try {
+        await prisma.$queryRawUnsafe(`SELECT to_regclass('${table}') IS NOT NULL AS exists`);
+        const result = await prisma.$queryRawUnsafe(`SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' AND table_name = '${table}'
+        ) as exists`);
+        const rows = result as Array<{ exists: boolean }>;
+        tableChecks[table] = rows[0]?.exists === true;
+        if (!tableChecks[table]) allTablesExist = false;
+      } catch (e) {
+        tableChecks[table] = false;
+        allTablesExist = false;
+      }
+    }
+    
     checks.database = {
-      status: 'ok',
-      message: 'Database connection successful',
+      status: allTablesExist ? 'ok' : 'unhealthy',
+      message: allTablesExist 
+        ? 'Database connected, all tables exist'
+        : `Database connected but missing tables: ${Object.entries(tableChecks).filter(([,v]) => !v).map(([k]) => k).join(', ')}`,
+      tables: tableChecks,
     };
   } catch (error) {
     checks.database = {
       status: 'unhealthy',
-      message: 'Database connection failed',
+      message: `Database connection failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 
@@ -84,11 +120,11 @@ export async function GET() {
     vercelBlob: isVercelBlobConfigured(),
   };
 
-  // Check 4: Z.ai config status (before attempting AI call)
+  // Check 4: Z.ai config status
   checks.ai.configStatus = getZaiConfigStatus();
   checks.ai.configFound = checks.ai.configStatus.configCreated;
 
-  // Check 4: AI Service (Z.ai Gateway)
+  // Check 5: AI Service (Z.ai Gateway) - full test
   try {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
@@ -103,7 +139,7 @@ export async function GET() {
   } catch (error) {
     checks.ai = {
       status: 'unhealthy',
-      message: 'AI service check failed',
+      message: `AI service check failed: ${error instanceof Error ? error.message : String(error)}`,
       configFound: false,
       configStatus: {
         configCreated: false,
@@ -125,11 +161,19 @@ export async function GET() {
   const warnings: string[] = [];
 
   if (!checks.ai.configStatus.hasApiKey) {
-    warnings.push('ZAI_API_KEY not configured. AI analysis will fail. Set it in Vercel env vars.');
+    warnings.push('ZAI_API_KEY not configured. AI analysis will fail.');
+  }
+
+  if (checks.ai.configStatus.configCreated && !checks.ai.configStatus.hasToken) {
+    warnings.push('ZAI_TOKEN not configured. Vision API (E3/E4) will fail.');
   }
 
   if (checks.storage.backend === 'mock') {
-    warnings.push('No persistent storage configured (WorkDrive/Blob). File uploads will not persist across serverless cold starts.');
+    warnings.push('No persistent storage configured (WorkDrive/Blob). File uploads will not persist.');
+  }
+
+  if (checks.database.status === 'unhealthy' && checks.database.message.includes('missing tables')) {
+    warnings.push('CRITICAL: Database tables are missing! Run prisma db push against the production database.');
   }
 
   const overallStatus = allHealthy
@@ -144,5 +188,6 @@ export async function GET() {
     checks,
     timestamp: new Date().toISOString(),
     responseTime: `${responseTime}ms`,
+    vercelPlan: process.env.VERCEL_REGION || process.env.NODE_ENV || 'unknown',
   });
 }
