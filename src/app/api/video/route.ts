@@ -1,5 +1,5 @@
 // API Route: Video Upload for E3 (Live Pitch) and E4 (Full Pitch)
-// Handles video uploads via Zoho WorkDrive storage
+// Storage fallback: Zoho WorkDrive → Vercel Blob → 503 error
 // Bypasses Vercel's 4.5MB body size limit
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,6 +12,7 @@ import {
   validateFileTypeByCategory,
   validateFileSizeByCategory,
   generateFileKey,
+  isVercelBlobConfigured,
 } from '@/lib/storage';
 
 // POST: Upload video to WorkDrive
@@ -37,14 +38,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
-      );
-    }
-
-    // Check if WorkDrive is configured
-    if (!isWorkDriveConfigured()) {
-      return NextResponse.json(
-        { error: 'Video storage not configured. Please contact support.' },
-        { status: 503 }
       );
     }
 
@@ -80,15 +73,42 @@ export async function POST(request: NextRequest) {
     // Determine video type for storage path
     const videoType = type === 'full' ? 'full' : 'live';
 
-    // Upload to WorkDrive
     const arrayBuffer = await videoFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const uploadResult = await uploadToWorkDrive(
-      buffer,
-      videoFile.name,
-      process.env.ZOHO_WORKDRIVE_FOLDER_ID!
-    );
+    let downloadUrl: string;
+    let fileId: string;
+
+    // ── STRATEGY 1: Zoho WorkDrive ──
+    if (isWorkDriveConfigured()) {
+      const uploadResult = await uploadToWorkDrive(
+        buffer,
+        videoFile.name,
+        process.env.ZOHO_WORKDRIVE_FOLDER_ID!
+      );
+      downloadUrl = uploadResult.downloadUrl;
+      fileId = uploadResult.fileId;
+      console.log(`[Video] Uploaded to WorkDrive: ${fileId}`);
+    }
+    // ── STRATEGY 2: Vercel Blob (fallback) ──
+    else if (isVercelBlobConfigured()) {
+      const { put } = await import('@vercel/blob');
+      const blob = new Blob([buffer], { type: videoFile.type });
+      const blobResult = await put(generateFileKey(user.id, 'video', videoFile.name), blob, {
+        access: 'public',
+        addRandomSuffix: true,
+      });
+      downloadUrl = blobResult.url;
+      fileId = blobResult.pathname;
+      console.log(`[Video] Uploaded to Vercel Blob: ${blobResult.url}`);
+    }
+    // ── STRATEGY 3: No storage available ──
+    else {
+      return NextResponse.json(
+        { error: 'Video storage not configured. Please contact support.' },
+        { status: 503 }
+      );
+    }
 
     const key = generateFileKey(user.id, 'video', videoFile.name);
 
@@ -97,7 +117,7 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         fileName: videoFile.name,
-        fileUrl: uploadResult.downloadUrl,
+        fileUrl: downloadUrl,
         r2Key: key,
         duration: 0, // Will be updated after upload confirmation
         status: 'PENDING',
@@ -107,10 +127,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       videoId: video.id,
-      fileId: uploadResult.fileId,
+      fileId,
       key,
-      downloadUrl: uploadResult.downloadUrl,
-      fileName: uploadResult.fileName,
+      downloadUrl,
+      fileName: videoFile.name,
     });
   } catch (error) {
     console.error('Video upload error:', error);

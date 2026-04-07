@@ -3,6 +3,24 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, DeckAnalysisResult } from "@/lib/ai-service";
 
+// PDF text extraction for binary PDF files
+async function extractPdfText(file: File): Promise<string> {
+  try {
+    const pdfParse = (await import('pdf-parse')).default;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const data = await pdfParse(buffer);
+    const text = (data.text || "").trim();
+    if (!text || text.length < 20) {
+      return "";
+    }
+    return text;
+  } catch (e) {
+    console.error("PDF extraction failed, falling back to text():", e);
+    // Fallback: try raw text extraction
+    return await file.text();
+  }
+}
+
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
 
@@ -55,10 +73,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const maxSize = 20 * 1024 * 1024;
+      const maxSize = 50 * 1024 * 1024;
       if (file.size > maxSize) {
         return NextResponse.json(
-          { error: "File too large. Maximum size is 20MB." },
+          { error: "File too large. Maximum size is 50MB." },
           { status: 400 }
         );
       }
@@ -69,8 +87,13 @@ export async function POST(request: NextRequest) {
     
     if (file && !deckContent) {
       try {
-        const text = await file.text();
-        analysisContent = text;
+        // Use PDF parser for binary PDFs, raw text() for other formats
+        const fileName = (file.name || "").toLowerCase();
+        if (fileName.endsWith(".pdf")) {
+          analysisContent = await extractPdfText(file);
+        } else {
+          analysisContent = await file.text();
+        }
       } catch (e) {
         console.error("Failed to extract file content:", e);
         return NextResponse.json(
