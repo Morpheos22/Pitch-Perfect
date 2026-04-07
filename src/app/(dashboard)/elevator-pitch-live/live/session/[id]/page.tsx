@@ -39,10 +39,10 @@ interface LiveSession {
   postureScore?: number | null;
   wordsPerMinute?: number | null;
   fillerWordCount?: number | null;
-  fillerWords?: string[] | null;
+  fillerWords?: Record<string, number> | string[] | null;
   deliveryFeedback?: string | null;
   bodyLanguageFeedback?: string | null;
-  keyMoments?: Array<{ timestamp: number; type: string; description: string }> | null;
+  keyMoments?: Array<{ timestamp: number | string; type: string; description: string }> | null;
   transcript?: string | null;
   status?: string;
   type?: string;
@@ -162,7 +162,16 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
     }
   }
   if (session.fillerWordCount && session.fillerWordCount > 0) {
-    priorityActions.push(`Reduce filler words — detected ${session.fillerWordCount} filler words${session.fillerWords?.length ? `: ${session.fillerWords.slice(0, 5).join(", ")}` : ""}`);
+    const fillerList = session.fillerWords
+      ? (Array.isArray(session.fillerWords)
+          ? session.fillerWords.slice(0, 5).join(", ")
+          : Object.entries(session.fillerWords as Record<string, number>)
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, 5)
+              .map(([word, count]) => `${word} (${count})`)
+              .join(", "))
+      : "";
+    priorityActions.push(`Reduce filler words — detected ${session.fillerWordCount} filler words${fillerList ? `: ${fillerList}` : ""}`);
   }
   if (session.wordsPerMinute && session.wordsPerMinute > 160) {
     priorityActions.push(`Slow down — you spoke at ${session.wordsPerMinute} words per minute (target: 120-150)`);
@@ -340,7 +349,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
             <div className="space-y-3">
               {session.keyMoments.map((moment, index) => (
                 <div key={index} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
-                  <Badge variant="outline" className="shrink-0 mt-0.5">{moment.timestamp}s</Badge>
+                  <Badge variant="outline" className="shrink-0 mt-0.5">{String(moment.timestamp)}s</Badge>
                   <div>
                     <p className="font-medium text-sm capitalize">{moment.type.replace(/_/g, " ")}</p>
                     <p className="text-sm text-muted-foreground">{moment.description}</p>

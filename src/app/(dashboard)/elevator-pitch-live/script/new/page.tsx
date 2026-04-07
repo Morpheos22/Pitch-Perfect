@@ -58,8 +58,8 @@ export default function ElevatorPitchLiveScriptNewPage() {
       toast.error("Please upload a file");
       return;
     }
-    if (inputTab === "paste" && wordCount < 20) {
-      toast.error("Your script seems too short. Please enter at least 20 words.");
+    if (inputTab === "paste" && wordCount < 30) {
+      toast.error("Your script seems too short. Please enter at least 30 words.");
       return;
     }
 
