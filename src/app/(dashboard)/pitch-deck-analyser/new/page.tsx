@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { safeJson } from "@/lib/safe-fetch";
 
 const PLAN_LIMITS: Record<string, { e1: number }> = {
   FREE: { e1: 1 },
@@ -92,6 +93,8 @@ export default function PitchDeckAnalyserNewPage() {
     }
   };
 
+  const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024; // Vercel Hobby plan limit
+
   const handleSubmit = async () => {
     if (!sessionName.trim()) {
       toast.error("Please enter a session name");
@@ -107,69 +110,42 @@ export default function PitchDeckAnalyserNewPage() {
     }
 
     setUploading(true);
-    
+
     try {
-      if (inputTab === "paste") {
-        // Send as FormData with content field (API supports this)
-        const formData = new FormData();
-        formData.append("content", deckText);
-        formData.append("sessionName", sessionName);
+      const formData = new FormData();
+      formData.append("sessionName", sessionName);
 
-        const response = await fetch("/api/coach/deck", {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          if (response.status === 403) {
-            toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
-            router.push("/pitch-deck-analyser/upgrade");
-            return;
-          }
-          if (response.status === 401) {
-            toast.error("Please sign in to continue");
-            router.push("/sign-in");
-            return;
-          }
-          throw new Error(data.error || "Analysis failed");
+      if (inputTab === "upload") {
+        if (file!.size > VERCEL_BODY_LIMIT) {
+          toast.error(`File is too large (${(file!.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is ${(VERCEL_BODY_LIMIT / 1024 / 1024).toFixed(0)}MB. Try pasting your content instead.`);
+          return;
         }
-
-        toast.success("Analysis complete!");
-        router.push(`/pitch-deck-analyser/session/${data.id}`);
-      } else {
-        // File upload
-        const formData = new FormData();
         formData.append("file", file!);
-        formData.append("sessionName", sessionName);
-
-        const response = await fetch("/api/coach/deck", {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          if (response.status === 403) {
-            toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
-            router.push("/pitch-deck-analyser/upgrade");
-            return;
-          }
-          if (response.status === 401) {
-            toast.error("Please sign in to continue");
-            router.push("/sign-in");
-            return;
-          }
-          throw new Error(data.error || "Analysis failed");
-        }
-
-        toast.success("Analysis complete!");
-        router.push(`/pitch-deck-analyser/session/${data.id}`);
+      } else {
+        formData.append("content", deckText);
       }
-    } catch (error) {
+
+      const response = await fetch("/api/coach/deck", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await safeJson(response);
+
+      toast.success("Analysis complete!");
+      router.push(`/pitch-deck-analyser/session/${data.id}`);
+    } catch (error: any) {
       console.error("Upload error:", error);
+      if (error?.status === 403) {
+        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        router.push("/pitch-deck-analyser/upgrade");
+        return;
+      }
+      if (error?.status === 401) {
+        toast.error("Please sign in to continue");
+        router.push("/sign-in");
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "Failed to analyze deck");
     } finally {
       setUploading(false);

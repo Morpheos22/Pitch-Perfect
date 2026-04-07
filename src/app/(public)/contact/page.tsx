@@ -19,6 +19,7 @@ import {
   Twitter,
   AlertCircle,
 } from "lucide-react";
+import { safeJson } from "@/lib/safe-fetch";
 
 const contactMethods = [
   {
@@ -88,12 +89,7 @@ export default function ContactPage() {
         body: JSON.stringify(formState),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        const details = data.details?.join(". ") || data.message || "Something went wrong.";
-        throw new Error(details);
-      }
+      const data = await safeJson(response);
 
       setIsSubmitted(true);
     } catch (error) {

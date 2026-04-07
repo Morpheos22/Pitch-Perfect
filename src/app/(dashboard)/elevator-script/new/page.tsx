@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { safeJson } from "@/lib/safe-fetch";
 
 const PLAN_LIMITS: Record<string, { e2: number }> = {
   FREE: { e2: 1 },
@@ -126,27 +127,23 @@ export default function ElevatorScriptNewPage() {
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
-          router.push("/elevator-script/upgrade");
-          return;
-        }
-        if (response.status === 401) {
-          toast.error("Please sign in to continue");
-          router.push("/sign-in");
-          return;
-        }
-        throw new Error(data.error || "Analysis failed");
-      }
+      const data = await safeJson(response);
 
       toast.success("Analysis complete!");
       router.push(`/elevator-script/session/${data.id}`);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Submit error:", error);
+      if (error?.status === 403) {
+        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        router.push("/elevator-script/upgrade");
+        return;
+      }
+      if (error?.status === 401) {
+        toast.error("Please sign in to continue");
+        router.push("/sign-in");
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "Failed to analyze script");
     } finally {
       setSubmitting(false);

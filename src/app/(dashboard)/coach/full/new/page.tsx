@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { safeJson } from "@/lib/safe-fetch";
 
 const sixDimensions = [
   { name: "Problem-Solution Fit", description: "Does your solution address a real, urgent problem?" },
@@ -118,12 +119,8 @@ export default function FullPitchNewPage() {
         body: videoFormData,
       });
 
-      if (!videoUploadRes.ok) {
-        const error = await videoUploadRes.json();
-        throw new Error(error.error || "Failed to upload video");
-      }
-
-      const { videoId, downloadUrl } = await videoUploadRes.json();
+      const videoUploadData = await safeJson(videoUploadRes);
+      const { videoId, downloadUrl } = videoUploadData;
       setUploadProgress(40);
       setVideoUploading(false);
 
@@ -154,21 +151,7 @@ export default function FullPitchNewPage() {
         body: analysisFormData,
       });
 
-      const analysisData = await analysisRes.json();
-
-      if (!analysisRes.ok) {
-        if (analysisRes.status === 403) {
-          toast.error("Usage limit reached. Please upgrade your plan.");
-          router.push("/pricing");
-          return;
-        }
-        if (analysisRes.status === 401) {
-          toast.error("Please sign in to continue");
-          router.push("/sign-in");
-          return;
-        }
-        throw new Error(analysisData.error || "Analysis failed");
-      }
+      const analysisData = await safeJson(analysisRes);
 
       setUploadProgress(100);
       toast.success("Analysis complete!");
@@ -176,8 +159,18 @@ export default function FullPitchNewPage() {
       // Navigate to session results page directly (API is synchronous)
       router.push(`/coach/full/session/${analysisData.id}`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload error:", error);
+      if (error?.status === 403) {
+        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        router.push("/pricing");
+        return;
+      }
+      if (error?.status === 401) {
+        toast.error("Please sign in to continue");
+        router.push("/sign-in");
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "Failed to start analysis");
     } finally {
       setUploading(false);

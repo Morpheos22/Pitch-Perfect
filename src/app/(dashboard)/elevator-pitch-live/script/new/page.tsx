@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { safeJson } from "@/lib/safe-fetch";
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -66,9 +67,15 @@ export default function ElevatorPitchLiveScriptNewPage() {
     setSubmitting(true);
 
     try {
+      const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024;
+
       let response: Response;
 
       if (inputTab === "upload" && file) {
+        if (file.size > VERCEL_BODY_LIMIT) {
+          toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is ${(VERCEL_BODY_LIMIT / 1024 / 1024).toFixed(0)}MB. Try pasting your content instead.`);
+          return;
+        }
         // Send file as FormData so server can handle PDF parsing
         const formData = new FormData();
         formData.append("file", file);
@@ -98,27 +105,23 @@ export default function ElevatorPitchLiveScriptNewPage() {
         });
       }
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          toast.error(data.message || "Usage limit reached. Please upgrade your plan.");
-          router.push("/elevator-pitch-live/upgrade");
-          return;
-        }
-        if (response.status === 401) {
-          toast.error("Please sign in to continue");
-          router.push("/sign-in");
-          return;
-        }
-        throw new Error(data.error || "Analysis failed");
-      }
+      const data = await safeJson(response);
 
       toast.success("Analysis complete!");
       router.push(`/elevator-pitch-live/script/session/${data.id}`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Submit error:", error);
+      if (error?.status === 403) {
+        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        router.push("/elevator-pitch-live/upgrade");
+        return;
+      }
+      if (error?.status === 401) {
+        toast.error("Please sign in to continue");
+        router.push("/sign-in");
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "Failed to analyze script");
     } finally {
       setSubmitting(false);
