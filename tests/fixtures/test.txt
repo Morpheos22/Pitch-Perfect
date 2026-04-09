@@ -1,0 +1,5 @@
+Simple Text File
+
+This is a plain text script for testing.
+Pitch Perfect AI helps founders prepare winning investor pitches.
+Our AI coach analyzes hooks, problem statements, solutions, credibility signals, and CTAs.
