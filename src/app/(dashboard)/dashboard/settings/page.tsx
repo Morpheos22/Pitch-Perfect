@@ -21,6 +21,9 @@ import {
   AlertTriangle,
   Camera,
   Loader2,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -48,6 +51,12 @@ export default function SettingsPage() {
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Password change state
+  const [pwForm, setPwForm] = useState({ current: "", newPassword: "", confirm: "" });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMessage, setPwMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showPw, setShowPw] = useState({ current: false, newPassword: false, confirm: false });
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -123,6 +132,57 @@ export default function SettingsPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+    }
+  };
+
+  // Password change handler
+  const handlePasswordChange = async () => {
+    setPwMessage(null);
+    if (!pwForm.current || !pwForm.newPassword || !pwForm.confirm) {
+      setPwMessage({ type: "error", text: "All password fields are required." });
+      return;
+    }
+    if (pwForm.newPassword.length < 8) {
+      setPwMessage({ type: "error", text: "New password must be at least 8 characters." });
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirm) {
+      setPwMessage({ type: "error", text: "New passwords do not match." });
+      return;
+    }
+
+    setPwSaving(true);
+    try {
+      // Use our server-side API which proxies to Clerk (avoids CORS)
+      const token = await clerkUser?.getSession()?.getToken();
+      if (!token) {
+        setPwMessage({ type: "error", text: "Session expired. Please sign in again." });
+        return;
+      }
+
+      const res = await fetch("/api/user/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: pwForm.current,
+          newPassword: pwForm.newPassword,
+        }),
+      });
+
+      if (res.ok) {
+        setPwMessage({ type: "success", text: "Password changed successfully." });
+        setPwForm({ current: "", newPassword: "", confirm: "" });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setPwMessage({ type: "error", text: data.error || "Failed to change password. Verify your current password and try again." });
+      }
+    } catch {
+      setPwMessage({ type: "error", text: "Network error. Please try again." });
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -258,6 +318,93 @@ export default function SettingsPage() {
               )}
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Security — Change Password */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <KeyRound className="w-5 h-5" />
+            Security
+          </CardTitle>
+          <CardDescription>Change your account password</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Current Password</label>
+              <div className="relative">
+                <Input
+                  type={showPw.current ? "text" : "password"}
+                  placeholder="Enter current password"
+                  value={pwForm.current}
+                  onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                  disabled={pwSaving}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPw({ ...showPw, current: !showPw.current })}
+                >
+                  {showPw.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">New Password</label>
+              <div className="relative">
+                <Input
+                  type={showPw.newPassword ? "text" : "password"}
+                  placeholder="At least 8 characters"
+                  value={pwForm.newPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                  disabled={pwSaving}
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPw({ ...showPw, newPassword: !showPw.newPassword })}
+                >
+                  {showPw.newPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Confirm New Password</label>
+              <div className="relative">
+                <Input
+                  type={showPw.confirm ? "text" : "password"}
+                  placeholder="Re-enter new password"
+                  value={pwForm.confirm}
+                  onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                  disabled={pwSaving}
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPw({ ...showPw, confirm: !showPw.confirm })}
+                >
+                  {showPw.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          {pwMessage && (
+            <p className={`text-sm flex items-center gap-1 ${pwMessage.type === "success" ? "text-secondary" : "text-destructive"}`}>
+              {pwMessage.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+              {pwMessage.text}
+            </p>
+          )}
+          <Button onClick={handlePasswordChange} disabled={pwSaving} className="gap-2">
+            {pwSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+            {pwSaving ? "Changing..." : "Change Password"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Your password is stored securely by Clerk and never exposed to our servers. We never see or store your password in plaintext.
+          </p>
         </CardContent>
       </Card>
 
