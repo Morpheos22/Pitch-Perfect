@@ -108,40 +108,37 @@ export default function FullPitchNewPage() {
     setUploadProgress(0);
 
     try {
-      // Step 1: Upload video to storage via /api/video (FormData with actual file)
+      const { uploadFileToBlob } = await import("@/lib/blob-upload");
+
+      // Step 1: Upload video directly to Blob (bypasses 4.5MB limit)
       setUploadProgress(5);
-      const videoFormData = new FormData();
-      videoFormData.append("video", videoFile);
-      videoFormData.append("type", "full");
-
-      const videoUploadRes = await fetch("/api/video", {
-        method: "POST",
-        body: videoFormData,
-      });
-
-      const videoUploadData = await safeJson(videoUploadRes);
-      const { videoId, downloadUrl } = videoUploadData;
+      let videoBlobResult;
+      try {
+        videoBlobResult = await uploadFileToBlob(videoFile, "video");
+      } catch (videoUploadError) {
+        console.error("[E4] Video Blob upload failed:", videoUploadError);
+        throw new Error("Failed to upload video. Please check your connection and try again.");
+      }
       setUploadProgress(40);
       setVideoUploading(false);
 
-      // Step 2: Confirm video upload
-      await fetch("/api/video", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, duration: 0 }),
-      });
-
-      setUploadProgress(60);
-
-      // Step 3: Submit for AI analysis via /api/coach/full (FormData)
+      // Step 2: Submit for AI analysis (deck optional via Blob upload)
       const analysisFormData = new FormData();
-      analysisFormData.append("videoUrl", downloadUrl);
-      analysisFormData.append("videoId", videoId);
+      analysisFormData.append("videoUrl", videoBlobResult.url);
+      analysisFormData.append("videoId", videoBlobResult.pathname);
       analysisFormData.append("sessionName", sessionName);
       analysisFormData.append("duration", "900"); // Default 15 min
 
       if (deckFile) {
-        analysisFormData.append("deckFile", deckFile);
+        setUploadProgress(50);
+        try {
+          const deckBlobResult = await uploadFileToBlob(deckFile, "deck");
+          analysisFormData.append("deckFileUrl", deckBlobResult.url);
+          analysisFormData.append("deckFileName", deckFile.name);
+        } catch (deckUploadError) {
+          console.warn("[E4] Deck Blob upload failed, continuing without deck:", deckUploadError);
+          // Non-fatal: continue without deck context
+        }
       }
 
       setUploadProgress(70);

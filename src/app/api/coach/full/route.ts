@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
-import { extractFileText } from '@/lib/file-parser';
+import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
 
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
@@ -118,8 +118,39 @@ export async function POST(request: NextRequest) {
     // Get deck analysis if provided
     let deckAnalysis: DeckAnalysisResult | undefined;
 
-    if (deckFile && deckFile.size > 0) {
-      // Parse uploaded deck file server-side
+    const deckFileUrl = formData.get("deckFileUrl") as string | null;
+    const deckFileName = formData.get("deckFileName") as string | null;
+
+    if (deckFileUrl && deckFileName) {
+      // NEW: Blob upload flow — extract deck text from URL
+      try {
+        const deckText = await extractTextFromUrl(deckFileUrl, deckFileName);
+        deckAnalysis = {
+          overallScore: 0,
+          strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
+          weaknesses: [],
+          recommendations: [],
+          problemClarityScore: 0,
+          solutionClarityScore: 0,
+          marketOpportunityScore: 0,
+          businessModelScore: 0,
+          teamCredibilityScore: 0,
+          tractionScore: 0,
+          financialsScore: 0,
+          askClarityScore: 0,
+          designConsistencyScore: 0,
+          readabilityScore: 0,
+          visualHierarchyScore: 0,
+          colorSchemeScore: 0,
+          typographyScore: 0,
+        };
+        console.log("[E4] Deck text extracted from Blob URL, length:", deckText.length);
+      } catch (parseErr) {
+        console.error("[E4] Deck file parsing from URL failed:", parseErr);
+        // Non-fatal: continue without deck context
+      }
+    } else if (deckFile && deckFile.size > 0) {
+      // LEGACY: Parse uploaded deck file server-side
       try {
         const deckText = await extractFileText(deckFile);
         // Build a minimal DeckAnalysisResult from extracted text so the AI can use it as context
@@ -187,10 +218,10 @@ export async function POST(request: NextRequest) {
         deliveryPresence: analysis.deliveryPresence,
         overallReadinessScore: analysis.overallReadinessScore,
         investorReadinessLevel: (() => {
-          const validLevels = ['NOT_READY', 'EARLY_STAGE', 'DEVELOPING', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
+          const validLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
           return validLevels.includes(analysis.investorReadinessLevel)
             ? analysis.investorReadinessLevel
-            : 'DEVELOPING';
+            : 'NEEDS_WORK';
         })() as any,
         contentScores: analysis.contentScores,
         deliveryScores: analysis.deliveryScores,
@@ -247,6 +278,85 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { id, notes } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
+    }
+
+    if (notes !== undefined && typeof notes !== "string") {
+      return NextResponse.json({ error: "Notes must be a string" }, { status: 400 });
+    }
+    if (typeof notes === "string" && notes.length > 2000) {
+      return NextResponse.json({ error: "Notes must be under 2000 characters" }, { status: 400 });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await prisma.fullPitchSession.update({
+      where: { id, userId: user.id },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, notes: updated.notes });
+  } catch (error) {
+    console.error("PATCH full session error:", error);
+    return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("id");
+
+    if (!sessionId) {
+      return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
+    }
+
+    await prisma.fullPitchSession.delete({
+      where: { id: sessionId, userId: user.id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE full session error:", error);
+    return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -282,6 +392,9 @@ export async function GET(request: NextRequest) {
         status: session.status,
         createdAt: session.createdAt,
         analyzedAt: session.analyzedAt,
+        notes: session.notes,
+        version: session.version,
+        parentId: session.parentFullSessionId,
         duration: session.duration,
         investorReadinessLevel: session.investorReadinessLevel,
         overallReadinessScore: session.overallReadinessScore,

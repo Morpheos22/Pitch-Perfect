@@ -85,15 +85,10 @@ export default function PitchDeckAnalyserNewPage() {
         toast.error("Only PDF, PPTX, and PPT files are supported");
         return;
       }
-      if (selectedFile.size > 4.5 * 1024 * 1024) {
-        toast.error("File exceeds the 4.5MB Vercel upload limit. Try pasting your deck content instead.");
-        return;
-      }
+      // No size limit check — Blob upload bypasses the 4.5MB serverless limit
       setFile(selectedFile);
     }
   };
-
-  const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024; // Vercel Hobby plan limit
 
   const handleSubmit = async () => {
     if (!sessionName.trim()) {
@@ -112,23 +107,45 @@ export default function PitchDeckAnalyserNewPage() {
     setUploading(true);
 
     try {
+      let response: Response;
       const formData = new FormData();
       formData.append("sessionName", sessionName);
 
-      if (inputTab === "upload") {
-        if (file!.size > VERCEL_BODY_LIMIT) {
-          toast.error(`File is too large (${(file!.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is ${(VERCEL_BODY_LIMIT / 1024 / 1024).toFixed(0)}MB. Try pasting your content instead.`);
-          return;
+      if (inputTab === "upload" && file) {
+        // PRIMARY: Upload to Blob first (bypasses 4.5MB serverless limit)
+        try {
+          const { uploadFileToBlob } = await import("@/lib/blob-upload");
+          const blobResult = await uploadFileToBlob(file, "deck");
+
+          // Send only URL to API — tiny payload, no size limit
+          formData.append("fileUrl", blobResult.url);
+          formData.append("fileName", file.name);
+          formData.append("fileSize", String(file.size));
+
+          response = await fetch("/api/coach/deck", {
+            method: "POST",
+            body: formData,
+          });
+        } catch (uploadError) {
+          console.warn("[E1] Blob upload failed, falling back to legacy:", uploadError);
+          // FALLBACK: Try legacy FormData upload for small files
+          if (file.size <= 4 * 1024 * 1024) {
+            formData.append("file", file);
+            response = await fetch("/api/coach/deck", {
+              method: "POST",
+              body: formData,
+            });
+          } else {
+            throw uploadError;
+          }
         }
-        formData.append("file", file!);
       } else {
         formData.append("content", deckText);
+        response = await fetch("/api/coach/deck", {
+          method: "POST",
+          body: formData,
+        });
       }
-
-      const response = await fetch("/api/coach/deck", {
-        method: "POST",
-        body: formData,
-      });
 
       const data = await safeJson(response);
 
@@ -281,7 +298,7 @@ export default function PitchDeckAnalyserNewPage() {
                   <label htmlFor="file-upload" className="cursor-pointer">
                     <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="font-medium">Drag your deck here, or click to browse</p>
-                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT up to 4.5MB</p>
+                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT (no size limit)</p>
                   </label>
                 </div>
               ) : (

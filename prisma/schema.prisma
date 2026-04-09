@@ -181,6 +181,13 @@ model PitchDeck {
   // Raw AI Response (for debugging/reprocessing)
   rawAnalysis Json?
 
+  // User Notes
+  notes String?
+
+  // Iteration Tracking
+  version        Int     @default(1)
+  parentDeckId   String? // For tracking iterations
+
   // Relations
   fullSessions     FullPitchSession[]
   founderSessions  FounderSession[]
@@ -233,6 +240,9 @@ model PitchScript {
   improvements     Json? // Structured improvement suggestions
   rewrittenScript  String? // AI-rewritten version
   alternativeHooks String[] // Alternative opening options
+
+  // User Notes
+  notes String?
 
   // Iteration Tracking
   version        Int     @default(1)
@@ -369,6 +379,13 @@ model FullPitchSession {
   // Transcript
   transcript               String?
   transcriptWithTimestamps Json?
+
+  // User Notes
+  notes String?
+
+  // Iteration Tracking
+  version              Int     @default(1)
+  parentFullSessionId  String?
 
   // Timestamps
   createdAt  DateTime  @default(now())

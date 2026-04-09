@@ -121,3 +121,32 @@ export async function extractFileText(file: File): Promise<string> {
 }
 
 export { parsePdfText, parsePptxText, parseDocxText };
+
+/**
+ * Extract text from a file at a given URL.
+ * Fetches the file content, wraps it in a File object, then delegates to extractFileText.
+ * This enables the Blob upload flow: client uploads to Blob → server gets URL → extracts text.
+ */
+export async function extractTextFromUrl(fileUrl: string, fileName: string): Promise<string> {
+  const { getFileContent } = await import("@/lib/storage");
+  const buffer = await getFileContent(fileUrl);
+
+  // Construct a File object from the buffer for extractFileText
+  const ext = fileName.toLowerCase().split(".").pop() || "";
+  const mimeTypes: Record<string, string> = {
+    pdf: "application/pdf",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ppt: "application/vnd.ms-powerpoint",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    txt: "text/plain",
+    md: "text/markdown",
+    text: "text/plain",
+  };
+
+  const file = new File([buffer], fileName, {
+    type: mimeTypes[ext] || "application/octet-stream",
+  });
+
+  return extractFileText(file);
+}

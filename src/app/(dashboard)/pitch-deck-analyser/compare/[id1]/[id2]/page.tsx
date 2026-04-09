@@ -138,13 +138,29 @@ export default function CompareDeckPage({ params }: { params: Promise<{ id1: str
         const data1 = await res1.json();
         const data2 = await res2.json();
 
-        if (!data1.session || !data2.session) {
+        if (!data1 || !data2) {
           setError("One or both sessions not found");
           return;
         }
 
-        setSession1(data1.session);
-        setSession2(data2.session);
+        // API returns flat { id, status, analysis: { contentScores, visualScores, feedback } }
+        // Map to the DeckSession interface the compare component expects
+        setSession1({
+          ...data1,
+          overallScore: data1.analysis?.contentScores?.overall,
+          contentAnalysis: data1.analysis,
+          visualAudit: data1.analysis?.visualScores
+              ? { designScores: data1.analysis.visualScores }
+              : undefined,
+        } as any);
+        setSession2({
+          ...data2,
+          overallScore: data2.analysis?.contentScores?.overall,
+          contentAnalysis: data2.analysis,
+          visualAudit: data2.analysis?.visualScores
+              ? { designScores: data2.analysis.visualScores }
+              : undefined,
+        } as any);
       } catch {
         setError("Failed to load sessions");
       } finally {

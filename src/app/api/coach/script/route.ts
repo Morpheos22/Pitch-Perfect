@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
-import { extractFileText, detectFileType } from "@/lib/file-parser";
+import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
@@ -33,47 +33,64 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get("content-type") || "";
 
     if (contentType.includes("multipart/form-data")) {
-      // FormData: file upload
+      // FormData: file upload or Blob URL
       const formData = await request.formData();
       const file = formData.get("file") as File | null;
+      const fileUrl = formData.get("fileUrl") as string | null;
+      const blobFileName = formData.get("fileName") as string | null;
       sessionName = formData.get("sessionName") as string | null;
       targetAudience = (formData.get("targetAudience") as string) || undefined;
       const rawDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string, 10) : undefined;
       targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
 
-      if (!file) {
-        console.error("[E2] No file received in FormData");
+      if (!file && !fileUrl) {
+        console.error("[E2] No file or fileUrl received in FormData");
         return NextResponse.json(
-          { error: "File is required" },
+          { error: "File or fileUrl is required" },
           { status: 400 }
         );
       }
 
-      console.log("[E2] File received:", { name: file.name, size: file.size, type: file.type });
+      // NEW: Blob upload flow — extract text from URL
+      if (fileUrl && blobFileName) {
+        console.log("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName });
+        try {
+          script = await extractTextFromUrl(fileUrl, blobFileName);
+          console.log("[E2] Text extracted from Blob URL, length:", script.length);
+        } catch (e) {
+          console.error("[E2] Failed to extract from Blob URL:", e);
+          return NextResponse.json(
+            { error: "Could not extract text from uploaded file. Please try pasting your script directly." },
+            { status: 400 }
+          );
+        }
+      } else if (file) {
+        console.log("[E2] File received:", { name: file.name, size: file.size, type: file.type });
 
-      // Server-side body size guard
-      if (file.size > 4.5 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: "File too large. Maximum size is 4MB. Please paste your script directly." },
-          { status: 413 }
-        );
-      }
+        // Server-side body size guard (legacy path only)
+        if (file.size > 4.5 * 1024 * 1024) {
+          return NextResponse.json(
+            { error: "File too large. Maximum size is 4MB. Please paste your script directly." },
+            { status: 413 }
+          );
+        }
 
-      // Extract text from file using unified parser
-      try {
-        script = await extractFileText(file);
-        console.log("[E2] Text extracted successfully, length:", script.length);
-      } catch (e) {
-        console.error("[E2] Failed to extract file text:", e);
-        return NextResponse.json(
-          { error: "Could not extract text from file. Please try pasting your script directly." },
-          { status: 400 }
-        );
+        // Extract text from file using unified parser
+        try {
+          script = await extractFileText(file);
+          console.log("[E2] Text extracted successfully, length:", script.length);
+        } catch (e) {
+          console.error("[E2] Failed to extract file text:", e);
+          return NextResponse.json(
+            { error: "Could not extract text from file. Please try pasting your script directly." },
+            { status: 400 }
+          );
+        }
       }
 
       if (!script || script.trim().length < 20) {
         return NextResponse.json(
-          { error: "Could not extract text from file. Please try pasting your script directly." },
+          { error: "Could not extract enough text from file. Please try pasting your script directly." },
           { status: 400 }
         );
       }
@@ -184,6 +201,85 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { id, notes } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
+    }
+
+    if (notes !== undefined && typeof notes !== "string") {
+      return NextResponse.json({ error: "Notes must be a string" }, { status: 400 });
+    }
+    if (typeof notes === "string" && notes.length > 2000) {
+      return NextResponse.json({ error: "Notes must be under 2000 characters" }, { status: 400 });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await prisma.pitchScript.update({
+      where: { id, userId: user.id },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, notes: updated.notes });
+  } catch (error) {
+    console.error("PATCH script error:", error);
+    return NextResponse.json({ error: "Failed to update script" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const scriptId = searchParams.get("id");
+
+    if (!scriptId) {
+      return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
+    }
+
+    await prisma.pitchScript.delete({
+      where: { id: scriptId, userId: user.id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE script error:", error);
+    return NextResponse.json({ error: "Failed to delete script" }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -227,6 +323,9 @@ export async function GET(request: NextRequest) {
         inputType: script.inputType,
         fileName: script.fileName || undefined,
         createdAt: script.createdAt,
+        notes: script.notes,
+        version: script.version,
+        parentId: script.parentScriptId,
         targetAudience: script.targetAudience,
         analysis: {
           scores: {
