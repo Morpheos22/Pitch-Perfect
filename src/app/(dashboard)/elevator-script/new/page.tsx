@@ -19,9 +19,6 @@ const PLAN_LIMITS: Record<string, { e2: number }> = {
   ENTERPRISE: { e2: 999 },
 };
 
-const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024; // Vercel Hobby plan limit
-const MAX_CLIENT_FILE_SIZE = 4 * 1024 * 1024; // 4MB safe limit for client-side
-
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
   { name: "Problem", description: "Clearly identifies the problem being solved" },
@@ -84,10 +81,7 @@ export default function ElevatorScriptNewPage() {
         toast.error("Only PDF, DOCX, DOC, TXT, and MD files are supported");
         return;
       }
-      if (selectedFile.size > MAX_CLIENT_FILE_SIZE) {
-        toast.error(`File is too large (${(selectedFile.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is 4MB. Try pasting your script directly.`);
-        return;
-      }
+      // No size limit check — Blob upload bypasses the 4.5MB serverless limit
       setFile(selectedFile);
     }
   };
@@ -112,23 +106,40 @@ export default function ElevatorScriptNewPage() {
       let response: Response;
 
       if (inputTab === "upload" && file) {
-        // Double-check file size before sending (Vercel will reject >4.5MB)
-        if (file.size > VERCEL_BODY_LIMIT) {
-          toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is 4MB. Try pasting your script directly.`);
-          return;
-        }
-        // Send file as FormData so server can handle PDF/DOCX/PPTX parsing
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("sessionName", sessionName);
-        formData.append("targetAudience", "investors");
-        formData.append("targetDuration", "60");
+        // PRIMARY: Upload to Blob first (bypasses 4.5MB serverless limit)
+        try {
+          const { uploadFileToBlob } = await import("@/lib/blob-upload");
+          const blobResult = await uploadFileToBlob(file, "script");
 
-        console.log("[E2 Upload] Sending file:", file.name, "size:", file.size, "type:", file.type);
-        response = await fetch("/api/coach/script", {
-          method: "POST",
-          body: formData,
-        });
+          // Send only URL to API — tiny payload, no size limit
+          const formData = new FormData();
+          formData.append("fileUrl", blobResult.url);
+          formData.append("fileName", file.name);
+          formData.append("sessionName", sessionName);
+          formData.append("targetAudience", "investors");
+          formData.append("targetDuration", "60");
+
+          response = await fetch("/api/coach/script", {
+            method: "POST",
+            body: formData,
+          });
+        } catch (uploadError) {
+          console.warn("[E2] Blob upload failed, falling back to legacy:", uploadError);
+          // FALLBACK: Try legacy FormData upload for small files
+          if (file.size <= 4 * 1024 * 1024) {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("sessionName", sessionName);
+            formData.append("targetAudience", "investors");
+            formData.append("targetDuration", "60");
+            response = await fetch("/api/coach/script", {
+              method: "POST",
+              body: formData,
+            });
+          } else {
+            throw uploadError;
+          }
+        }
       } else {
         // Send pasted text as JSON
         if (scriptText.trim().length < 20) {
@@ -286,7 +297,7 @@ export default function ElevatorScriptNewPage() {
                     <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="font-medium">Drag your script here, or click to browse</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      PDF, DOCX, DOC, TXT, MD up to 4MB
+                      PDF, DOCX, DOC, TXT, MD (no size limit)
                     </p>
                   </label>
                 </div>

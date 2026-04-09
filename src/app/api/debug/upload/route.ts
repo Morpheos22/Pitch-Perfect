@@ -3,9 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Diagnostic endpoint: tests file upload chain end-to-end.
  * POST a file here to see exactly what the server receives.
- * No auth required (temporary for debugging).
+ * BLOCKED in production — returns 403.
  */
 export async function POST(request: NextRequest) {
+  // Guard: development only
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+  }
   const startTime = Date.now();
   const results: Record<string, unknown> = {};
 
@@ -80,8 +84,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(results);
 }
 
-// Allow without auth for debugging
+// Allow in development only for debugging
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+  }
   return NextResponse.json({
     message: "POST a file to this endpoint to diagnose upload issues",
     usage: "curl -X POST -F 'file=@test.pdf' /api/debug/upload",

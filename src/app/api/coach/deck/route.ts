@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, DeckAnalysisResult } from "@/lib/ai-service";
-import { extractFileText, detectFileType } from "@/lib/file-parser";
+import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
@@ -25,13 +25,15 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const file = formData.get("file") as File | null;
+    const fileUrl = formData.get("fileUrl") as string | null;
+    const fileName = formData.get("fileName") as string | null;
     const deckContent = formData.get("content") as string;
     const sessionName = formData.get("sessionName") as string | null;
 
-    if (!file && !deckContent) {
+    if (!file && !deckContent && !fileUrl) {
       return NextResponse.json(
-        { error: "Either file or content is required" },
+        { error: "Either file, fileUrl, or content is required" },
         { status: 400 }
       );
     }
@@ -68,9 +70,26 @@ export async function POST(request: NextRequest) {
     }
 
     // Get content for analysis
+    // Priority: deckContent (pasted) > fileUrl (Blob upload) > file (legacy upload)
     let analysisContent = deckContent || "";
 
-    if (file && !deckContent) {
+    if (!analysisContent && fileUrl && fileName) {
+      // NEW: Blob upload flow — fetch from URL, extract text
+      console.log("[E1] Extracting text from Blob URL:", { fileUrl, fileName });
+      try {
+        analysisContent = await extractTextFromUrl(fileUrl, fileName);
+        console.log("[E1] Text extracted from Blob URL, length:", analysisContent.length);
+      } catch (e) {
+        console.error("[E1] Failed to extract from Blob URL:", e);
+        return NextResponse.json(
+          { error: "Failed to process uploaded file. Please try pasting content directly." },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (!analysisContent && file && !deckContent) {
+      // LEGACY: Direct file upload (for backward compat / small files)
       console.log("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
       try {
         analysisContent = await extractFileText(file);
@@ -120,8 +139,8 @@ export async function POST(request: NextRequest) {
     const savedDeck = await prisma.pitchDeck.create({
       data: {
         userId: user.id,
-        fileName: sessionName || file?.name || "text-input",
-        fileUrl: file ? file.name : "",
+        fileName: sessionName || fileName || file?.name || "text-input",
+        fileUrl: fileUrl || (file ? file.name : ""),
         fileSize: Number.isFinite(file?.size) ? file!.size : 0,
         fileType: file?.type || "text/plain",
         status: "COMPLETED",
@@ -188,6 +207,85 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { id, notes } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Deck ID is required" }, { status: 400 });
+    }
+
+    if (notes !== undefined && typeof notes !== "string") {
+      return NextResponse.json({ error: "Notes must be a string" }, { status: 400 });
+    }
+    if (typeof notes === "string" && notes.length > 2000) {
+      return NextResponse.json({ error: "Notes must be under 2000 characters" }, { status: 400 });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await prisma.pitchDeck.update({
+      where: { id, userId: user.id },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, notes: updated.notes });
+  } catch (error) {
+    console.error("PATCH deck error:", error);
+    return NextResponse.json({ error: "Failed to update deck" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const deckId = searchParams.get("id");
+
+    if (!deckId) {
+      return NextResponse.json({ error: "Deck ID is required" }, { status: 400 });
+    }
+
+    await prisma.pitchDeck.delete({
+      where: { id: deckId, userId: user.id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE deck error:", error);
+    return NextResponse.json({ error: "Failed to delete deck" }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -228,6 +326,9 @@ export async function GET(request: NextRequest) {
         status: deck.status,
         fileName: deck.fileName,
         createdAt: deck.createdAt,
+        notes: deck.notes,
+        version: deck.version,
+        parentId: deck.parentDeckId,
         analysis: {
           contentScores: {
             problemClarity: deck.problemClarityScore,

@@ -610,6 +610,103 @@ function validateStringArray(value: unknown): string[] {
 }
 
 // ============================================
+// SCORING WEIGHTS & QUALITY FRAMEWORK
+// ============================================
+// These weights define how individual dimensions contribute to the overall score.
+// Used to cross-check the AI's subjective overall score for consistency.
+
+export const SCORING_WEIGHTS = {
+  E1_CONTENT: {
+    problemClarity: 0.15, solutionClarity: 0.15, marketOpportunity: 0.15,
+    businessModel: 0.10, teamCredibility: 0.10, traction: 0.15,
+    financials: 0.10, askClarity: 0.10,
+  },
+  E1_VISUAL: {
+    designConsistency: 0.25, readability: 0.25, visualHierarchy: 0.20,
+    colorScheme: 0.15, typography: 0.15,
+  },
+  E2_ELEMENTS: {
+    hook: 0.20, problem: 0.20, solution: 0.20, credibility: 0.20, cta: 0.20,
+  },
+  E3_DELIVERY: {
+    pace: 0.20, clarity: 0.20, fillerWords: 0.20, energy: 0.20, confidence: 0.20,
+  },
+  E3_BODY_LANGUAGE: {
+    eyeContact: 0.25, facialExpression: 0.25, gesture: 0.25, posture: 0.25,
+  },
+  E4_READINESS: {
+    problemSolutionFit: 0.20, marketOpportunity: 0.15, businessModelViability: 0.15,
+    teamCredibility: 0.15, tractionMilestones: 0.15, deliveryPresence: 0.20,
+  },
+} as const;
+
+/** Compute weighted overall from dimension scores */
+export function computeWeightedOverall(
+  weights: Record<string, number>,
+  scores: Record<string, number>
+): number {
+  let total = 0;
+  for (const [key, weight] of Object.entries(weights)) {
+    const score = scores[key] ?? 50;
+    total += score * weight;
+  }
+  return Math.round(total);
+}
+
+/**
+ * Validate AI scoring consistency.
+ * If AI's overall differs >10 from weighted average, use weighted average instead.
+ * Logs warnings for any dimension deviating >30 from overall.
+ */
+export function validateScoreConsistency(
+  aiOverall: number,
+  weightedOverall: number,
+  dimensionScores: Record<string, number>,
+  moduleLabel: string
+): { validatedOverall: number; warnings: string[] } {
+  const warnings: string[] = [];
+  let overall = aiOverall;
+
+  if (Math.abs(aiOverall - weightedOverall) > 10) {
+    warnings.push(
+      `[${moduleLabel}] AI overall (${aiOverall}) differs >10pts from weighted avg (${weightedOverall}). Using weighted avg.`
+    );
+    overall = weightedOverall;
+  }
+
+  for (const [dim, score] of Object.entries(dimensionScores)) {
+    if (Math.abs(score - overall) > 30) {
+      warnings.push(
+        `[${moduleLabel}] ${dim} (${score}) deviates >30pts from overall (${overall}). Consider re-analysis.`
+      );
+    }
+  }
+
+  if (warnings.length > 0) {
+    console.warn(`[ScoreValidation] ${warnings.join(' | ')}`);
+  }
+
+  return { validatedOverall: overall, warnings };
+}
+
+/** Calibration anchor text appended to all system prompts */
+const CALIBRATION_ANCHOR = `
+SCORING CALIBRATION (use these as reference):
+- 90-100 (Exceptional): Among the top 5% I've seen. Investor-ready, minimal changes needed.
+- 70-89 (Strong): Solid foundation. Targeted refinements before investor meetings.
+- 50-69 (Developing): Shows promise but has significant gaps. Needs coaching.
+- 30-49 (Needs Work): Critical gaps in multiple areas. Not investor-ready.
+- 0-29 (Beginning): Fundamentals missing. Go back to basics.
+
+FEEDBACK QUALITY RULES:
+- Every recommendation MUST reference a specific section, slide, or moment from the input
+- Generic advice like "improve your market analysis" is UNACCEPTABLE
+- Include concrete examples of what "good" looks like for each weakness
+- Prioritize the 3 most impactful changes the founder can make right now
+- Each weakness should have a matching actionable recommendation
+- Keep recommendations actionable within 1 week`;
+
+// ============================================
 // PITCH DECK ANALYSIS (E1)
 // ============================================
 
@@ -635,7 +732,42 @@ export interface DeckAnalysisResult {
   modelUsed?: string;
 }
 
-export async function analyzePitchDeck(deckContent: string): Promise<DeckAnalysisResult> {
+export async function analyzePitchDeck(deckContent: string, previousAnalysis?: {
+  overallScore: number;
+  problemClarityScore?: number;
+  solutionClarityScore?: number;
+  marketOpportunityScore?: number;
+  businessModelScore?: number;
+  teamCredibilityScore?: number;
+  tractionScore?: number;
+  financialsScore?: number;
+  askClarityScore?: number;
+  strengths?: string[];
+  weaknesses?: string[];
+  recommendations?: string[];
+}): Promise<DeckAnalysisResult> {
+  let iterationContext = '';
+  if (previousAnalysis) {
+    const prevScores = [
+      `Overall: ${previousAnalysis.overallScore}/100`,
+      previousAnalysis.problemClarityScore != null ? `Problem Clarity: ${previousAnalysis.problemClarityScore}/100` : null,
+      previousAnalysis.solutionClarityScore != null ? `Solution Clarity: ${previousAnalysis.solutionClarityScore}/100` : null,
+      previousAnalysis.marketOpportunityScore != null ? `Market Opportunity: ${previousAnalysis.marketOpportunityScore}/100` : null,
+      previousAnalysis.businessModelScore != null ? `Business Model: ${previousAnalysis.businessModelScore}/100` : null,
+      previousAnalysis.teamCredibilityScore != null ? `Team Credibility: ${previousAnalysis.teamCredibilityScore}/100` : null,
+      previousAnalysis.tractionScore != null ? `Traction: ${previousAnalysis.tractionScore}/100` : null,
+      previousAnalysis.financialsScore != null ? `Financials: ${previousAnalysis.financialsScore}/100` : null,
+      previousAnalysis.askClarityScore != null ? `Ask Clarity: ${previousAnalysis.askClarityScore}/100` : null,
+    ].filter(Boolean).join('\n');
+
+    const prevFeedback = [
+      ...(previousAnalysis.weaknesses || []).map(w => `- Weakness: ${w}`),
+      ...(previousAnalysis.recommendations || []).map(r => `- Recommendation: ${r}`),
+    ].join('\n');
+
+    iterationContext = `\n\nPREVIOUS ANALYSIS (iteration context — the user previously scored:\n${prevScores}\n\nPrevious feedback given:\n${prevFeedback}\n\nYour task: Evaluate the CURRENT submission independently. If they improved, acknowledge it. If they regressed, flag it. Score the CURRENT quality, not the previous analysis.)\n\n`;
+  }
+
   const systemPrompt = `You are an expert pitch deck consultant with 15+ years of experience helping startups raise funding. You have reviewed over 500 pitch decks and helped startups raise a combined $500M+.
 
 Analyze pitch decks against the 10-slide framework and provide detailed scoring and feedback.
@@ -656,11 +788,10 @@ VISUAL AUDIT CRITERIA (0-100):
 3. Visual Hierarchy: Clear information hierarchy, key points stand out
 4. Color Scheme: Professional, on-brand, not distracting, good contrast
 5. Typography: Professional font choices, consistent formatting, readable
-
-Provide actionable, specific feedback. Be direct but constructive.
+${CALIBRATION_ANCHOR}
 Respond ONLY in valid JSON format without any markdown formatting.`;
 
-  const userPrompt = `Analyze this pitch deck content thoroughly:
+  const userPrompt = `${iterationContext}Analyze this pitch deck content thoroughly:
 
 ${deckContent}
 
@@ -719,6 +850,24 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
     tokensUsed: response.usage?.totalTokens,
     modelUsed,
   };
+
+  // Quality validation: cross-check overall score against weighted average
+  const contentWeighted = computeWeightedOverall(SCORING_WEIGHTS.E1_CONTENT, {
+    problemClarity: result.problemClarityScore, solutionClarity: result.solutionClarityScore,
+    marketOpportunity: result.marketOpportunityScore, businessModel: result.businessModelScore,
+    teamCredibility: result.teamCredibilityScore, traction: result.tractionScore,
+    financials: result.financialsScore, askClarity: result.askClarityScore,
+  });
+  const { validatedOverall } = validateScoreConsistency(
+    result.overallScore, contentWeighted,
+    { problemClarity: result.problemClarityScore, solutionClarity: result.solutionClarityScore,
+      marketOpportunity: result.marketOpportunityScore, businessModel: result.businessModelScore,
+      teamCredibility: result.teamCredibilityScore, traction: result.tractionScore,
+      financials: result.financialsScore, askClarity: result.askClarityScore },
+    'E1_DECK'
+  );
+  result.overallScore = validatedOverall;
+
   return result;
 }
 
@@ -745,8 +894,36 @@ export interface ScriptAnalysisResult {
 export async function analyzePitchScript(
   scriptText: string,
   targetAudience?: string,
-  targetDuration?: number
+  targetDuration?: number,
+  previousAnalysis?: {
+    overallScore: number;
+    hookScore?: number;
+    problemScore?: number;
+    solutionScore?: number;
+    credibilityScore?: number;
+    ctaScore?: number;
+    weaknesses?: string[];
+    improvements?: Record<string, string[]>;
+  }
 ): Promise<ScriptAnalysisResult> {
+  let iterationContext = '';
+  if (previousAnalysis) {
+    const prevScores = [
+      `Overall: ${previousAnalysis.overallScore}/100`,
+      previousAnalysis.hookScore != null ? `Hook: ${previousAnalysis.hookScore}/100` : null,
+      previousAnalysis.problemScore != null ? `Problem: ${previousAnalysis.problemScore}/100` : null,
+      previousAnalysis.solutionScore != null ? `Solution: ${previousAnalysis.solutionScore}/100` : null,
+      previousAnalysis.credibilityScore != null ? `Credibility: ${previousAnalysis.credibilityScore}/100` : null,
+      previousAnalysis.ctaScore != null ? `CTA: ${previousAnalysis.ctaScore}/100` : null,
+    ].filter(Boolean).join('\n');
+
+    const prevImprovements = previousAnalysis.improvements
+      ? Object.values(previousAnalysis.improvements).flat().map(i => `- ${i}`).join('\n')
+      : '';
+
+    iterationContext = `\n\nPREVIOUS ANALYSIS (iteration context):\n${prevScores}\n\nPrevious improvements suggested:\n${prevImprovements}\n\nEvaluate the CURRENT script independently. Acknowledge improvements or regressions.\n\n`;
+  }
+
   const systemPrompt = `You are an expert pitch coach specializing in elevator pitches with 20+ years of experience. You have coached founders from Y Combinator, Techstars, and 500 Startups.
 
 Analyze scripts using the 5-Element Elevator Pitch Framework:
@@ -756,14 +933,13 @@ Analyze scripts using the 5-Element Elevator Pitch Framework:
 3. SOLUTION (0-100): Concise description that differentiates from alternatives
 4. CREDIBILITY (0-100): Demonstrates relevant expertise or traction
 5. CALL-TO-ACTION (0-100): Clear, specific ask with urgency
-
-Provide specific, actionable feedback. Give concrete examples.
+${CALIBRATION_ANCHOR}
 Respond ONLY in valid JSON format without any markdown formatting.`;
 
   const audienceContext = targetAudience ? `Target audience: ${targetAudience}` : 'Target audience: investors (seed stage)';
   const durationContext = targetDuration ? `Target duration: ${targetDuration} seconds` : 'Target duration: 60 seconds (typical elevator pitch)';
 
-  const userPrompt = `Analyze this elevator pitch script:
+  const userPrompt = `${iterationContext}Analyze this elevator pitch script:
 
 """
 ${scriptText}
@@ -831,6 +1007,20 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   };
   result.wordCount = scriptText.split(/\s+/).filter(Boolean).length;
   result.estimatedDuration = Math.round(result.wordCount / 2.5);
+
+  // Quality validation for E2
+  const e2Weighted = computeWeightedOverall(SCORING_WEIGHTS.E2_ELEMENTS, {
+    hook: result.hookScore, problem: result.problemScore, solution: result.solutionScore,
+    credibility: result.credibilityScore, cta: result.ctaScore,
+  });
+  const { validatedOverall: e2Overall } = validateScoreConsistency(
+    result.overallScore, e2Weighted,
+    { hook: result.hookScore, problem: result.problemScore, solution: result.solutionScore,
+      credibility: result.credibilityScore, cta: result.ctaScore },
+    'E2_SCRIPT'
+  );
+  result.overallScore = e2Overall;
+
   return result;
 }
 
@@ -1218,4 +1408,90 @@ export async function checkAIServiceHealth(): Promise<{
     configStatus: getZaiConfigStatus(),
     zai: results.zai,
   };
+}
+
+// ============================================
+// COACHING DRILLS GENERATION
+// ============================================
+// Generates personalized coaching drills targeting a founder's weakest dimensions.
+
+export interface CoachingDrill {
+  title: string;
+  description: string;
+  targetDimension: string;
+  currentScore: number;
+  targetScore: number;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  estimatedTime: string;
+  steps: string[];
+}
+
+export async function generateCoachingDrills(
+  moduleType: 'deck' | 'script' | 'live' | 'full',
+  scores: Record<string, number>,
+  weaknesses: string[],
+  strengths: string[],
+): Promise<CoachingDrill[]> {
+  const moduleLabels: Record<string, string> = {
+    deck: 'pitch deck',
+    script: 'elevator pitch script',
+    live: 'live elevator pitch',
+    full: 'full investor pitch session',
+  };
+
+  const systemPrompt = `You are a pitch coach who designs targeted, actionable exercises for startup founders. You create drills that are specific, time-boxed, and produce measurable improvement.
+
+Generate 3-5 coaching drills targeting the founder's weakest areas. Each drill should:
+- Target ONE specific dimension
+- Be completable in the stated time
+- Have 3-5 concrete, actionable steps
+- Include what "success" looks like
+
+Respond ONLY in valid JSON format.`;
+
+  const sortedDimensions = Object.entries(scores)
+    .sort(([, a], [, b]) => a - b)
+    .slice(0, 5);
+
+  const userPrompt = `A founder just completed a ${moduleLabels[moduleType]} analysis. Here are their results:
+
+SCORES:
+${sortedDimensions.map(([dim, score]) => `- ${dim}: ${score}/100`).join('\n')}
+
+STRENGTHS:
+${strengths.map(s => `- ${s}`).join('\n')}
+
+WEAKNESSES:
+${weaknesses.map(w => `- ${w}`).join('\n')}
+
+Design 3-5 coaching drills targeting the weakest dimensions. Return JSON:
+{
+  "drills": [
+    {
+      "title": "<drill title>",
+      "description": "<1-2 sentence description>",
+      "targetDimension": "<dimension name>",
+      "currentScore": <number>,
+      "targetScore": <number, realistic improvement target>,
+      "difficulty": "<beginner|intermediate|advanced>",
+      "estimatedTime": "<e.g. '30 minutes'>",
+      "steps": ["<step 1>", "<step 2>", "<step 3>"]
+    }
+  ]
+}`;
+
+  const { response } = await executeWithFallback('COACHING_DRILL_GEN', (model) => ({
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: MODULE_MODEL_MAP.COACHING_DRILL_GEN.temperature,
+  }));
+
+  const content = response.choices?.[0]?.message?.content;
+  if (!content) throw new Error('No response from AI');
+
+  const parsed = parseJsonResponse<{ drills: CoachingDrill[] }>(content);
+  return parsed.drills || [];
 }
