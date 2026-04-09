@@ -88,7 +88,13 @@ export async function extractFileText(file: File): Promise<string> {
         return parseDocxText(file);
       case 'txt':
         return file.text();
-      case 'unknown':
+      case 'unknown': {
+        // Heuristic: if the first 64 bytes contain null bytes, it's almost certainly binary
+        const head = Buffer.from(await file.slice(0, 64).arrayBuffer());
+        const isBinary = head.includes(0x00);
+        if (isBinary) {
+          throw new Error(`Unsupported file type: ${fileName}. File appears to be binary.`);
+        }
         // Try raw text first (works for .text, no-extension files)
         try {
           const text = await file.text();
@@ -104,6 +110,7 @@ export async function extractFileText(file: File): Promise<string> {
           console.error(`[file-parser] PDF fallback also failed:`, pdfErr);
         }
         throw new Error(`Unsupported file type: ${fileName}. Tried text and PDF parsing.`);
+      }
       default:
         throw new Error(`Unsupported file type: ${fileName}`);
     }
