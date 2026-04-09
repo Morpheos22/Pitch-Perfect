@@ -85,8 +85,8 @@ export default function PitchDeckAnalyserNewPage() {
         toast.error("Only PDF, PPTX, and PPT files are supported");
         return;
       }
-      if (selectedFile.size > 50 * 1024 * 1024) {
-        toast.error("File exceeds the 50MB limit");
+      if (selectedFile.size > 4.5 * 1024 * 1024) {
+        toast.error("File exceeds the 4.5MB Vercel upload limit. Try pasting your deck content instead.");
         return;
       }
       setFile(selectedFile);
@@ -281,7 +281,7 @@ export default function PitchDeckAnalyserNewPage() {
                   <label htmlFor="file-upload" className="cursor-pointer">
                     <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="font-medium">Drag your deck here, or click to browse</p>
-                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT up to 50MB</p>
+                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT up to 4.5MB</p>
                   </label>
                 </div>
               ) : (

@@ -47,20 +47,22 @@ export async function POST(request: NextRequest) {
       const isAllowedType = allowedTypes.includes(file.type) || 
         file.name.endsWith(".pdf") || 
         file.name.endsWith(".pptx") ||
+        file.name.endsWith(".ppt") ||
         file.name.endsWith(".txt");
       
       if (!isAllowedType) {
         return NextResponse.json(
-          { error: "Invalid file type. Please upload a PDF, PPTX, or TXT file." },
+          { error: `Invalid file type (${file.type || 'unknown'}). Supported formats: PDF, PPTX, PPT, TXT.` },
           { status: 400 }
         );
       }
 
-      const maxSize = 50 * 1024 * 1024;
-      if (!Number.isFinite(file.size) || file.size > maxSize) {
+      // Vercel Hobby body limit guard
+      const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024;
+      if (!Number.isFinite(file.size) || file.size > VERCEL_BODY_LIMIT) {
         return NextResponse.json(
-          { error: "File too large. Maximum size is 50MB." },
-          { status: 400 }
+          { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Vercel limits uploads to 4.5MB. Try pasting your deck content directly.` },
+          { status: 413 }
         );
       }
     }
@@ -69,12 +71,17 @@ export async function POST(request: NextRequest) {
     let analysisContent = deckContent || "";
 
     if (file && !deckContent) {
+      console.log("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
       try {
         analysisContent = await extractFileText(file);
-      } catch (e) {
+        console.log("[E1] Text extracted, length:", analysisContent.length);
+      } catch (e: any) {
         console.error("[E1] Failed to extract file content:", e);
+        const hint = e?.message?.includes("PDF")
+          ? " This PDF may be password-protected, scanned (image-only), or corrupted. Try pasting your deck content directly."
+          : "";
         return NextResponse.json(
-          { error: "Failed to read file content. Please try a different file or paste content directly." },
+          { error: `Failed to read file content.${hint}` },
           { status: 400 }
         );
       }
@@ -86,9 +93,9 @@ export async function POST(request: NextRequest) {
       analysisContent = analysisContent.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated at 50,000 characters]";
     }
 
-    if (!analysisContent || analysisContent.length < 100) {
+    if (!analysisContent || analysisContent.length < 50) {
       return NextResponse.json(
-        { error: "Insufficient content for analysis. Please provide more detailed pitch deck content." },
+        { error: "Insufficient content for analysis. Could not extract enough text — the file may be image-based or empty. Please paste your deck content directly." },
         { status: 400 }
       );
     }
