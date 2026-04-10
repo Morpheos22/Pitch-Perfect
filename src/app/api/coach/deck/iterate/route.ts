@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // POST /api/coach/deck/iterate
 // Creates a new version of a pitch deck analysis, incorporating the previous analysis for iteration context.
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e1');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const body = await request.json();

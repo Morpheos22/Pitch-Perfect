@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
 import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
@@ -23,6 +24,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e4');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const formData = await request.formData();

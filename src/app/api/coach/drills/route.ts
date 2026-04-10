@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { generateCoachingDrills } from "@/lib/ai-service";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // POST /api/coach/drills
 // Generates personalized coaching drills based on an existing analysis session.
@@ -22,8 +23,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // ── Entitlement check: drills require at least one module access ──
     const body = await request.json();
     const { sessionId, module: moduleType } = body;
+
+    const moduleEntitlementMap: Record<string, 'e1' | 'e2' | 'e3' | 'e4'> = {
+      deck: 'e1',
+      script: 'e2',
+      live: 'e3',
+      full: 'e4',
+    };
+    const entitlementModule = moduleEntitlementMap[moduleType] || 'e1';
+    const entitlement = await requireModuleAccess(user.id, entitlementModule);
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
+    }
 
     if (!sessionId || !moduleType) {
       return NextResponse.json(

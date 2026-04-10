@@ -249,8 +249,18 @@ export function getClientIp(request: NextRequest): string {
   const realIp = request.headers.get("x-real-ip");
   if (realIp) return realIp.trim();
 
-  // Fallback — hash of connect info to avoid grouping all unknown clients together
-  return `unknown-${Date.now() % 100000}`;
+  // Fallback — use a stable hash of connect info instead of per-request unique ID
+  // Hash from User-Agent + Accept headers ensures same client gets same identifier
+  const ua = request.headers.get("user-agent") || "";
+  const accept = request.headers.get("accept") || "";
+  let hash = 0;
+  const combined = `${ua}:${accept}`;
+  for (let i = 0; i < combined.length; i++) {
+    const chr = combined.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32-bit integer
+  }
+  return `unknown-${Math.abs(hash).toString(36)}`;
 }
 
 /**

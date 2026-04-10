@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/lib/ai-service";
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // E5: Pitch Founder API
 // Routes to appropriate AI service based on moduleType
@@ -376,6 +377,12 @@ export async function POST(request: NextRequest) {
     });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e5');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const body = await request.json();

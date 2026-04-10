@@ -2,8 +2,9 @@
 // Admin emails that bypass onboarding in development only.
 // The middleware uses isAdminEmail() to skip the onboarding redirect.
 //
-// SECURITY: This is disabled in production by default. To re-enable in production,
-// set the environment variable ALLOW_ADMIN_BYPASS=true.
+// SECURITY: Admin bypass is ONLY available in development mode (NODE_ENV=development).
+// The ALLOW_ADMIN_BYPASS environment variable has been removed to prevent
+// accidental production exposure of admin capabilities.
 
 /** Admin/developer emails that bypass onboarding */
 export const DEV_ACCOUNTS = {
@@ -12,12 +13,14 @@ export const DEV_ACCOUNTS = {
 } as const;
 
 /** Check whether an email belongs to an admin/developer.
- *  Returns true only in non-production environments, OR when
- *  the ALLOW_ADMIN_BYPASS=true environment variable is explicitly set.
+ *  Returns true ONLY in development mode. Production is never bypassed.
  */
 export function isAdminEmail(email: string): boolean {
-  const isAllowed = process.env.NODE_ENV !== 'production' || process.env.ALLOW_ADMIN_BYPASS === 'true';
-  if (!isAllowed) return false;
+  // Removed: process.env.ALLOW_ADMIN_BYPASS === 'true'
+  // This was a security risk — env vars can leak via /api endpoints or logs.
+  if (process.env.NODE_ENV !== 'development') {
+    return false;
+  }
 
   const lower = email.toLowerCase();
   return lower === DEV_ACCOUNTS.admin.toLowerCase() || lower === DEV_ACCOUNTS.coAdmin.toLowerCase();
