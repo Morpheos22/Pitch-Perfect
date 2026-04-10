@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
     const clientToken = await (generateClientTokenFromReadWriteToken as any)({
       pathname,
-      access: "public",
+      access: "private",
       addRandomSuffix: true,
       maximumSizeInBytes: category === "video" ? 500 * 1024 * 1024 : 50 * 1024 * 1024,
       validUntil: Date.now() + 60 * 60 * 1000, // 1 hour from now

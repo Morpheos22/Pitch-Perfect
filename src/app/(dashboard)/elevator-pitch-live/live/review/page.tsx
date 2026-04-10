@@ -57,29 +57,41 @@ export default function LiveRecordingReviewPage() {
 
       const file = new File([blob], fileName, { type: mimeType });
 
-      // Step 2: Upload to WorkDrive via POST /api/video
-      const videoFormData = new FormData();
-      videoFormData.append("video", file);
-      videoFormData.append("type", "live");
+      let downloadUrl: string;
 
-      const videoRes = await fetch("/api/video", {
-        method: "POST",
-        body: videoFormData,
-      });
+      // Step 2: Upload — use client-side blob upload for files >4MB to bypass
+      // Vercel's 4.5MB serverless body limit. Fall back to server route for small files.
+      const VERCEL_BODY_LIMIT = 4 * 1024 * 1024; // 4MB safety margin
 
-      if (!videoRes.ok) {
-        const videoError = await videoRes.json();
-        throw new Error(videoError.error || "Failed to upload video");
+      if (file.size > VERCEL_BODY_LIMIT) {
+        // Large file: client-side direct upload to Vercel Blob
+        const { uploadFileToBlob } = await import("@/lib/blob-upload");
+        const blobResult = await uploadFileToBlob(file, "video");
+        downloadUrl = blobResult.url;
+      } else {
+        // Small file: server-side upload (supports WorkDrive fallback)
+        const videoFormData = new FormData();
+        videoFormData.append("video", file);
+        videoFormData.append("type", "live");
+
+        const videoRes = await fetch("/api/video", {
+          method: "POST",
+          body: videoFormData,
+        });
+
+        if (!videoRes.ok) {
+          const videoError = await videoRes.json();
+          throw new Error(videoError.error || "Failed to upload video");
+        }
+
+        const videoData = await videoRes.json();
+        downloadUrl = videoData.downloadUrl;
       }
-
-      const videoData = await videoRes.json();
-      const { videoId, downloadUrl } = videoData;
 
       // Step 3: Trigger analysis via POST /api/coach/live
       const analysisFormData = new FormData();
       analysisFormData.append("videoUrl", downloadUrl);
       analysisFormData.append("duration", duration.toString());
-      analysisFormData.append("videoId", videoId);
 
       const analysisRes = await fetch("/api/coach/live", {
         method: "POST",

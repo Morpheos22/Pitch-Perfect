@@ -1,5 +1,8 @@
 {
   "functions": {
+    "src/app/api/blob/**": {
+      "maxDuration": 60
+    },
     "src/app/api/coach/**": {
       "maxDuration": 120
     },

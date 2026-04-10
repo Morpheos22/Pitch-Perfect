@@ -431,7 +431,7 @@ export async function uploadFile(
       const { put } = await import('@vercel/blob');
       const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
       const blobResult = await put(key, blob, {
-        access: 'public',
+        access: 'private',
         addRandomSuffix: true,
       });
       return {
@@ -511,6 +511,20 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
       throw new Error(`Invalid URL: ${fileUrl}`);
     }
     throw ssrfError;
+  }
+
+  // Handle Vercel Blob URLs (private access via SDK)
+  if (
+    fileUrl.startsWith('https://blob.vercel-storage.com') ||
+    fileUrl.startsWith('https://public.blob.vercel-storage.com')
+  ) {
+    const { extractBlobPathname, fetchPrivateBlob } = await import('./blob-signature');
+    const pathname = extractBlobPathname(fileUrl);
+    if (pathname && process.env.BLOB_READ_WRITE_TOKEN) {
+      // Fetch private blob content server-side using SDK
+      return fetchPrivateBlob(pathname);
+    }
+    // Fallback: try direct fetch (may fail for private blobs)
   }
 
   // Handle Zoho WorkDrive download URLs

@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       const { put } = await import('@vercel/blob');
       const blob = new Blob([buffer], { type: videoFile.type });
       const blobResult = await put(generateFileKey(user.id, 'video', videoFile.name), blob, {
-        access: 'public',
+        access: 'private',
         addRandomSuffix: true,
       });
       downloadUrl = blobResult.url;
@@ -228,14 +228,21 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      // Use stored URL directly for Vercel Blob uploads; only generate WorkDrive URL for WorkDrive files
+      // For Vercel Blob uploads, generate a proxy URL (private access).
+      // For WorkDrive files, generate the WorkDrive download URL.
       let downloadUrl: string;
       if (video.videoUrl && (
         video.videoUrl.startsWith('https://blob.vercel-storage.com') ||
         video.videoUrl.startsWith('https://public.blob.vercel-storage.com') ||
         !video.videoUrl.includes('workdrive.zoho.com')
       )) {
-        downloadUrl = video.videoUrl;
+        // Generate proxy URL for private blob access
+        try {
+          const { generateBlobDownloadUrl } = await import('@/lib/blob-signature');
+          downloadUrl = generateBlobDownloadUrl(video.videoUrl);
+        } catch {
+          downloadUrl = video.videoUrl; // Fallback to raw URL if signing fails
+        }
       } else {
         downloadUrl = getWorkDriveFileUrl(fileId);
       }
@@ -271,8 +278,17 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      // Generate proxy URL for private blob access
+      let downloadUrl: string;
+      try {
+        const { generateBlobDownloadUrl } = await import('@/lib/blob-signature');
+        downloadUrl = generateBlobDownloadUrl(video.videoUrl);
+      } catch {
+        downloadUrl = video.videoUrl;
+      }
+
       return NextResponse.json({
-        downloadUrl: video.videoUrl,
+        downloadUrl,
       });
     }
 

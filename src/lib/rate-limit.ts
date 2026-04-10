@@ -1,8 +1,8 @@
 /**
  * Rate Limiting Library — Pitch Perfect × Automagikal
  *
- * Lightweight, in-memory sliding-window rate limiter with zero external deps.
- * Designed to integrate with Clerk middleware and individual API route handlers.
+ * Sliding-window rate limiter backed by Upstash Redis for Vercel serverless.
+ * Falls back to per-request mode (no state, permissive) when Redis is not configured.
  *
  * Usage in middleware:
  *   import { checkRateLimit, getRateLimitConfig, setRateLimitHeaders } from '@/lib/rate-limit';
@@ -42,61 +42,42 @@ export interface RateLimitResult {
   retryAfter: number;
 }
 
-interface StoredEntry {
-  /** Array of request timestamps (ms since epoch) */
-  timestamps: number[];
-}
-
 // ──────────────────────────────────────────────
-// Storage: in-memory Map with TTL cleanup
+// Redis client (lazy init)
 // ──────────────────────────────────────────────
 
-/** Map<identifier, Map<routeKey, StoredEntry>> — nested for per-route isolation */
-const rateLimitStore = new Map<string, Map<string, StoredEntry>>();
+type RedisClient = {
+  zadd: (key: string, ...args: any[]) => Promise<any>;
+  zrangebyscore: (key: string, min: number | string, max: number | string, ...args: any[]) => Promise<string[]>;
+  zremrangebyscore: (key: string, min: number | string, max: number | string) => Promise<number>;
+  zcard: (key: string) => Promise<number>;
+  pexpireat: (key: string, ms: number) => Promise<boolean>;
+  ping: () => Promise<string>;
+};
 
-/** Interval reference for periodic cleanup */
-let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+let _redis: RedisClient | null = null;
+let _redisInitFailed = false;
 
-/**
- * Garbage-collect expired entries from the store.
- * Runs every 60 seconds to prevent unbounded memory growth.
- */
-function runCleanup(): void {
-  const now = Date.now();
-  const maxWindowMs = 120_000; // Max window is 60s; keep entries for 120s to be safe
+async function getRedis(): Promise<RedisClient | null> {
+  if (_redisInitFailed) return null;
+  if (_redis) return _redis;
 
-  for (const [identifier, routes] of rateLimitStore.entries()) {
-    let allRoutesEmpty = true;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    for (const [routeKey, entry] of routes.entries()) {
-      // Filter out timestamps older than maxWindowMs
-      entry.timestamps = entry.timestamps.filter(
-        (ts) => now - ts < maxWindowMs
-      );
-
-      if (entry.timestamps.length === 0) {
-        routes.delete(routeKey);
-      } else {
-        allRoutesEmpty = false;
-      }
-    }
-
-    if (allRoutesEmpty || routes.size === 0) {
-      rateLimitStore.delete(identifier);
-    }
+  if (!url || !token) {
+    _redisInitFailed = true;
+    return null;
   }
-}
 
-/**
- * Ensure cleanup interval is running (idempotent).
- */
-function ensureCleanup(): void {
-  if (cleanupInterval) return;
-  cleanupInterval = setInterval(runCleanup, 60_000);
-
-  // Allow Node.js to exit even if the interval is still running
-  if (typeof cleanupInterval === "object" && "unref" in cleanupInterval) {
-    cleanupInterval.unref();
+  try {
+    const { Redis } = await import("@upstash/redis");
+    _redis = new Redis({ url, token }) as unknown as RedisClient;
+    return _redis;
+  } catch (err) {
+    console.warn("[RateLimit] Failed to initialize Upstash Redis:", err);
+    _redisInitFailed = true;
+    return null;
   }
 }
 
@@ -274,68 +255,101 @@ function getRouteKey(pathname: string, config: RateLimitConfig): string {
 }
 
 // ──────────────────────────────────────────────
-// Core sliding-window rate limiter
+// Core sliding-window rate limiter (Redis-backed)
 // ──────────────────────────────────────────────
 
 /**
- * Check rate limit for a given identifier + route combination.
+ * Check rate limit for a given identifier + route combination using Redis sorted sets.
  *
- * Uses a sliding window algorithm:
- * 1. Remove all timestamps outside the current window
- * 2. Check if the remaining count is under the limit
- * 3. If allowed, record the current timestamp
+ * Sliding window via ZSET:
+ * 1. ZADD the current timestamp as a member
+ * 2. ZREMRANGEBYSCORE to prune entries outside the window
+ * 3. ZCARD to count remaining entries
+ * 4. If over limit, ZREM the current entry (roll back)
  *
  * @param identifier - Unique identifier (user ID or IP)
  * @param routeKey - Route group key
  * @param config - Rate limit configuration
  */
-export function checkRateLimitById(
+async function checkRateLimitRedis(
   identifier: string,
   routeKey: string,
   config: RateLimitConfig
-): RateLimitResult {
-  ensureCleanup();
+): Promise<RateLimitResult> {
+  const redis = await getRedis();
+  if (!redis) {
+    // Fallback: allow request with a warning (graceful degradation)
+    return {
+      allowed: true,
+      remaining: config.limit - 1,
+      reset: Math.ceil((Date.now() + config.windowMs) / 1000),
+      limit: config.limit,
+      retryAfter: 1,
+    };
+  }
 
   const now = Date.now();
   const windowStart = now - config.windowMs;
+  const redisKey = `rl:${identifier}:${routeKey}`;
 
-  // Get or create the entry for this identifier
-  let routes = rateLimitStore.get(identifier);
-  if (!routes) {
-    routes = new Map<string, StoredEntry>();
-    rateLimitStore.set(identifier, routes);
+  try {
+    // Add current request timestamp
+    await redis.zadd(redisKey, { score: now, member: String(now) });
+
+    // Remove all entries outside the sliding window
+    await redis.zremrangebyscore(redisKey, "-inf", windowStart);
+
+    // Count entries in the current window
+    const count = await redis.zcard(redisKey);
+
+    // Set expiry on the key to auto-cleanup (2x window for safety)
+    await redis.pexpireat(redisKey, now + config.windowMs * 2);
+
+    if (count > config.limit) {
+      // Over limit — remove the entry we just added (roll back)
+      await redis.zremrangebyscore(redisKey, now, now);
+
+      // Find the oldest entry to calculate reset time
+      const oldest = await redis.zrangebyscore(redisKey, "-inf", "+inf");
+      const windowEnd = oldest.length > 0
+        ? Number(oldest[0]) + config.windowMs
+        : now + config.windowMs;
+
+      return {
+        allowed: false,
+        remaining: 0,
+        reset: Math.ceil(windowEnd / 1000),
+        limit: config.limit,
+        retryAfter: Math.max(1, Math.ceil((windowEnd - now) / 1000)),
+      };
+    }
+
+    const remaining = Math.max(0, config.limit - count);
+
+    // Calculate when the oldest entry expires (window reset)
+    const oldest = await redis.zrangebyscore(redisKey, "-inf", "+inf");
+    const windowEnd = oldest.length > 0
+      ? Number(oldest[0]) + config.windowMs
+      : now + config.windowMs;
+
+    return {
+      allowed: true,
+      remaining,
+      reset: Math.ceil(windowEnd / 1000),
+      limit: config.limit,
+      retryAfter: Math.max(1, Math.ceil((windowEnd - now) / 1000)),
+    };
+  } catch (err) {
+    // Redis error — allow request (fail-open) to avoid blocking users during Redis outages
+    console.error("[RateLimit] Redis error (fail-open):", err);
+    return {
+      allowed: true,
+      remaining: config.limit - 1,
+      reset: Math.ceil((Date.now() + config.windowMs) / 1000),
+      limit: config.limit,
+      retryAfter: 1,
+    };
   }
-
-  // Get or create the entry for this route
-  let entry = routes.get(routeKey);
-  if (!entry) {
-    entry = { timestamps: [] };
-    routes.set(routeKey, entry);
-  }
-
-  // Sliding window: prune timestamps outside the window
-  entry.timestamps = entry.timestamps.filter((ts) => ts > windowStart);
-
-  const currentCount = entry.timestamps.length;
-  const allowed = currentCount < config.limit;
-  const remaining = Math.max(0, config.limit - currentCount - (allowed ? 1 : 0));
-  const windowEnd = entry.timestamps[0]
-    ? entry.timestamps[0] + config.windowMs
-    : now + config.windowMs;
-  const reset = Math.ceil(windowEnd / 1000);
-  const retryAfter = Math.ceil((windowEnd - now) / 1000);
-
-  if (allowed) {
-    entry.timestamps.push(now);
-  }
-
-  return {
-    allowed,
-    remaining,
-    reset,
-    limit: config.limit,
-    retryAfter: Math.max(1, retryAfter),
-  };
 }
 
 // ──────────────────────────────────────────────
@@ -343,18 +357,18 @@ export function checkRateLimitById(
 // ──────────────────────────────────────────────
 
 /**
- * Check rate limit for a NextRequest.
+ * Check rate limit for a NextRequest (async — Redis-backed).
  * Automatically extracts the identifier (user ID or IP) based on config.
  *
  * @param request - The incoming NextRequest
  * @param config - Rate limit configuration (optional, auto-detected from path)
  * @param userId - Optional Clerk user ID (if already resolved)
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   request: NextRequest,
   config?: RateLimitConfig,
   userId?: string
-): RateLimitResult {
+): Promise<RateLimitResult> {
   const pathname = new URL(request.url).pathname;
   const resolvedConfig = config || getRateLimitConfig(pathname);
   const routeKey = getRouteKey(pathname, resolvedConfig);
@@ -371,7 +385,7 @@ export function checkRateLimit(
     identifier = `ip:${getClientIp(request)}`;
   }
 
-  return checkRateLimitById(identifier, routeKey, resolvedConfig);
+  return checkRateLimitRedis(identifier, routeKey, resolvedConfig);
 }
 
 // ──────────────────────────────────────────────
@@ -423,10 +437,6 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
 // Middleware integration helper
 // ──────────────────────────────────────────────
 
-export type RouteHandler = (
-  request: NextRequest
-) => Promise<NextResponse> | NextResponse;
-
 /**
  * Check rate limiting for a request. Returns:
  *  - `NextResponse` if rate limited (429)
@@ -434,10 +444,10 @@ export type RouteHandler = (
  *
  * Designed for easy integration inside Clerk's middleware callback.
  */
-export function rateLimitMiddleware(
+export async function rateLimitMiddleware(
   request: NextRequest,
   userId?: string
-): NextResponse | null {
+): Promise<NextResponse | null> {
   const pathname = new URL(request.url).pathname;
 
   // Skip non-API and internal routes
@@ -445,7 +455,7 @@ export function rateLimitMiddleware(
     return null;
   }
 
-  const result = checkRateLimit(request, undefined, userId);
+  const result = await checkRateLimit(request, undefined, userId);
 
   if (!result.allowed) {
     console.warn(
@@ -498,7 +508,7 @@ export function withRateLimit(
       }
     }
 
-    const result = checkRateLimit(request, config, userId);
+    const result = await checkRateLimit(request, config, userId);
 
     if (!result.allowed) {
       console.warn(
@@ -519,28 +529,21 @@ export function withRateLimit(
 // ──────────────────────────────────────────────
 
 /**
- * Get current rate limit store stats (for debugging/admin).
- * Returns count of tracked identifiers and total stored entries.
+ * Get rate limiter status (for debugging/admin).
+ * Returns whether Redis is connected and configured.
  */
-export function getRateLimitStats(): {
-  trackedIdentifiers: number;
-  totalEntries: number;
-} {
-  let totalEntries = 0;
-  for (const routes of rateLimitStore.values()) {
-    totalEntries += routes.size;
+export async function getRateLimitStats(): Promise<{
+  redisConnected: boolean;
+  backend: "redis" | "fallback";
+}> {
+  const redis = await getRedis();
+  if (!redis) {
+    return { redisConnected: false, backend: "fallback" };
   }
-  return {
-    trackedIdentifiers: rateLimitStore.size,
-    totalEntries,
-  };
-}
-
-/**
- * Reset all rate limit counters. Useful for testing.
- * WARNING: This should ONLY be called from authenticated admin endpoints.
- * Calling this from unauthenticated routes will nullify all rate limiting.
- */
-export function resetRateLimits(): void {
-  rateLimitStore.clear();
+  try {
+    await redis.ping();
+    return { redisConnected: true, backend: "redis" };
+  } catch {
+    return { redisConnected: false, backend: "fallback" };
+  }
 }

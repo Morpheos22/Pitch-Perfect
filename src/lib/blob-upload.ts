@@ -5,11 +5,11 @@
 // Flow:
 //   1. POST /api/blob/upload to get a signed client token + upload URL
 //   2. PUT file directly to Vercel Blob storage (bypasses our server)
-//   3. Return the public URL and pathname
+//   3. Return the blob pathname (private access — use blob-signature.ts for download URLs)
 
 export interface BlobUploadResult {
-  url: string;       // Public download URL
-  pathname: string;  // Blob pathname for reference
+  url: string;       // Blob pathname (for reference — not directly accessible)
+  pathname: string;  // Blob pathname for signed URL generation
 }
 
 export interface BlobUploadOptions {
@@ -56,7 +56,7 @@ export async function uploadFileToBlob(
     body: file,
     headers: {
       authorization: `Bearer ${clientToken}`,
-      "x-vercel-blob-access": "public",
+      "x-vercel-blob-access": "private",
       "x-content-type": file.type || "application/octet-stream",
       ...(options?.onProgress
         ? { "x-content-length": String(file.size) }
