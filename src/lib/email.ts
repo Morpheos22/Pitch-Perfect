@@ -13,13 +13,17 @@ function getResend(): Resend {
   return resend;
 }
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
 interface WelcomeEmailProps {
   email: string;
   firstName?: string;
 }
 
 export async function sendWelcomeEmail({ email, firstName }: WelcomeEmailProps) {
-  const displayName = firstName || 'there';
+  const displayName = escapeHtml(firstName || 'there');
 
   const html = `
     <!DOCTYPE html>

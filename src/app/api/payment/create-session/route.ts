@@ -24,6 +24,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { productId, country } = body;
 
+    // Validate country code format (ISO 3166-1 alpha-2)
+    if (country && !/^[A-Z]{2}$/i.test(country)) {
+      return NextResponse.json({ error: 'Invalid country code' }, { status: 400 });
+    }
+
     // Validate product
     if (!productId || !PRODUCTS[productId]) {
       return NextResponse.json({ error: 'Invalid product' }, { status: 400 });

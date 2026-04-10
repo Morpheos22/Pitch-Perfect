@@ -36,5 +36,6 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO pitchcoach
 --    DATABASE_URL="postgresql://pitchcoach_app:your_secure_password_here@aws-1-eu-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
 --
 -- 2. Keep the original postgres URL as DIRECT_URL for migrations only:
---    DIRECT_URL="postgresql://postgres.iwbshmshegewmctfucaz:Waving_Salamander44%40%40%21%21@aws-1-eu-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
+--    DIRECT_URL="postgresql://postgres:<YOUR_PROJECT_ID>:<YOUR_PASSWORD>@<YOUR_HOST>:6543/postgres?pgbouncer=true"
+--    Replace placeholders with your actual Supabase credentials (never commit real credentials).
 -- ============================================

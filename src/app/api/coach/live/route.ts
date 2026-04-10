@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       } catch (uploadErr) {
         console.error('[E3] Video upload failed:', uploadErr);
         return NextResponse.json(
-          { error: `Video upload failed: ${uploadErr instanceof Error ? uploadErr.message : 'Unknown error'}` },
+          { error: 'Video upload failed. Please try again.' },
           { status: 500 }
         );
       }
@@ -90,33 +90,32 @@ export async function POST(request: NextRequest) {
 
     // SSRF prevention: validate video URL host
     if (analysisVideoUrl) {
-      // Allow internal mock URLs (dev) and all known storage backends
-      if (analysisVideoUrl.startsWith('mock://') && process.env.NODE_ENV === 'development') {
-        // Mock storage URL — skip SSRF check in development
-        console.error('[E3] Using mock storage URL. Video analysis may have limited results.');
-      } else {
-        const allowedVideoHosts = [
-          'workdrive.zoho.com', 'zoho.com',
-          'blob.vercel-storage.com',
-          'public.blob.vercel-storage.com',
-        ];
-        try {
-          const parsedUrl = new URL(analysisVideoUrl);
-          const isAllowed = allowedVideoHosts.some(h =>
-            parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
-          );
-          if (!isAllowed) {
-            return NextResponse.json(
-              { error: 'Invalid video source. Files must be uploaded through the platform.' },
-              { status: 400 }
-            );
-          }
-        } catch {
+      // Disallow mock storage URLs entirely
+      if (analysisVideoUrl.startsWith('mock://')) {
+        return NextResponse.json({ error: 'Mock storage URLs are not permitted.' }, { status: 400 });
+      }
+
+      const allowedVideoHosts = [
+        'workdrive.zoho.com', 'zoho.com',
+        'blob.vercel-storage.com',
+        'public.blob.vercel-storage.com',
+      ];
+      try {
+        const parsedUrl = new URL(analysisVideoUrl);
+        const isAllowed = allowedVideoHosts.some(h =>
+          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+        );
+        if (!isAllowed) {
           return NextResponse.json(
-            { error: 'Invalid video URL format.' },
+            { error: 'Invalid video source. Files must be uploaded through the platform.' },
             { status: 400 }
           );
         }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid video URL format.' },
+          { status: 400 }
+        );
       }
     }
 
@@ -164,12 +163,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Increment usage counter
-    await prisma.usage.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id, e3LivePitchSessions: 1 },
-      update: { e3LivePitchSessions: { increment: 1 } },
-    });
+    // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
 
     // Return real result
     return NextResponse.json({

@@ -148,11 +148,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Increment usage counter
-    await prisma.usage.update({
-      where: { userId: user.id },
-      data: { e2ScriptCoachSessions: { increment: 1 } },
-    });
+    // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
 
     // Store analysis in database using correct schema fields
     const savedScript = await prisma.pitchScript.create({
@@ -354,11 +350,29 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // List all scripts (for history page)
+    // List all scripts (for history page) — exclude sensitive fields
     const scripts = await prisma.pitchScript.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
+      select: {
+        id: true,
+        fileName: true,
+        overallScore: true,
+        hookScore: true,
+        problemScore: true,
+        solutionScore: true,
+        credibilityScore: true,
+        ctaScore: true,
+        wordCount: true,
+        estimatedDuration: true,
+        createdAt: true,
+        analyzedAt: true,
+        version: true,
+        parentScriptId: true,
+        notes: true,
+        // Explicitly exclude: inputText, rewrittenScript, rawAnalysis
+      },
     });
 
     return NextResponse.json({

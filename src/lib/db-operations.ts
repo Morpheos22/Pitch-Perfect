@@ -25,7 +25,9 @@ export async function getOrCreateUser() {
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(clerkId);
 
-    const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+    const email = clerkUser.emailAddresses.find(
+      (e: any) => e.verification?.status === 'verified'
+    )?.emailAddress || clerkUser.emailAddresses[0]?.emailAddress || '';
     const firstName = clerkUser.firstName || '';
     const lastName = clerkUser.lastName || '';
 

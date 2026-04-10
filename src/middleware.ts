@@ -18,7 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
-  "/api/debug(.*)",
+  // NOTE: /api/debug/* is NOT public — removed from this list (C5 fix)
 ]);
 
 // Routes that should not redirect to onboarding
@@ -87,9 +87,10 @@ export default clerkMiddleware(async (auth, request) => {
       }
     } catch (error) {
       console.error("[middleware] Onboarding check error:", error);
-      // Fail-OPEN: if Clerk API is unreachable, let the user through.
-      // The onboarding page will handle re-checking server-side.
-      // A fail-closed redirect here caused login loops when Clerk API was slow.
+      // Fail-CLOSE: redirect to onboarding if Clerk API is unreachable.
+      // Prevents non-onboarded users from accessing dashboard during Clerk outages.
+      const url = new URL("/onboarding", request.url);
+      return NextResponse.redirect(url);
     }
   }
 

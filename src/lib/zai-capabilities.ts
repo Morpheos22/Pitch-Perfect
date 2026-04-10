@@ -130,6 +130,16 @@ export interface PageContent {
 }
 
 export async function readPage(url: string): Promise<PageContent> {
+  // SSRF prevention
+  try {
+    const parsed = new URL(url);
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      throw new Error('Only HTTP/HTTPS URLs are supported');
+    }
+  } catch {
+    throw new Error('Invalid URL');
+  }
+
   const zai = await getZai();
   const result = await zai.functions.invoke('page_reader', { url });
   return {
@@ -179,6 +189,18 @@ export async function editImage(
   image: string,  // URL or data URI
   options?: { size?: ImageSize; model?: string }
 ): Promise<GeneratedImage> {
+  // SSRF prevention: validate image URL if not a data URI
+  if (!image.startsWith('data:')) {
+    try {
+      const parsed = new URL(image);
+      if (!['https:', 'http:'].includes(parsed.protocol)) {
+        throw new Error('Only HTTP/HTTPS URLs are supported for image');
+      }
+    } catch {
+      throw new Error('Invalid image URL');
+    }
+  }
+
   const zai = await getZai();
   const response = await zai.images.generations.edit({
     prompt,

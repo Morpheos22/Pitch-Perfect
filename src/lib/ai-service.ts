@@ -884,6 +884,19 @@ interface VisualAuditResult {
  */
 export async function analyzeDeckVisual(fileUrl: string): Promise<VisualAuditResult | null> {
   try {
+    // SSRF prevention: validate URL before passing to AI
+    const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+    try {
+      const parsedUrl = new URL(fileUrl);
+      const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+      if (!isAllowed) {
+        throw new Error(`Invalid file URL host: ${parsedUrl.hostname}`);
+      }
+    } catch (err) {
+      if (err instanceof TypeError) throw new Error('Invalid file URL format');
+      throw err;
+    }
+
     const systemPrompt = `You are an expert presentation design consultant. Analyze the visual design quality of this pitch deck.
 
 Score each criterion from 0-100:
@@ -1135,6 +1148,19 @@ export async function analyzePitchVideo(
   videoUrl: string,
   duration: number
 ): Promise<VideoAnalysisResult> {
+  // SSRF prevention: validate URL before passing to AI
+  const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+  try {
+    const parsedUrl = new URL(videoUrl);
+    const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+    if (!isAllowed) {
+      throw new Error(`Invalid video URL host: ${parsedUrl.hostname}`);
+    }
+  } catch (err) {
+    if (err instanceof TypeError) throw new Error('Invalid video URL format');
+    throw err;
+  }
+
   const systemPrompt = `You are an expert public speaking and presentation coach with expertise in analyzing video recordings of pitches. You have trained executives at Fortune 500 companies and coached TED speakers.
 
 Analyze the video for DELIVERY and BODY LANGUAGE:
@@ -1280,6 +1306,19 @@ export async function analyzeFullPitchSession(
   duration: number,
   deckAnalysis?: DeckAnalysisResult
 ): Promise<FullPitchAnalysisResult> {
+  // SSRF prevention: validate URL before passing to AI
+  const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+  try {
+    const parsedUrl = new URL(videoUrl);
+    const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+    if (!isAllowed) {
+      throw new Error(`Invalid video URL host: ${parsedUrl.hostname}`);
+    }
+  } catch (err) {
+    if (err instanceof TypeError) throw new Error('Invalid video URL format');
+    throw err;
+  }
+
   const systemPrompt = `You are a senior investment analyst and pitch consultant with 20+ years of experience at top VC firms (Sequoia, Andreessen Horowitz, Greylock). You have evaluated over 10,000 pitches.
 
 6-DIMENSION INVESTOR READINESS FRAMEWORK (0-100):

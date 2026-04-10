@@ -50,6 +50,17 @@ export async function POST(request: NextRequest) {
     let scriptText = script || "";
 
     if (!scriptText && fileUrl && fileName) {
+      // SSRF prevention: validate file URL host
+      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+      try {
+        const parsedUrl = new URL(fileUrl);
+        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+        if (!isAllowed) {
+          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      }
       try {
         scriptText = await extractTextFromUrl(fileUrl, fileName);
       } catch (e) {
@@ -77,17 +88,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build previousAnalysis context from parent
+    // Build previousAnalysis context from parent (coerce null → defaults for type safety)
     const previousAnalysis = {
-      overallScore: parentScript.overallScore,
-      hookScore: parentScript.hookScore,
-      problemScore: parentScript.problemScore,
-      solutionScore: parentScript.solutionScore,
-      credibilityScore: parentScript.credibilityScore,
-      ctaScore: parentScript.ctaScore,
+      overallScore: parentScript.overallScore ?? 0,
+      hookScore: parentScript.hookScore ?? undefined,
+      problemScore: parentScript.problemScore ?? undefined,
+      solutionScore: parentScript.solutionScore ?? undefined,
+      credibilityScore: parentScript.credibilityScore ?? undefined,
+      ctaScore: parentScript.ctaScore ?? undefined,
       improvements: parentScript.improvements,
-      rewrittenScript: parentScript.rewrittenScript,
-    };
+      rewrittenScript: parentScript.rewrittenScript ?? undefined,
+    } as any;
 
     // Run AI analysis with iteration context
     const analysis = await analyzePitchScript(
@@ -97,7 +108,13 @@ export async function POST(request: NextRequest) {
       previousAnalysis
     );
 
-    const parentVersion = parentScript.version || 1;
+    // Determine version number — query DB for max existing version to prevent race conditions
+    const latestVersion = await prisma.pitchScript.findFirst({
+      where: { parentScriptId: parentId, userId: user.id },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const nextVersion = (latestVersion?.version || parentScript.version || 1) + 1;
 
     // Store as new script with parent reference
     const savedScript = await prisma.pitchScript.create({
@@ -120,17 +137,13 @@ export async function POST(request: NextRequest) {
         improvements: analysis.improvements,
         rewrittenScript: analysis.rewrittenScript,
         alternativeHooks: analysis.alternativeHooks,
-        version: parentVersion + 1,
+        version: nextVersion,
         parentScriptId: parentId,
         analyzedAt: new Date(),
       },
     });
 
-    // Increment usage
-    await prisma.usage.update({
-      where: { userId: user.id },
-      data: { e2ScriptCoachSessions: { increment: 1 } },
-    });
+    // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
 
     return NextResponse.json({
       success: true,
