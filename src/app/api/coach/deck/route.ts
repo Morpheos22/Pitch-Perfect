@@ -130,7 +130,34 @@ export async function POST(request: NextRequest) {
     // Run AI analyses in parallel: content (text) + visual (vision)
     // Visual analysis requires a public URL (blob upload only).
     // Legacy file uploads have no public URL, so skip visual audit for those.
-    const visualUrl = fileUrl || null;
+    // SSRF protection: only send known-safe storage URLs to the vision model.
+    const ALLOWED_VISUAL_HOSTS = [
+      'public.blob.vercel-storage.com',
+      'blob.vercel-storage.com',
+      'workdrive.zoho.com',
+    ];
+    let visualUrl: string | null = null;
+    if (fileUrl) {
+      try {
+        const parsedUrl = new URL(fileUrl);
+        const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+        if (isAllowed) {
+          // PPTX files cannot be visually analyzed — the vision model expects image/PDF formats.
+          // PPTX binary sent as image_url will silently fail and fall back to content-only scores.
+          // Skip explicitly to avoid wasting a vision model call.
+          const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
+          if (['pptx', 'ppt'].includes(ext)) {
+            console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model (requires slide-to-image conversion)');
+          } else {
+            visualUrl = fileUrl;
+          }
+        } else {
+          console.warn('[E1] Visual audit skipped — URL host not in allowlist:', parsedUrl.hostname);
+        }
+      } catch {
+        console.warn('[E1] Visual audit skipped — invalid URL:', fileUrl);
+      }
+    }
     const hasVisualInput = !!visualUrl;
 
     let analysis: DeckAnalysisResult;
@@ -211,15 +238,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Increment usage counter (non-blocking — don't fail the response if usage tracking fails)
-    try {
-      await prisma.usage.update({
-        where: { userId: user.id },
-        data: { e1DeckAnalyses: { increment: 1 } },
-      });
-    } catch (usageErr) {
-      console.error("[E1] Failed to update usage counter (non-fatal):", usageErr);
-    }
+    // Usage counter is now managed atomically inside requireModuleAccess().
+    // No separate increment needed here — prevents dual-counting race condition.
 
     // Return real result
     return NextResponse.json({
@@ -412,11 +432,24 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // List all decks (for history page)
+    // List all decks (for history page) — exclude rawAnalysis to reduce payload size
     const decks = await prisma.pitchDeck.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
+      select: {
+        id: true, fileName: true, fileUrl: true, fileSize: true, fileType: true,
+        status: true, version: true, parentDeckId: true, notes: true,
+        problemClarityScore: true, solutionClarityScore: true,
+        marketOpportunityScore: true, businessModelScore: true,
+        teamCredibilityScore: true, tractionScore: true,
+        financialsScore: true, askClarityScore: true, overallScore: true,
+        designConsistencyScore: true, readabilityScore: true,
+        visualHierarchyScore: true, colorSchemeScore: true, typographyScore: true,
+        strengths: true, weaknesses: true, recommendations: true,
+        createdAt: true, analyzedAt: true,
+        // Explicitly exclude rawAnalysis — not needed for list views
+      },
     });
 
     return NextResponse.json({

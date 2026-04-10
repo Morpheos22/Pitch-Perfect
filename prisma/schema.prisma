@@ -199,6 +199,7 @@ model PitchDeck {
 
   @@index([userId])
   @@index([status])
+  @@index([parentDeckId])
   @@map("pitch_decks")
 }
 

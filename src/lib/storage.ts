@@ -538,7 +538,22 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
     );
   }
 
+  // Guard against excessively large responses (100MB safety limit)
+  const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+  const MAX_FETCH_SIZE = 100 * 1024 * 1024; // 100MB
+  if (contentLength > MAX_FETCH_SIZE) {
+    throw new Error(
+      `File too large for server-side processing (${(contentLength / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`
+    );
+  }
+
   const arrayBuffer = await response.arrayBuffer();
+  // Double-check actual size (Content-Length may be missing/ inaccurate)
+  if (arrayBuffer.byteLength > MAX_FETCH_SIZE) {
+    throw new Error(
+      `File too large for server-side processing (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum is 100MB.`
+    );
+  }
   return Buffer.from(arrayBuffer);
 }
 
