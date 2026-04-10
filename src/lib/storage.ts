@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 // Storage Utilities for Pitch Perfect × Automagikal
 // Multi-backend: Zoho WorkDrive (primary) → Vercel Blob (fallback) → Mock (dev)
 //
@@ -121,7 +123,7 @@ export function generateFileKey(
   originalName: string
 ): string {
   const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8);
+  const random = crypto.randomBytes(4).toString('hex');
   const sanitized = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
   return `${type}/${userId}/${timestamp}-${random}-${sanitized}`;
 }

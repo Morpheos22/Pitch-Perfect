@@ -20,6 +20,7 @@
     {
       "source": "/(.*)",
       "headers": [
+        // NOTE: This origin must match NEXT_PUBLIC_APP_URL in production
         { "key": "Access-Control-Allow-Origin", "value": "https://perfectpitch-ai.vercel.app" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },

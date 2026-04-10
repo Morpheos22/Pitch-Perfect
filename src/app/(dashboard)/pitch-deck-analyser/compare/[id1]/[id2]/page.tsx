@@ -126,8 +126,8 @@ export default function CompareDeckPage({ params }: { params: Promise<{ id1: str
     const fetchSessions = async () => {
       try {
         const [res1, res2] = await Promise.all([
-          fetch(`/api/coach/deck?id=${id1}`),
-          fetch(`/api/coach/deck?id=${id2}`),
+          fetch(`/api/coach/deck?id=${encodeURIComponent(id1)}`),
+          fetch(`/api/coach/deck?id=${encodeURIComponent(id2)}`),
         ]);
 
         if (!res1.ok || !res2.ok) {

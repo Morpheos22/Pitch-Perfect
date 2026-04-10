@@ -157,7 +157,7 @@ export default function PitchDeckSessionPage() {
 
   const fetchSessionData = async () => {
     try {
-      const response = await fetch(`/api/coach/deck?id=${params.id}`);
+      const response = await fetch(`/api/coach/deck?id=${encodeURIComponent(String(params.id))}`);
       
       if (!response.ok) {
         if (response.status === 401) {
@@ -248,7 +248,7 @@ export default function PitchDeckSessionPage() {
       if (res.ok) {
         const result = await res.json();
         toast.success("New version created! Comparing with previous analysis...");
-        router.push(`/pitch-deck-analyser/session/${result.id}`);
+        router.push(`/pitch-deck-analyser/session/${encodeURIComponent(result.id)}`);
       } else {
         toast.error("Failed to create new version");
       }
@@ -264,7 +264,7 @@ export default function PitchDeckSessionPage() {
     if (!window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/coach/deck?id=${params.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/coach/deck?id=${encodeURIComponent(String(params.id))}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Session deleted");
         router.push("/pitch-deck-analyser/history");
@@ -402,7 +402,7 @@ export default function PitchDeckSessionPage() {
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-xs text-muted-foreground"
-                    onClick={() => router.push(`/pitch-deck-analyser/session/${data.parentId}`)}
+                    onClick={() => router.push(`/pitch-deck-analyser/session/${encodeURIComponent(String(data.parentId))}`)}
                   >
                     ← Previous version
                   </Button>

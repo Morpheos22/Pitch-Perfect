@@ -128,7 +128,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const res = await fetch(`/api/coach/live?id=${id}`);
+        const res = await fetch(`/api/coach/live?id=${encodeURIComponent(id)}`);
         if (!res.ok) {
           if (res.status === 401) { router.push("/sign-in"); return; }
           if (res.status === 404) { setError("Session not found"); return; }
@@ -226,7 +226,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
 
   // Iterate: navigate to re-record with previous context
   const handleIterate = () => {
-    router.push(`/elevator-pitch-live/live/new?previousSessionId=${id}`);
+    router.push(`/elevator-pitch-live/live/new?previousSessionId=${encodeURIComponent(id)}`);
   };
 
   // Delete session
@@ -234,7 +234,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
     if (!window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/coach/live?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/coach/live?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Session deleted");
         router.push("/elevator-pitch-live/new");
@@ -383,7 +383,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-xs text-muted-foreground"
-                    onClick={() => router.push(`/elevator-pitch-live/live/session/${session.parentId}`)}
+                    onClick={() => router.push(`/elevator-pitch-live/live/session/${encodeURIComponent(String(session.parentId))}`)}
                   >
                     ← Previous version
                   </Button>

@@ -46,14 +46,14 @@ export default function FullPitchAnalysingPage() {
     // Poll for session completion
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/coach/full?id=${sessionId}`);
+        const response = await fetch(`/api/coach/full?id=${encodeURIComponent(sessionId)}`);
         const data = await response.json();
         
         if (data.status === "COMPLETED") {
           clearInterval(pollInterval);
           clearInterval(progressInterval);
           clearInterval(statusInterval);
-          router.push(`/coach/full/session/${sessionId}`);
+          router.push(`/coach/full/session/${encodeURIComponent(sessionId)}`);
         }
       } catch (error) {
         console.error("Polling error:", error);
@@ -62,7 +62,7 @@ export default function FullPitchAnalysingPage() {
 
     // Timeout fallback (analysis shouldn't take more than 5 minutes)
     const timeout = setTimeout(() => {
-      router.push(`/coach/full/session/${sessionId}`);
+      router.push(`/coach/full/session/${encodeURIComponent(sessionId)}`);
     }, 300000);
 
     return () => {

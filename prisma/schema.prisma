@@ -505,6 +505,7 @@ model Transaction {
 
   @@index([userId])
   @@index([provider])
+  @@index([provider, providerReference])
   @@map("transactions")
 }
 

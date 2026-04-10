@@ -148,7 +148,8 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         fileName: videoFile.name,
-        fileUrl: downloadUrl,
+        videoUrl: downloadUrl,
+        videoId: `video-${Date.now()}`,
         r2Key: key,
         duration: 0, // Will be updated after upload confirmation
         status: 'PENDING',
@@ -213,13 +214,13 @@ export async function GET(request: NextRequest) {
         where: {
           userId: user.id,
           OR: [
-            // NOTE: Weak query — `contains` on fileUrl may match partial fileId substrings.
+            // NOTE: Weak query — `contains` on videoUrl may match partial fileId substrings.
             // Consider storing fileId in a dedicated column for exact matching.
-            { fileUrl: { contains: fileId } },
+            { videoUrl: { contains: fileId } },
             { r2Key: fileId },
           ],
         },
-        select: { fileUrl: true },
+        select: { videoUrl: true },
       });
       if (!video) {
         return NextResponse.json(
@@ -229,12 +230,12 @@ export async function GET(request: NextRequest) {
       }
       // Use stored URL directly for Vercel Blob uploads; only generate WorkDrive URL for WorkDrive files
       let downloadUrl: string;
-      if (video.fileUrl && (
-        video.fileUrl.startsWith('https://blob.vercel-storage.com') ||
-        video.fileUrl.startsWith('https://public.blob.vercel-storage.com') ||
-        !video.fileUrl.includes('workdrive.zoho.com')
+      if (video.videoUrl && (
+        video.videoUrl.startsWith('https://blob.vercel-storage.com') ||
+        video.videoUrl.startsWith('https://public.blob.vercel-storage.com') ||
+        !video.videoUrl.includes('workdrive.zoho.com')
       )) {
-        downloadUrl = video.fileUrl;
+        downloadUrl = video.videoUrl;
       } else {
         downloadUrl = getWorkDriveFileUrl(fileId);
       }
@@ -252,7 +253,7 @@ export async function GET(request: NextRequest) {
     if (videoId) {
       const video = await db.pitchVideo.findFirst({
         where: { id: videoId, userId: user.id },
-        select: { fileUrl: true },
+        select: { videoUrl: true },
       });
 
       if (!video) {
@@ -263,7 +264,7 @@ export async function GET(request: NextRequest) {
       }
 
       // SSRF protection on the resolved URL
-      if (isPrivateUrl(video.fileUrl)) {
+      if (isPrivateUrl(video.videoUrl)) {
         return NextResponse.json(
           { error: 'Invalid video URL' },
           { status: 400 }
@@ -271,7 +272,7 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json({
-        downloadUrl: video.fileUrl,
+        downloadUrl: video.videoUrl,
       });
     }
 
@@ -327,7 +328,7 @@ export async function PATCH(request: NextRequest) {
       where: { id: videoId, userId: user.id },
       data: {
         duration: duration || 0,
-        status: 'UPLOADED',
+        status: 'PENDING',
       },
     });
 
@@ -341,7 +342,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({
       success: true,
       videoId,
-      status: 'UPLOADED',
+      status: 'PENDING',
     });
   } catch (error) {
     console.error('Video confirmation error:', error);
