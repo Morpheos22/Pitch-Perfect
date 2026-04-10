@@ -17,6 +17,33 @@ export const PRODUCTS: Record<string, { name: string; description: string }> = {
 };
 
 // ============================================
+// SHARED PRODUCT → PLAN MAPPING
+// ============================================
+
+export function getPlanFromProduct(productId: string | null | undefined): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
+  if (!productId) return 'STARTER';
+  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
+    'pitch-deck': 'STARTER',
+    'elevator-script': 'STARTER',
+    'elevator-live': 'PROFESSIONAL',
+    'pitch-deck-live': 'PROFESSIONAL',
+    'master': 'ENTERPRISE',
+  };
+  return planMap[productId] || 'STARTER';
+}
+
+export function getModuleCycles(productId: string): number {
+  const cycleMap: Record<string, number> = {
+    'pitch-deck': 2,
+    'elevator-script': 2,
+    'elevator-live': 5,
+    'pitch-deck-live': 8,
+    'master': 20,
+  };
+  return cycleMap[productId] || 0;
+}
+
+// ============================================
 // COUNTRY & GATEWAY ROUTING
 // ============================================
 

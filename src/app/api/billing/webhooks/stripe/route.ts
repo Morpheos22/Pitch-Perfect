@@ -5,18 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { prisma } from '@/lib/db';
-
-function getPlanFromProductId(productId: string | null | undefined): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
-  if (!productId) return 'STARTER';
-  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
-    'pitch-deck': 'STARTER',
-    'elevator-script': 'STARTER',
-    'elevator-live': 'PROFESSIONAL',
-    'pitch-deck-live': 'PROFESSIONAL',
-    'master': 'ENTERPRISE',
-  };
-  return planMap[productId] || 'STARTER';
-}
+import { getPlanFromProduct } from '@/lib/payment-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -90,7 +79,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Derive plan from product metadata
-          const planFromProduct = getPlanFromProductId(productId);
+          const planFromProduct = getPlanFromProduct(productId);
 
           // Resolve Stripe Customer ID (cus_xxx)
           // sessionData.customer can be a string (cus_xxx) or expanded Customer object

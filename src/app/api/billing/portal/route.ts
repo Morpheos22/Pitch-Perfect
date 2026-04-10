@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // Stripe Customer Portal
     if (sub.stripeCustomerId && process.env.STRIPE_SECRET_KEY) {
       // Create a Stripe Billing Portal session
-      const domain = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const domain = process.env.NEXT_PUBLIC_APP_URL || 'https://localhost:3000';
 
       const response = await fetch(
         'https://api.stripe.com/v1/billing_portal/sessions',

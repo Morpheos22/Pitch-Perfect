@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
@@ -46,9 +48,42 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate fileType against known-safe MIME types for each category
+    const allowedMimeTypes: Record<string, string[]> = {
+      deck: [
+        "application/pdf",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+      ],
+      script: [
+        "text/plain",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+      ],
+      video: [
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+        "video/x-msvideo",
+        "video/x-matroska",
+      ],
+    };
+
+    if (fileType) {
+      const allowed = allowedMimeTypes[category] || [];
+      if (!allowed.includes(fileType)) {
+        return NextResponse.json(
+          { error: `Invalid file type "${fileType}" for category "${category}".` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Generate a unique pathname for the blob
     const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
+    const random = crypto.randomBytes(3).toString('hex');
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const pathname = `${category}/${timestamp}-${random}-${sanitizedName}`;
 

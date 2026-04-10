@@ -163,7 +163,7 @@ export default function FullPitchNewPage() {
         return;
       }
       if (error?.status === 403) {
-        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/pricing");
         return;
       }
@@ -172,7 +172,7 @@ export default function FullPitchNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error(error instanceof Error ? error.message : "Failed to start analysis");
+      toast.error("Failed to start analysis. Please try again.");
     } finally {
       setUploading(false);
       setVideoUploading(false);

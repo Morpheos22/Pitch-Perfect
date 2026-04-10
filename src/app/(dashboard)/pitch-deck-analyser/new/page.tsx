@@ -158,7 +158,7 @@ export default function PitchDeckAnalyserNewPage() {
         return;
       }
       if (error?.status === 403) {
-        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/pitch-deck-analyser/upgrade");
         return;
       }
@@ -167,7 +167,7 @@ export default function PitchDeckAnalyserNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error(error instanceof Error ? error.message : "Failed to analyze deck");
+      toast.error("Failed to analyze deck. Please try again.");
     } finally {
       setUploading(false);
     }
