@@ -36,7 +36,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   // ── Rate Limiting (API routes only) ──
   if (pathname.startsWith("/api/")) {
-    const rateLimitResponse = rateLimitMiddleware(request, userId ?? undefined);
+    const rateLimitResponse = await rateLimitMiddleware(request, userId ?? undefined);
     if (rateLimitResponse) return rateLimitResponse;
   }
 

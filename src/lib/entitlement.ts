@@ -138,6 +138,39 @@ export async function requireModuleAccess(
     if (module !== 'e5') {
       const usageField = MODULE_USAGE_FIELD[module];
 
+      // ── Lazy monthly reset ──
+      // Check if the Usage.month is stale (different calendar month than now).
+      // If so, reset all counters to 0 and update month to current month.
+      // This avoids needing a cron job — reset happens on first request of each month.
+      try {
+        const currentUsage = await prisma.usage.findUnique({
+          where: { userId },
+          select: { month: true },
+        });
+        if (currentUsage) {
+          const now = new Date();
+          const usageMonth = new Date(currentUsage.month);
+          // Reset if different year OR different month
+          if (now.getFullYear() !== usageMonth.getFullYear() || now.getMonth() !== usageMonth.getMonth()) {
+            await prisma.usage.update({
+              where: { userId },
+              data: {
+                month: new Date(now.getFullYear(), now.getMonth(), 1),
+                e1DeckAnalyses: 0,
+                e2ScriptCoachSessions: 0,
+                e3LivePitchSessions: 0,
+                e4FullPitchSessions: 0,
+                e5FounderSessions: 0,
+                zaiTokensUsed: 0,
+              },
+            });
+          }
+        }
+      } catch (resetErr) {
+        // Non-fatal — log but don't block the user
+        console.error('[Entitlement] Monthly usage reset check failed (non-fatal):', resetErr);
+      }
+
       const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
         STARTER: { e1: 5, e2: 10, e3: 3, e4: 2 },
         PROFESSIONAL: { e1: 20, e2: 50, e3: 10, e4: 5 },

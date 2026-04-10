@@ -256,6 +256,7 @@ export async function GET(request: NextRequest) {
         bodyLanguageFeedback: video.bodyLanguageFeedback,
         keyMoments: video.keyMoments,
         transcript: video.transcript,
+        notes: video.notes || undefined,
       });
     }
 
@@ -274,6 +275,114 @@ export async function GET(request: NextRequest) {
     console.error("Get video history error:", error);
     return NextResponse.json(
       { error: "Failed to get video history" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH: Update notes on a video session (auto-save from session detail page)
+export async function PATCH(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { id, notes } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Session id is required" },
+        { status: 400 }
+      );
+    }
+
+    // Only allow updating the notes field — other fields are immutable after analysis
+    const result = await prisma.pitchVideo.updateMany({
+      where: { id, userId: user.id },
+      data: {
+        ...(notes !== undefined ? { notes: String(notes).slice(0, 1000) } : {}),
+      },
+    });
+
+    if (result.count === 0) {
+      return NextResponse.json(
+        { error: "Session not found or not owned by user" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, id });
+  } catch (error) {
+    console.error("Patch video session error:", error);
+    return NextResponse.json(
+      { error: "Failed to update session" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE: Delete a video session (cascade deletes related data via Prisma schema)
+export async function DELETE(request: NextRequest) {
+  try {
+    const { userId: clerkId } = await auth();
+
+    if (!clerkId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get("id");
+
+    if (!videoId) {
+      return NextResponse.json(
+        { error: "Session id is required" },
+        { status: 400 }
+      );
+    }
+
+    // Verify ownership before deleting
+    const existing = await prisma.pitchVideo.findFirst({
+      where: { id: videoId, userId: user.id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Session not found or not owned by user" },
+        { status: 404 }
+      );
+    }
+
+    await prisma.pitchVideo.delete({
+      where: { id: existing.id },
+    });
+
+    return NextResponse.json({ success: true, id: videoId });
+  } catch (error) {
+    console.error("Delete video session error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete session" },
       { status: 500 }
     );
   }
