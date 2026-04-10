@@ -679,10 +679,10 @@ export default function PitchDeckSessionPage() {
               placeholder="Add your notes here..."
               value={notes}
               onChange={(e) => handleNotesChange(e.target.value)}
-              maxLength={1000}
+              maxLength={2000}
               className="min-h-[100px]"
             />
-            <p className="text-xs text-muted-foreground mt-2">{notes.length}/1000 characters</p>
+            <p className="text-xs text-muted-foreground mt-2">{notes.length}/2000 characters</p>
           </CardContent>
         </Card>
 

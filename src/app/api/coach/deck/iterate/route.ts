@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
       // Blob upload flow
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
-      } catch (e: any) {
+      } catch (e) {
         console.error("[Deck Iterate] Failed to extract from Blob URL:", e);
         return NextResponse.json(
-          { error: `Failed to process uploaded file: ${e?.message || 'unknown error'}` },
+          { error: "Failed to process uploaded file. Please try pasting your deck content directly." },
           { status: 400 }
         );
       }
@@ -115,26 +115,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build previousAnalysis context from parent
+    // Build previousAnalysis context from parent — use 0 fallback for null scores
+    const n = (v: number | null | undefined, fallback = 0) => v ?? fallback;
     const previousAnalysis = {
-      overallScore: parentDeck.overallScore,
-      problemClarityScore: parentDeck.problemClarityScore,
-      solutionClarityScore: parentDeck.solutionClarityScore,
-      marketOpportunityScore: parentDeck.marketOpportunityScore,
-      businessModelScore: parentDeck.businessModelScore,
-      teamCredibilityScore: parentDeck.teamCredibilityScore,
-      tractionScore: parentDeck.tractionScore,
-      financialsScore: parentDeck.financialsScore,
-      askClarityScore: parentDeck.askClarityScore,
+      overallScore: n(parentDeck.overallScore),
+      problemClarityScore: n(parentDeck.problemClarityScore),
+      solutionClarityScore: n(parentDeck.solutionClarityScore),
+      marketOpportunityScore: n(parentDeck.marketOpportunityScore),
+      businessModelScore: n(parentDeck.businessModelScore),
+      teamCredibilityScore: n(parentDeck.teamCredibilityScore),
+      tractionScore: n(parentDeck.tractionScore),
+      financialsScore: n(parentDeck.financialsScore),
+      askClarityScore: n(parentDeck.askClarityScore),
       strengths: parentDeck.strengths,
       weaknesses: parentDeck.weaknesses,
       recommendations: parentDeck.recommendations,
     };
 
     // Run analyses in parallel: content (text) + visual (vision if file URL available)
+    // SSRF protection: only send known-safe storage URLs to the vision model.
+    const ALLOWED_VISUAL_HOSTS = [
+      'public.blob.vercel-storage.com',
+      'blob.vercel-storage.com',
+      'workdrive.zoho.com',
+    ];
+    let safeVisualUrl: string | null = null;
+    if (fileUrl) {
+      try {
+        const parsedUrl = new URL(fileUrl);
+        const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+        if (isAllowed) {
+          const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
+          if (!['pptx', 'ppt'].includes(ext)) {
+            safeVisualUrl = fileUrl;
+          }
+        }
+      } catch { /* skip visual */ }
+    }
     const [contentResult, visualResult] = await Promise.allSettled([
       analyzePitchDeck(analysisContent, previousAnalysis),
-      fileUrl ? analyzeDeckVisual(fileUrl) : Promise.resolve(null),
+      safeVisualUrl ? analyzeDeckVisual(safeVisualUrl) : Promise.resolve(null),
     ]);
 
     if (contentResult.status === 'rejected') {
@@ -158,8 +178,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Determine version number
+    // Determine version number — use max existing version to prevent race conditions
+    const latestVersion = await prisma.pitchDeck.findFirst({
+      where: { parentDeckId: parentId, userId: user.id },
+      select: { version: true },
+      orderBy: { version: 'desc' },
+    });
     const parentVersion = parentDeck.version || 1;
+    const nextVersion = Math.max(parentVersion, latestVersion?.version ?? 0) + 1;
 
     // Store as new deck with parent reference
     const savedDeck = await prisma.pitchDeck.create({
@@ -188,21 +214,14 @@ export async function POST(request: NextRequest) {
         weaknesses: analysis.weaknesses,
         recommendations: analysis.recommendations,
         rawAnalysis: analysis as any,
-        version: parentVersion + 1,
+        version: nextVersion,
         parentDeckId: parentId,
         analyzedAt: new Date(),
       },
     });
 
-    // Increment usage (non-blocking — don't fail the response if usage tracking fails)
-    try {
-      await prisma.usage.update({
-        where: { userId: user.id },
-        data: { e1DeckAnalyses: { increment: 1 } },
-      });
-    } catch (usageErr) {
-      console.error("[E1 Iterate] Failed to update usage counter (non-fatal):", usageErr);
-    }
+    // Usage counter is now managed atomically inside requireModuleAccess().
+    // No separate increment needed here — prevents dual-counting race condition.
 
     return NextResponse.json({
       success: true,

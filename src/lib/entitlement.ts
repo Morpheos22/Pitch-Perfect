@@ -128,14 +128,11 @@ export async function requireModuleAccess(
         plan: sub.plan,
       };
     }
-    // Check module-specific usage limits for paid plans
+    // Check module-specific usage limits for paid plans — ATOMIC increment
+    // Uses updateMany with a WHERE guard to prevent race conditions.
+    // This is the SINGLE canonical counter for paid plan usage.
     if (module !== 'e5') {
       const usageField = MODULE_USAGE_FIELD[module];
-      const usage = await prisma.usage.findUnique({
-        where: { userId },
-        select: { [usageField]: true },
-      });
-      const usedCount = usage?.[usageField] ?? 0;
 
       const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
         STARTER: { e1: 5, e2: 10, e3: 3, e4: 2 },
@@ -143,12 +140,25 @@ export async function requireModuleAccess(
         ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
       };
       const moduleLimit = PLAN_MODULE_LIMITS[sub.plan]?.[module];
-      if (moduleLimit !== undefined && usedCount >= moduleLimit) {
-        return {
-          allowed: false,
-          reason: `You've reached the ${sub.plan} plan limit (${moduleLimit}) for this module. Upgrade your plan for more analyses.`,
-          plan: sub.plan,
-        };
+      if (moduleLimit !== undefined) {
+        // Atomic check-and-increment: only increment if current count < limit
+        // This prevents concurrent requests from both passing the check
+        const result = await prisma.usage.updateMany({
+          where: {
+            userId,
+            [usageField]: { lt: moduleLimit },
+          },
+          data: { [usageField]: { increment: 1 } },
+        });
+
+        if (result.count === 0) {
+          // No row was updated — user has reached the limit
+          return {
+            allowed: false,
+            reason: `You've reached the ${sub.plan} plan limit (${moduleLimit}) for this module. Upgrade your plan for more analyses.`,
+            plan: sub.plan,
+          };
+        }
       }
     }
 

@@ -591,7 +591,7 @@ function clampScore(value: unknown, min = 0, max = 100): number {
 }
 
 function validateStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String);
+  if (Array.isArray(value)) return value.filter(v => typeof v === 'string');
   if (typeof value === 'string') return [value];
   return [];
 }
