@@ -56,7 +56,7 @@ async function parsePdfText(file: File): Promise<string> {
 
 export type FileType = 'pdf' | 'pptx' | 'docx' | 'txt' | 'unknown';
 
-export function detectFileType(fileName: string): FileType {
+function detectFileType(fileName: string): FileType {
   const ext = fileName.toLowerCase().split('.').pop() || '';
   switch (ext) {
     case 'pdf': return 'pdf';
@@ -132,7 +132,6 @@ function capTextLength(text: string): string {
   return text;
 }
 
-export { parsePdfText, parsePptxText, parseDocxText };
 
 /**
  * Extract text from a file at a given URL.

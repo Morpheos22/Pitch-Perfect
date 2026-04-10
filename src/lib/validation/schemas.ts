@@ -1,0 +1,135 @@
+// Shared Zod Validation Schemas for Pitch Perfect API Routes
+// Centralises input validation to prevent malformed/malicious payloads.
+
+import { z } from 'zod';
+
+// ── Common ──
+
+export const sessionIdSchema = z.object({
+  id: z.string().min(1).max(100),
+});
+
+export const paginationSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+// ── E1: Pitch Deck Analyser ──
+
+export const deckIterateSchema = z.object({
+  id: z.string().min(1).max(100),
+  feedback: z.string().max(5000).optional(),
+  focusArea: z.string().max(200).optional(),
+});
+
+// ── E2: Script Coach ──
+
+export const scriptInputSchema = z.object({
+  content: z.string().min(10).max(50000).optional(),
+  inputType: z.enum(['text', 'pdf', 'docx']).optional(),
+  targetAudience: z.string().max(100).optional(),
+  pitchDuration: z.number().int().min(10).max(600).optional(),
+  sessionName: z.string().max(200).optional(),
+});
+
+export const scriptIterateSchema = z.object({
+  id: z.string().min(1).max(100),
+  feedback: z.string().max(5000).optional(),
+  focusElement: z.string().max(200).optional(),
+});
+
+// ── E3: Live Pitch ──
+
+export const liveNotesSchema = z.object({
+  id: z.string().min(1).max(100),
+  notes: z.string().max(1000).optional(),
+});
+
+// ── E4: Full Pitch Session ──
+
+export const fullPitchIterateSchema = z.object({
+  id: z.string().min(1).max(100),
+  feedback: z.string().max(5000).optional(),
+  focusArea: z.string().max(200).optional(),
+});
+
+// ── E5: Founder ──
+
+export const founderInputSchema = z.object({
+  moduleType: z.enum([
+    'FOUNDER_READINESS',
+    'PATHWAY_RECOMMENDATION',
+    'INVESTOR_RESEARCH',
+    'COHORT_MATCHING',
+    'NETWORK_PROFILE',
+    'PATHWAY_NARRATION',
+  ]),
+  input: z.record(z.string(), z.unknown()).refine(
+    (val) => Object.keys(val).length > 0,
+    { message: 'Input object must not be empty' }
+  ),
+});
+
+// ── Drills ──
+
+export const drillsSchema = z.object({
+  sessionId: z.string().min(1).max(100),
+  moduleType: z.enum(['e1', 'e2', 'e3', 'e4', 'e5']),
+  drillType: z.string().max(100).optional(),
+});
+
+// ── Video ──
+
+export const videoNotesSchema = z.object({
+  id: z.string().min(1).max(100),
+  notes: z.string().max(2000).optional(),
+});
+
+// ── Blob Upload ──
+
+export const blobUploadSchema = z.object({
+  pathname: z.string().min(1).max(500),
+  contentType: z.string().max(200).optional(),
+});
+
+// ── Payment ──
+
+export const createSessionSchema = z.object({
+  plan: z.enum(['STARTER', 'PROFESSIONAL', 'ENTERPRISE']),
+  provider: z.enum(['stripe', 'paystack', 'lemonsqueezy']).optional(),
+  modules: z.array(z.string().max(50)).max(10).optional(),
+  successUrl: z.string().url().max(500).optional(),
+  cancelUrl: z.string().url().max(500).optional(),
+});
+
+// ── User ──
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(8).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+
+export const onboardingSchema = z.object({
+  country: z.string().max(100).optional(),
+  primaryUseCase: z.string().max(200).optional(),
+  onboardingCompleted: z.boolean().optional(),
+});
+
+// ── Contact ──
+
+export const contactSchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email().max(200),
+  subject: z.string().min(1).max(300),
+  message: z.string().min(10).max(5000),
+});
+
+// ── Dev Tools ──
+
+export const devSetModeSchema = z.object({
+  mode: z.enum(['FREE', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE']),
+});
+
+export const devImpersonateSchema = z.object({
+  email: z.string().email().max(200),
+});

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth';
+import { devSetModeSchema } from '@/lib/validation/schemas';
 
 export async function POST(request: NextRequest) {
   // ── Guard: development mode only ──
@@ -40,16 +41,17 @@ export async function POST(request: NextRequest) {
   // ── Parse request body ──
   try {
     const body = await request.json();
-    const { mode } = body as { mode?: string };
-
-    if (mode !== 'dev' && mode !== 'client') {
+    const parsed = devSetModeSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Invalid mode. Must be "dev" or "client".' },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 },
       );
     }
+    const validatedData = parsed.data;
+    const mode = validatedData.mode;
 
-    const onboardingCompleted = mode === 'dev';
+    const onboardingCompleted = mode !== 'FREE';
 
     // ── Update Clerk public metadata ──
     await client.users.updateUser(clerkId, {
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
     });
 
     // ── Update Prisma DB ──
-    if (mode === 'client') {
+    if (!onboardingCompleted) {
       // Reset onboarding fields: clear country, primaryUseCase, set onboardingCompleted to false
       await prisma.user.update({
         where: { clerkId },
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
       success: true,
       mode,
       onboardingCompleted,
-      redirect: mode === 'dev' ? '/dashboard' : '/onboarding',
+      redirect: onboardingCompleted ? '/dashboard' : '/onboarding',
     });
   } catch (error: any) {
     console.error('[dev/set-mode]', error);

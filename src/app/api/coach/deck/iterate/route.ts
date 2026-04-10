@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzePitchDeck, analyzeDeckVisual } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { deckIterateSchema } from "@/lib/validation/schemas";
 
 // POST /api/coach/deck/iterate
 // Creates a new version of a pitch deck analysis, incorporating the previous analysis for iteration context.
@@ -31,7 +32,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { parentId, fileUrl, fileName, file, content } = body;
+    const parsed = deckIterateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const parentId = validatedData.id;
+    const { fileUrl, fileName, file, content } = body;
 
     if (!parentId) {
       return NextResponse.json({ error: "Parent deck ID is required" }, { status: 400 });

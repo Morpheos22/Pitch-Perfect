@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth';
+import { devImpersonateSchema } from '@/lib/validation/schemas';
 
 export async function POST(request: NextRequest) {
   // ── Guard: development mode only ──
@@ -37,14 +38,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email } = body as { email?: string };
-
-    if (!email || typeof email !== 'string') {
+    const parsed = devImpersonateSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing or invalid "email" field in request body.' },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 },
       );
     }
+    const validatedData = parsed.data;
+    const { email } = validatedData;
 
     // Look up user by email
     const user = await prisma.user.findUnique({

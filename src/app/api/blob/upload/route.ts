@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
+import { blobUploadSchema } from '@/lib/validation/schemas';
 
 // POST /api/blob/upload
 // Generates a signed client token for client-side Blob upload.
@@ -31,7 +32,17 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { fileName, fileType, category } = body;
+    const parsed = blobUploadSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const fileName = validatedData.pathname;
+    const fileType = validatedData.contentType;
+    const category = (body as Record<string, unknown>).category as string | undefined;
 
     if (!fileName || !category) {
       return NextResponse.json(

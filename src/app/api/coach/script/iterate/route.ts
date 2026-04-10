@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzePitchScript } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { scriptIterateSchema } from "@/lib/validation/schemas";
 
 // POST /api/coach/script/iterate
 // Creates a new version of a script analysis, incorporating the previous analysis for iteration context.
@@ -31,7 +32,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { parentId, script, fileUrl, fileName } = body;
+    const parsed = scriptIterateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const parentId = validatedData.id;
+    const { script, fileUrl, fileName } = body;
 
     if (!parentId) {
       return NextResponse.json({ error: "Parent script ID is required" }, { status: 400 });

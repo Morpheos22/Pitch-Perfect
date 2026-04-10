@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createOrUpdateLead } from "@/lib/zoho-crm";
+import { contactSchema } from '@/lib/validation/schemas';
 
 // Zoho Forms configuration
 const ZOHO_FORMS_CONFIG = {
@@ -162,16 +163,18 @@ export async function POST(request: NextRequest) {
   try {
     // Parse and validate input
     const body = await request.json();
-    const validation = validateInput(body);
-
-    if (!validation.valid || !validation.data) {
+    const parsed = contactSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Validation failed", details: validation.errors },
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
         { status: 400 }
       );
     }
-
-    const formData = validation.data;
+    const validatedData = parsed.data;
+    const formData = {
+      ...validatedData,
+      company: (body as Record<string, unknown>).company as string | undefined,
+    };
 
     // Submit to Zoho Forms
     const formsResult = await submitToZohoForms(formData);

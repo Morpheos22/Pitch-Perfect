@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzePitchDeck, analyzeDeckVisual, DeckAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { deckIterateSchema } from "@/lib/validation/schemas";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
@@ -224,7 +225,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         fileName: sessionName || fileName || file?.name || "text-input",
         fileUrl: fileUrl || (file ? file.name : ""),
-        fileSize: Number.isFinite(file?.size) ? file!.size : parseInt(fileSizeStr || '0', 10) || 0,
+        fileSize: file && Number.isFinite(file.size) ? file.size : parseInt(fileSizeStr || '0', 10) || 0,
         fileType: file?.type || "text/plain",
         status: "COMPLETED",
         problemClarityScore: analysis.problemClarityScore,
@@ -304,9 +305,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, notes } = body;
+    const parsed = deckIterateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const notes = body.notes;
 
-    if (!id) {
+    if (!validatedData.id) {
       return NextResponse.json({ error: "Deck ID is required" }, { status: 400 });
     }
 
@@ -321,7 +330,7 @@ export async function PATCH(request: NextRequest) {
     if (notes !== undefined) updateData.notes = notes;
 
     const updated = await prisma.pitchDeck.update({
-      where: { id, userId: user.id },
+      where: { id: validatedData.id, userId: user.id },
       data: updateData,
     });
 

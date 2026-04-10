@@ -299,7 +299,7 @@ async function createLemonSqueezySession(
 /**
  * Verify Paystack webhook signature using timing-safe comparison.
  */
-export function verifyPaystackWebhook(signature: string, body: string): boolean {
+function verifyPaystackWebhook(signature: string, body: string): boolean {
   const secret = process.env.PAYSTACK_WEBHOOK_SECRET;
   if (!secret) return false;
   const hash = createHmac('sha512', secret)
@@ -314,7 +314,7 @@ export function verifyPaystackWebhook(signature: string, body: string): boolean 
 /**
  * Verify LemonSqueezy webhook signature using timing-safe comparison.
  */
-export function verifyLemonSqueezyWebhook(signature: string, body: string): boolean {
+function verifyLemonSqueezyWebhook(signature: string, body: string): boolean {
   const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
   if (!secret) return false;
   const hash = createHmac('sha256', secret)

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/lib/ai-service";
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { founderInputSchema } from "@/lib/validation/schemas";
 
 // E5: Pitch Founder API
 // Routes to appropriate AI service based on moduleType
@@ -386,7 +387,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { moduleType, input } = body;
+    const parsed = founderInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const { moduleType, input } = validatedData;
 
     // Input validation
     if (typeof input !== 'object' || input === null) {
@@ -414,7 +423,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         moduleType: moduleType as any,
         status: "PROCESSING",
-        inputData: input,
+        inputData: input as any,
       },
     });
 

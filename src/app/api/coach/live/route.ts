@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { liveNotesSchema } from "@/lib/validation/schemas";
 
 // E3: Live Elevator Pitch Coach API
 // Analyzes video recordings for delivery and body language using REAL AI
@@ -120,9 +121,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Run REAL AI video analysis
+    if (!analysisVideoUrl) {
+      return NextResponse.json({ error: "Video URL is required for analysis" }, { status: 400 });
+    }
     let analysis: VideoAnalysisResult;
     try {
-      analysis = await analyzePitchVideo(analysisVideoUrl!, duration);
+      analysis = await analyzePitchVideo(analysisVideoUrl, duration);
     } catch (aiError: any) {
       console.error("AI video analysis failed:", aiError);
       const msg = aiError?.message || String(aiError);
@@ -299,9 +303,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, notes } = body;
+    const parsed = liveNotesSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
 
-    if (!id) {
+    if (!validatedData.id) {
       return NextResponse.json(
         { error: "Session id is required" },
         { status: 400 }
@@ -310,9 +321,9 @@ export async function PATCH(request: NextRequest) {
 
     // Only allow updating the notes field — other fields are immutable after analysis
     const result = await prisma.pitchVideo.updateMany({
-      where: { id, userId: user.id },
+      where: { id: validatedData.id, userId: user.id },
       data: {
-        ...(notes !== undefined ? { notes: String(notes).slice(0, 1000) } : {}),
+        ...(validatedData.notes !== undefined ? { notes: String(validatedData.notes).slice(0, 1000) } : {}),
       },
     });
 
@@ -323,7 +334,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, id });
+    return NextResponse.json({ success: true, id: validatedData.id });
   } catch (error) {
     console.error("Patch video session error:", error);
     return NextResponse.json(

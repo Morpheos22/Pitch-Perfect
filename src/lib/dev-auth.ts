@@ -43,7 +43,7 @@ export function isAdminEmail(email: string): boolean {
 /** Return the list of configured dev emails (for display in dev-tools).
  *  Returns empty array in production.
  */
-export function getDevEmailList(): string[] {
+function getDevEmailList(): string[] {
   if (process.env.NODE_ENV !== 'development') {
     return [];
   }

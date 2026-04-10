@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
     ],
   },
   serverExternalPackages: [
-    "sharp",
     "z-ai-web-dev-sdk",
     "resend",
     "pdf-parse",

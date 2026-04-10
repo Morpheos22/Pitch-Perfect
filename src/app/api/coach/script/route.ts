@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
 
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
@@ -104,11 +105,18 @@ export async function POST(request: NextRequest) {
     } else {
       // JSON: pasted text
       const body = await request.json();
-      script = body.script;
-      targetAudience = body.targetAudience;
-      const rawDuration = body.targetDuration;
-      targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
-      sessionName = body.sessionName;
+      const parsed = scriptInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+          { status: 400 }
+        );
+      }
+      const validatedData = parsed.data;
+      script = validatedData.content || '';
+      targetAudience = validatedData.targetAudience;
+      targetDuration = validatedData.pitchDuration;
+      sessionName = validatedData.sessionName || null;
     }
 
     if (!script || typeof script !== "string") {
@@ -221,9 +229,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, notes } = body;
+    const parsed = scriptIterateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const notes = body.notes;
 
-    if (!id) {
+    if (!validatedData.id) {
       return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
     }
 
@@ -238,7 +254,7 @@ export async function PATCH(request: NextRequest) {
     if (notes !== undefined) updateData.notes = notes;
 
     const updated = await prisma.pitchScript.update({
-      where: { id, userId: user.id },
+      where: { id: validatedData.id, userId: user.id },
       data: updateData,
     });
 

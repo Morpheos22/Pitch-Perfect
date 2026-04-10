@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
@@ -30,7 +31,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { parentId, videoUrl, duration } = body;
+    const parsed = fullPitchIterateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const parentId = validatedData.id;
+    const { videoUrl, duration } = body;
 
     if (!parentId) {
       return NextResponse.json({ error: "Parent session ID is required" }, { status: 400 });
