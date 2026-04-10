@@ -69,27 +69,24 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          // Create module access (idempotent)
+          // Create module access (atomic upsert to prevent TOCTOU race condition)
           const productId = sessionData.metadata?.product_id || transaction.providerAccessCode;
           if (productId) {
-            const existingAccess = await prisma.moduleAccess.findUnique({
+            await prisma.moduleAccess.upsert({
               where: { transactionId: transaction.id },
+              create: {
+                transactionId: transaction.id,
+                e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+                e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+                e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+                e4Access: ['pitch-deck-live', 'master'].includes(productId),
+                e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+                e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+                e3Limit: productId === 'master' ? 30 : 3,
+                e4Limit: productId === 'master' ? 10 : 3,
+              },
+              update: {}, // no-op if already exists
             });
-            if (!existingAccess) {
-              await prisma.moduleAccess.create({
-                data: {
-                  transactionId: transaction.id,
-                  e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-                  e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-                  e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-                  e4Access: ['pitch-deck-live', 'master'].includes(productId),
-                  e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-                  e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-                  e3Limit: productId === 'master' ? 30 : 3,
-                  e4Limit: productId === 'master' ? 10 : 3,
-                },
-              });
-            }
           }
 
           // Derive plan from product metadata
@@ -102,6 +99,10 @@ export async function POST(request: NextRequest) {
             : sessionData.customer?.id || '';
 
           // Update subscription plan
+          // TODO: Retrieve actual period from Stripe subscription API
+          // Using 30-day default as interim
+          const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
           await prisma.subscription.upsert({
             where: { userId: transaction.userId },
             create: {
@@ -110,14 +111,14 @@ export async function POST(request: NextRequest) {
               status: 'ACTIVE',
               stripeCustomerId,
               stripeSubscriptionId: typeof sessionData.payment_intent === 'string' ? sessionData.payment_intent : sessionData.payment_intent?.id || sessionData.id,
-              stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              stripeCurrentPeriodEnd: periodEnd,
             },
             update: {
               plan: planFromProduct,
               status: 'ACTIVE',
               ...(stripeCustomerId && { stripeCustomerId }),
               stripeSubscriptionId: typeof sessionData.payment_intent === 'string' ? sessionData.payment_intent : sessionData.payment_intent?.id || sessionData.id,
-              stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              stripeCurrentPeriodEnd: periodEnd,
             },
           });
         }

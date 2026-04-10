@@ -155,6 +155,8 @@ async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean;
 // ============================================
 // API ROUTE HANDLER
 // ============================================
+// TODO: Add rate limiting (e.g., 5 submissions per 15 minutes per IP)
+// Consider using a rate-limiting middleware or service like Upstash Ratelimit
 
 export async function POST(request: NextRequest) {
   try {
@@ -179,12 +181,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Thank you for reaching out! We'll get back to you within 24 hours.",
-      meta: {
-        zohoForms: formsResult.success,
-        zohoCrmLead: crmResult.leadId,
-        isNewLead: crmResult.isNew,
-      },
+      message: 'Thank you for contacting us!',
     });
   } catch (error) {
     console.error("Contact form error:", error);

@@ -10,8 +10,11 @@ export async function GET(request: NextRequest) {
     const user = await getOrCreateUser();
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as 'deck' | 'script' | 'video' | 'full' | null;
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    let limit = parseInt(searchParams.get('limit') || '20', 10);
+    if (!Number.isFinite(limit) || limit < 1) limit = 20;
+    if (limit > 100) limit = 100;
+    let offset = parseInt(searchParams.get('offset') || '0', 10);
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
     // Build the response with explicit types
     const response: Record<string, unknown[]> = {};

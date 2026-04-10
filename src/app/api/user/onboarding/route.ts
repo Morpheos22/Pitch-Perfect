@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
       try {
         const client = await clerkClient();
         const clerkUser = await client.users.getUser(userId);
-        const email = clerkUser.emailAddresses[0]?.emailAddress;
+        const email = clerkUser.emailAddresses.find(
+          (e: any) => e.verification?.status === 'verified'
+        )?.emailAddress || clerkUser.emailAddresses[0]?.emailAddress;
         if (email) {
           await prisma.user.upsert({
             where: { clerkId: userId },
@@ -53,15 +55,21 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          // Create subscription and usage if missing
+          // Create subscription and usage if missing (atomic transaction to prevent race condition)
           const user = await prisma.user.findUnique({ where: { clerkId: userId } });
           if (user) {
-            const [subCount, usageCount] = await Promise.all([
-              prisma.subscription.count({ where: { userId: user.id } }),
-              prisma.usage.count({ where: { userId: user.id } }),
+            await prisma.$transaction([
+              prisma.subscription.upsert({
+                where: { userId: user.id },
+                create: { userId: user.id },
+                update: {}, // no-op if already exists
+              }),
+              prisma.usage.upsert({
+                where: { userId: user.id },
+                create: { userId: user.id },
+                update: {}, // no-op if already exists
+              }),
             ]);
-            if (subCount === 0) await prisma.subscription.create({ data: { userId: user.id } });
-            if (usageCount === 0) await prisma.usage.create({ data: { userId: user.id } });
           }
         }
       } catch (syncError) {

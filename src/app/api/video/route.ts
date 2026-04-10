@@ -14,6 +14,7 @@ import {
   generateFileKey,
   isVercelBlobConfigured,
 } from '@/lib/storage';
+import { requireModuleAccess } from '@/lib/entitlement';
 
 // SSRF protection: check if a URL resolves to a private/reserved IP range
 function isPrivateUrl(url: string): boolean {
@@ -62,6 +63,15 @@ export async function POST(request: NextRequest) {
         { error: 'User not found' },
         { status: 404 }
       );
+    }
+
+    // ── Entitlement check ──
+    const searchParams = new URL(request.url).searchParams;
+    const typeParam = searchParams.get('type') || 'video';
+    const entModule = typeParam === 'audio' ? 'e3' : 'e4';
+    const entitlement = await requireModuleAccess(user.id, entModule as any);
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const formData = await request.formData();
@@ -156,7 +166,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Video upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to upload video', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'An error occurred. Please try again.' },
       { status: 500 }
     );
   }
@@ -203,6 +213,8 @@ export async function GET(request: NextRequest) {
         where: {
           userId: user.id,
           OR: [
+            // NOTE: Weak query — `contains` on fileUrl may match partial fileId substrings.
+            // Consider storing fileId in a dedicated column for exact matching.
             { fileUrl: { contains: fileId } },
             { r2Key: fileId },
           ],

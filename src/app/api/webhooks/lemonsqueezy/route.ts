@@ -88,26 +88,22 @@ export async function POST(request: NextRequest) {
         txId = newTx.id;
       }
 
-      // Create module access if not exists (idempotent)
-      const existingAccess = await prisma.moduleAccess.findUnique({
+      // Create module access if not exists (atomic upsert to prevent TOCTOU race condition)
+      await prisma.moduleAccess.upsert({
         where: { transactionId: txId },
+        create: {
+          transactionId: txId,
+          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+          e4Access: ['pitch-deck-live', 'master'].includes(productId),
+          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+          e3Limit: productId === 'master' ? 30 : 3,
+          e4Limit: productId === 'master' ? 10 : 3,
+        },
+        update: {}, // no-op if already exists
       });
-
-      if (!existingAccess) {
-        await prisma.moduleAccess.create({
-          data: {
-            transactionId: txId,
-            e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-            e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-            e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-            e4Access: ['pitch-deck-live', 'master'].includes(productId),
-            e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-            e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-            e3Limit: productId === 'master' ? 30 : 3,
-            e4Limit: productId === 'master' ? 10 : 3,
-          },
-        });
-      }
 
       // Update user subscription
       await prisma.subscription.upsert({

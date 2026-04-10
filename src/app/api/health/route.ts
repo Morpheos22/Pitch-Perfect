@@ -17,6 +17,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Protect full health check — require internal access
+  const fullToken = request.headers.get('x-health-token');
+  if (fullToken !== process.env.HEALTH_CHECK_SECRET) {
+    return NextResponse.json({ status: 'ok', message: 'Full check requires authentication' });
+  }
+
   // Full health check — less sensitive data, no internal details
   const startTime = Date.now();
 

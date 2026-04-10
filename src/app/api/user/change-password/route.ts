@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 
 // POST /api/user/change-password
 // Proxies password change to Clerk Backend API to avoid CORS issues
+// TODO: Add rate limiting (e.g., 5 attempts per 15 minutes per user)
+// Clerk provides some client-side protection, but server-side rate limiting is recommended
 export async function POST(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();

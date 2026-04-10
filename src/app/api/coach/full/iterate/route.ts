@@ -56,6 +56,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // C8: SSRF prevention — validate video URL host (same as parent route)
+    if (!analysisVideoUrl.startsWith('mock://')) {
+      const allowedVideoHosts = [
+        'workdrive.zoho.com', 'zoho.com',
+        'blob.vercel-storage.com',
+        'public.blob.vercel-storage.com',
+      ];
+      try {
+        const parsedUrl = new URL(analysisVideoUrl);
+        const isAllowed = allowedVideoHosts.some(h =>
+          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+        );
+        if (!isAllowed) {
+          return NextResponse.json(
+            { error: 'Invalid video source. Files must be uploaded through the platform.' },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid video URL format.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // M2: Validate duration bounds (same as parent route)
+    if (!Number.isFinite(analysisDuration) || analysisDuration < 180 || analysisDuration > 3600) {
+      return NextResponse.json(
+        { error: 'Duration must be between 3 and 60 minutes.' },
+        { status: 400 }
+      );
+    }
+
     // Get parent deck analysis if available
     let deckAnalysis;
     if (parentSession.pitchDeckId) {
@@ -76,8 +110,13 @@ export async function POST(request: NextRequest) {
       deckAnalysis
     );
 
-    // Determine version number
-    const parentVersion = parentSession.version || 1;
+    // H8: Atomic version numbering — query DB max instead of trusting client
+    const latestVersion = await prisma.fullPitchSession.findFirst({
+      where: { parentFullSessionId: parentId, userId: user.id },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const nextVersion = (latestVersion?.version || parentSession.version || 1) + 1;
 
     // Store as new session with parent reference
     const savedSession = await prisma.fullPitchSession.create({
@@ -88,7 +127,7 @@ export async function POST(request: NextRequest) {
         duration: analysisDuration,
         status: "COMPLETED",
         pitchDeckId: parentSession.pitchDeckId,
-        version: parentVersion + 1,
+        version: nextVersion,
         parentFullSessionId: parentId,
         problemSolutionFit: analysis.problemSolutionFit,
         marketOpportunity: analysis.marketOpportunity,
@@ -116,12 +155,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Increment usage
-    await prisma.usage.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id, e4FullPitchSessions: 1 },
-      update: { e4FullPitchSessions: { increment: 1 } },
-    });
+    // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
 
     return NextResponse.json({
       success: true,

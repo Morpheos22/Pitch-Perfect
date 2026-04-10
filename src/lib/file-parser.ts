@@ -80,14 +80,14 @@ export async function extractFileText(file: File): Promise<string> {
         if (!text || text.trim().length < 5) {
           console.error(`[file-parser] PDF returned empty/short text (${text?.length || 0} chars)`);
         }
-        return text;
+        return capTextLength(text);
       }
       case 'pptx':
-        return parsePptxText(file);
+        return capTextLength(await parsePptxText(file));
       case 'docx':
-        return parseDocxText(file);
+        return capTextLength(await parseDocxText(file));
       case 'txt':
-        return file.text();
+        return capTextLength(await file.text());
       case 'unknown': {
         // Heuristic: if the first 64 bytes contain null bytes, it's almost certainly binary
         const head = Buffer.from(await file.slice(0, 64).arrayBuffer());
@@ -98,14 +98,14 @@ export async function extractFileText(file: File): Promise<string> {
         // Try raw text first (works for .text, no-extension files)
         try {
           const text = await file.text();
-          if (text && text.trim().length > 5) return text;
+          if (text && text.trim().length > 5) return capTextLength(text);
         } catch (textErr) {
           console.error(`[file-parser] file.text() failed for unknown type:`, textErr);
         }
         // Try PDF parse (some files have wrong extensions)
         try {
           const text = await parsePdfText(file);
-          if (text && text.trim().length > 5) return text;
+          if (text && text.trim().length > 5) return capTextLength(text);
         } catch (pdfErr) {
           console.error(`[file-parser] PDF fallback also failed:`, pdfErr);
         }
@@ -118,6 +118,18 @@ export async function extractFileText(file: File): Promise<string> {
     console.error(`[file-parser] Failed to parse ${fileType} file '${fileName}':`, error);
     throw new Error(`Failed to extract text from ${fileType} file: ${fileName}. ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * Cap extracted text length to prevent excessive AI context/cost.
+ * Wraps any extracted text with a hard limit.
+ */
+function capTextLength(text: string): string {
+  const MAX_TEXT_LENGTH = 100_000;
+  if (text.length > MAX_TEXT_LENGTH) {
+    return text.substring(0, MAX_TEXT_LENGTH) + '\n\n[Text truncated: exceeded 100,000 character limit]';
+  }
+  return text;
 }
 
 export { parsePdfText, parsePptxText, parseDocxText };

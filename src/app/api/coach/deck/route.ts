@@ -83,6 +83,17 @@ export async function POST(request: NextRequest) {
 
     if (!analysisContent && fileUrl && fileName) {
       // NEW: Blob upload flow — fetch from URL, extract text
+      // SSRF prevention: validate file URL host
+      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+      try {
+        const parsedUrl = new URL(fileUrl);
+        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+        if (!isAllowed) {
+          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      }
       console.warn("[E1] Extracting text from Blob URL:", { fileUrl, fileName });
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);

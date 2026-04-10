@@ -96,7 +96,9 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
-  const email = data.email_addresses[0]?.email_address;
+  const email = data.email_addresses.find(
+    (e: any) => e.id === data.primary_email_address_id
+  )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
   // Check if user already exists (idempotency)
@@ -162,7 +164,9 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
 }
 
 async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
-  const email = data.email_addresses[0]?.email_address;
+  const email = data.email_addresses.find(
+    (e: any) => e.id === data.primary_email_address_id
+  )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
   // Get existing user to compare email verification status
@@ -181,19 +185,22 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
     !existingUser.emailVerified &&
     emailVerified;
 
+  // Build update data with only non-null fields from Clerk
+  const updateData: Record<string, any> = {
+    email,
+    emailVerified,
+    onboardingCompleted: data.public_metadata?.onboardingCompleted === true,
+    country: data.public_metadata?.country as string || undefined,
+    primaryUseCase: data.public_metadata?.primaryUseCase as string || undefined,
+  };
+  if (data.first_name != null) updateData.firstName = data.first_name;
+  if (data.last_name != null) updateData.lastName = data.last_name;
+  if (data.image_url != null) updateData.avatarUrl = data.image_url;
+
   // Update user
   await prisma.user.update({
     where: { clerkId: data.id },
-    data: {
-      email,
-      firstName: data.first_name,
-      lastName: data.last_name,
-      avatarUrl: data.image_url,
-      emailVerified,
-      onboardingCompleted: data.public_metadata?.onboardingCompleted === true,
-      country: data.public_metadata?.country as string || undefined,
-      primaryUseCase: data.public_metadata?.primaryUseCase as string || undefined,
-    },
+    data: updateData,
   });
 
   // If email was just verified, trigger welcome email

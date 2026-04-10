@@ -84,6 +84,10 @@ const MODULE_USAGE_FIELD: Record<CoachModule, keyof {
 const PAID_PLANS = ['STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
 
 /** Active subscription statuses */
+// TODO: CANCELLED subscriptions with a remaining billing period should also be treated as active.
+// Payment providers (Stripe, Paystack, etc.) handle CANCELLED status differently — some keep the
+// subscription usable until period-end, others revoke access immediately. Validate each provider's
+// behaviour before enabling this. For now, CANCELLED is intentionally excluded.
 const ACTIVE_STATUSES = ['ACTIVE', 'TRIALING'];
 
 /**
@@ -165,13 +169,22 @@ export async function requireModuleAccess(
     return { allowed: true, plan: sub.plan };
   }
 
-  // ── Check 2: Subscription credits ──
+  // ── Check 2: Subscription credits (ATOMIC) ──
   if (sub && sub.creditsRemaining > 0) {
-    // Consume one credit
-    await prisma.subscription.update({
-      where: { userId },
+    // Atomic check-and-decrement: only decrement if creditsRemaining > 0
+    // Prevents concurrent requests from over-spending credits
+    const creditResult = await prisma.subscription.updateMany({
+      where: { userId, creditsRemaining: { gt: 0 } },
       data: { creditsRemaining: { decrement: 1 }, creditsUsed: { increment: 1 } },
     });
+
+    if (creditResult.count === 0) {
+      return {
+        allowed: false,
+        reason: 'No credits remaining. Please upgrade your plan for more analyses.',
+        plan: sub.plan,
+      };
+    }
     return { allowed: true, plan: sub.plan };
   }
 
@@ -202,23 +215,33 @@ export async function requireModuleAccess(
     });
 
     if (moduleAccess) {
-      // Check usage limit
       const limit = moduleAccess[limitField];
-      const used = moduleAccess[usedField];
 
-      if (limit !== null && limit !== undefined && used >= limit) {
-        return {
-          allowed: false,
-          reason: `You have reached the usage limit (${limit}) for this module. Upgrade your plan for unlimited access.`,
-          plan: sub?.plan ?? 'FREE',
-        };
+      if (limit !== null && limit !== undefined) {
+        // Atomic check-and-increment: only increment if used < limit
+        // Prevents concurrent requests from exceeding one-time purchase limits
+        const moduleResult = await prisma.moduleAccess.updateMany({
+          where: {
+            id: moduleAccess.id,
+            [usedField]: { lt: limit },
+          },
+          data: { [usedField]: { increment: 1 } },
+        });
+
+        if (moduleResult.count === 0) {
+          return {
+            allowed: false,
+            reason: `You have reached the usage limit (${limit}) for this module. Upgrade your plan for unlimited access.`,
+            plan: sub?.plan ?? 'FREE',
+          };
+        }
+      } else {
+        // No limit — just increment
+        await prisma.moduleAccess.update({
+          where: { id: moduleAccess.id },
+          data: { [usedField]: { increment: 1 } },
+        });
       }
-
-      // Increment usage
-      await prisma.moduleAccess.update({
-        where: { id: moduleAccess.id },
-        data: { [usedField]: { increment: 1 } },
-      });
 
       return { allowed: true, plan: sub?.plan ?? 'FREE' };
     }

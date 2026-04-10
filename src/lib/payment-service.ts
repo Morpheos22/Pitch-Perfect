@@ -21,9 +21,9 @@ export const PRODUCTS: Record<string, { name: string; description: string }> = {
 // ============================================
 
 const AFRICAN_COUNTRIES_PAYSTACK = [
-  'NG', 'GH', 'KE', 'ZA', 'TZ', 'UG', 'RW', 'ET', 'CM', 'SN', 'CI', 'BJ', 'TG', 'SN',
-  'MW', 'MZ', 'ZM', 'ZW', 'BW', 'NA', 'MG', 'CD', 'CG', 'GA', 'GQ', 'ML', 'NE', 'BF',
-  'LR', 'SL', 'GM', 'GN', 'TD', 'CF', 'DJ', 'ER', 'KM', 'MR', 'SD', 'SO', 'SS', 'ST',
+  'BF', 'BJ', 'BW', 'CD', 'CF', 'CG', 'CI', 'CM', 'DJ', 'ER', 'ET', 'GA', 'GH', 'GM',
+  'GN', 'GQ', 'KE', 'KM', 'LR', 'LS', 'ML', 'MR', 'MW', 'MZ', 'NA', 'NE', 'NG', 'RW',
+  'SD', 'SL', 'SN', 'SO', 'SS', 'ST', 'TD', 'TG', 'TZ', 'UG', 'ZA', 'ZM', 'ZW',
 ];
 
 /**
@@ -198,7 +198,7 @@ async function createStripeSession(
     body: new URLSearchParams({
       mode: 'payment',
       payment_method_types: 'card',
-      line_items: `[{\"price\":\"${priceId}\",\"quantity\":1}]`,
+      line_items: JSON.stringify([{ price: priceId, quantity: 1 }]),
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?payment=success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?payment=cancelled`,
       client_reference_id: metadata.userId,
@@ -273,7 +273,9 @@ async function createLemonSqueezySession(
  * Verify Paystack webhook signature using timing-safe comparison.
  */
 export function verifyPaystackWebhook(signature: string, body: string): boolean {
-  const hash = createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET || '')
+  const secret = process.env.PAYSTACK_WEBHOOK_SECRET;
+  if (!secret) return false;
+  const hash = createHmac('sha512', secret)
     .update(body)
     .digest('hex');
   const hashBuf = Buffer.from(hash, 'hex');
@@ -286,7 +288,9 @@ export function verifyPaystackWebhook(signature: string, body: string): boolean 
  * Verify LemonSqueezy webhook signature using timing-safe comparison.
  */
 export function verifyLemonSqueezyWebhook(signature: string, body: string): boolean {
-  const hash = createHmac('sha256', process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '')
+  const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+  if (!secret) return false;
+  const hash = createHmac('sha256', secret)
     .update(body)
     .digest('hex');
   const hashBuf = Buffer.from(hash, 'hex');

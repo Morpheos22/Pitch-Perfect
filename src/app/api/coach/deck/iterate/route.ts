@@ -50,7 +50,17 @@ export async function POST(request: NextRequest) {
     let analysisContent = content || "";
 
     if (!analysisContent && fileUrl && fileName) {
-      // Blob upload flow
+      // Blob upload flow — SSRF prevention: validate file URL host
+      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
+      try {
+        const parsedUrl = new URL(fileUrl);
+        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+        if (!isAllowed) {
+          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      }
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
       } catch (e) {
@@ -65,6 +75,11 @@ export async function POST(request: NextRequest) {
     if (!analysisContent && file) {
       // Legacy file upload (base64 or buffer — not typical for iterate, but supported)
       try {
+        // Guard against unbounded base64 decoding (DoS)
+        const MAX_BASE64_SIZE = 15_000_000; // ~10MB decoded
+        if (file && file.length > MAX_BASE64_SIZE) {
+          return NextResponse.json({ error: 'File too large. Maximum size is 10MB.' }, { status: 400 });
+        }
         // file comes as base64 from JSON body
         const buffer = Buffer.from(file, "base64");
         const ext = fileName?.toLowerCase().split(".").pop() || "txt";
@@ -86,10 +101,18 @@ export async function POST(request: NextRequest) {
     if (!analysisContent) {
       // If no new content provided, fetch parent's file URL and try to extract text
       if (parentDeck.fileUrl) {
+        // SSRF prevention: validate parent file URL host
+        const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
         try {
-          analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
-        } catch (e) {
-          console.warn("[Deck Iterate] Could not re-extract text from parent file URL:", e);
+          const parsedUrl = new URL(parentDeck.fileUrl);
+          const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
+          if (!isAllowed) {
+            console.warn('[Deck Iterate] Parent file URL host not in allowlist, skipping re-extraction:', parsedUrl.hostname);
+          } else {
+            analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
+          }
+        } catch {
+          console.warn('[Deck Iterate] Invalid parent file URL, skipping re-extraction');
         }
       }
 
