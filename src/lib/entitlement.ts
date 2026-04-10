@@ -148,14 +148,17 @@ export async function requireModuleAccess(
     const limitField = MODULE_LIMIT_FIELD[module]!;
     const usedField = MODULE_USED_FIELD[module]!;
 
-    // Find the most recent unexpired ModuleAccess for this user
+    // Find the most recent unexpired ModuleAccess for this user AND this specific module.
     // Use OR to include both: (a) no expiry set (one-time purchases, expiresAt: null)
     // and (b) expiry in the future. Prisma { gte } alone excludes null values.
+    // Filter by the specific access field (e.g. e1Access: true) at the DB level
+    // to avoid fetching unrelated ModuleAccess records.
     const moduleAccess = await prisma.moduleAccess.findFirst({
       where: {
         transaction: {
           userId,
         },
+        [accessField]: true,
         OR: [
           { expiresAt: null },
           { expiresAt: { gte: new Date() } },
@@ -165,29 +168,25 @@ export async function requireModuleAccess(
     });
 
     if (moduleAccess) {
-      const hasAccess = moduleAccess[accessField] === true;
+      // Check usage limit
+      const limit = moduleAccess[limitField];
+      const used = moduleAccess[usedField];
 
-      if (hasAccess) {
-        // Check usage limit
-        const limit = moduleAccess[limitField];
-        const used = moduleAccess[usedField];
-
-        if (limit !== null && limit !== undefined && used >= limit) {
-          return {
-            allowed: false,
-            reason: `You have reached the usage limit (${limit}) for this module. Upgrade your plan for unlimited access.`,
-            plan: sub?.plan ?? 'FREE',
-          };
-        }
-
-        // Increment usage
-        await prisma.moduleAccess.update({
-          where: { id: moduleAccess.id },
-          data: { [usedField]: { increment: 1 } },
-        });
-
-        return { allowed: true, plan: sub?.plan ?? 'FREE' };
+      if (limit !== null && limit !== undefined && used >= limit) {
+        return {
+          allowed: false,
+          reason: `You have reached the usage limit (${limit}) for this module. Upgrade your plan for unlimited access.`,
+          plan: sub?.plan ?? 'FREE',
+        };
       }
+
+      // Increment usage
+      await prisma.moduleAccess.update({
+        where: { id: moduleAccess.id },
+        data: { [usedField]: { increment: 1 } },
+      });
+
+      return { allowed: true, plan: sub?.plan ?? 'FREE' };
     }
   }
 
