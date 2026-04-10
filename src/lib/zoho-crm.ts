@@ -240,7 +240,7 @@ export async function createSessionRecord(session: ZohoSessionRecord): Promise<{
 
 export async function getUserSessions(userId: string): Promise<ZohoSessionRecord[]> {
   const result = await zohoApiRequest(
-    `/Sessions/search?User_ID=${userId}`
+    `/Sessions/search?User_ID=${encodeURIComponent(userId)}`
   ) as { data?: ZohoSessionRecord[] };
 
   return result.data || [];
@@ -285,7 +285,7 @@ export async function createEntitlement(entitlement: Entitlement): Promise<{ id:
 export async function getEntitlement(userId: string, productId: string): Promise<Entitlement | null> {
   try {
     const result = await zohoApiRequest(
-      `/Entitlements/search?User_ID=${userId}&Product_ID=${productId}`
+      `/Entitlements/search?User_ID=${encodeURIComponent(userId)}&Product_ID=${encodeURIComponent(productId)}`
     ) as { data?: Array<{ data: unknown }> };
 
     if (!result.data || result.data.length === 0) {

@@ -130,13 +130,28 @@ export interface PageContent {
 }
 
 export async function readPage(url: string): Promise<PageContent> {
-  // SSRF prevention
+  // SSRF prevention — HTTPS only, block private IPs
   try {
     const parsed = new URL(url);
-    if (!['https:', 'http:'].includes(parsed.protocol)) {
-      throw new Error('Only HTTP/HTTPS URLs are supported');
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Only HTTPS URLs are supported');
     }
-  } catch {
+    const host = parsed.hostname;
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+      host.startsWith('169.254.') ||
+      host === '[::1]' ||
+      host === '0.0.0.0'
+    ) {
+      throw new Error('Private/internal URLs are not allowed');
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('URLs are not allowed')) throw e;
+    if (e instanceof Error && e.message.includes('Invalid URL')) throw e;
     throw new Error('Invalid URL');
   }
 

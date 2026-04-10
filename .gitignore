@@ -62,3 +62,8 @@ server.log
 /.config.juicefs
 /.stats
 /.zscripts
+# Dev artifacts (not for production)
+/worklog.md
+/agent-ctx/
+/EXECUTION_PLAN.md
+/db/*.db

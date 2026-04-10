@@ -113,7 +113,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
     } catch (error: any) {
       console.error("Submit error:", error);
       if (error?.status === 403) {
-        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-pitch-live/upgrade");
         return;
       }
@@ -122,7 +122,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error(error instanceof Error ? error.message : "Failed to analyze script");
+      toast.error("Failed to analyze script. Please try again.");
     } finally {
       setSubmitting(false);
     }

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
+import { getPlanFromProduct, getModuleCycles } from '@/lib/payment-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -133,26 +134,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function getPlanFromProduct(productId: string): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
-  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
-    'pitch-deck': 'STARTER',
-    'elevator-script': 'STARTER',
-    'elevator-live': 'PROFESSIONAL',
-    'pitch-deck-live': 'PROFESSIONAL',
-    'master': 'ENTERPRISE',
-  };
-  return planMap[productId] || 'STARTER';
-}
-
-function getModuleCycles(productId: string): number {
-  const cycleMap: Record<string, number> = {
-    'pitch-deck': 2,
-    'elevator-script': 2,
-    'elevator-live': 5,
-    'pitch-deck-live': 8,
-    'master': 20,
-  };
-  return cycleMap[productId] || 0;
 }

@@ -489,7 +489,7 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
   // SSRF protection: block private IPs and non-https schemes
   try {
     const parsedUrl = new URL(fileUrl);
-    if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+    if (parsedUrl.protocol !== 'https:') {
       throw new Error(`Unsupported URL scheme: ${parsedUrl.protocol}`);
     }
     const hostname = parsedUrl.hostname;

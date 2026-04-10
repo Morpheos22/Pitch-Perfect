@@ -170,7 +170,7 @@ export default function ElevatorScriptNewPage() {
         return;
       }
       if (error?.status === 403) {
-        toast.error(error.message || "Usage limit reached. Please upgrade your plan.");
+        toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-script/upgrade");
         return;
       }
@@ -179,7 +179,7 @@ export default function ElevatorScriptNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error(error instanceof Error ? error.message : "Failed to analyze script");
+      toast.error("Failed to analyze script. Please try again.");
     } finally {
       setSubmitting(false);
     }

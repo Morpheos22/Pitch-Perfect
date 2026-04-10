@@ -236,7 +236,7 @@ export async function POST(request: NextRequest) {
         strengths: analysis.strengths,
         weaknesses: analysis.weaknesses,
         recommendations: analysis.recommendations,
-        rawAnalysis: analysis as any,
+        rawAnalysis: JSON.parse(JSON.stringify(analysis)),
         version: nextVersion,
         parentDeckId: parentId,
         analyzedAt: new Date(),
