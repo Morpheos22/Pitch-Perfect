@@ -138,6 +138,7 @@ export default function FullPitchSessionPage() {
 
   // Iterate & Improve
   const [iterating, setIterating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchSession();

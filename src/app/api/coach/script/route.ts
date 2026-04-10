@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Accept both JSON body (pasted text) and FormData (file upload)
-    let script: string;
+    let script: string = '';
     let targetAudience: string | undefined;
     let targetDuration: number | undefined;
     let sessionName: string | null = null;

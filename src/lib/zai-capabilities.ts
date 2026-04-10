@@ -109,11 +109,12 @@ export async function webSearch(
   options?: { num?: number; recencyDays?: number }
 ): Promise<WebSearchResult[]> {
   const zai = await getZai();
-  return await zai.functions.invoke('web_search', {
+  const results = await zai.functions.invoke('web_search', {
     query,
     num: options?.num || 5,
     recency_days: options?.recencyDays,
   });
+  return (results as any[]).map((r: any) => ({ ...r, hostName: r.host_name || r.hostName || '' }));
 }
 
 // ============================================
@@ -231,7 +232,7 @@ export async function generateVideo(options: VideoGenOptions): Promise<VideoGenR
   });
 
   return {
-    taskId: response.id || response.request_id,
+    taskId: response.id || response.request_id || '',
     status: response.task_status || 'PROCESSING',
   };
 }

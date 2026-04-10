@@ -144,7 +144,7 @@ export async function extractTextFromUrl(fileUrl: string, fileName: string): Pro
     text: "text/plain",
   };
 
-  const file = new File([buffer], fileName, {
+  const file = new File([new Uint8Array(buffer)], fileName, {
     type: mimeTypes[ext] || "application/octet-stream",
   });
 

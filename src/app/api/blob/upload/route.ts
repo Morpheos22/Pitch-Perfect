@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     // Generate a client token using @vercel/blob
     const { generateClientTokenFromReadWriteToken } = await import("@vercel/blob/client");
 
-    const clientToken = await generateClientTokenFromReadWriteToken({
+    const clientToken = await (generateClientTokenFromReadWriteToken as any)({
       pathname,
       access: "public",
       addRandomSuffix: true,

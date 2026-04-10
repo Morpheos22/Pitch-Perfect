@@ -154,7 +154,7 @@ export default function SettingsPage() {
     setPwSaving(true);
     try {
       // Use our server-side API which proxies to Clerk (avoids CORS)
-      const token = await clerkUser?.getSession()?.getToken();
+      const token = await clerkUser?.getSessions()?.[0]?.getToken();
       if (!token) {
         setPwMessage({ type: "error", text: "Session expired. Please sign in again." });
         return;

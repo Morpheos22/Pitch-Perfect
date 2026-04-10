@@ -586,7 +586,7 @@ export async function POST(request: NextRequest) {
       });
 
       console.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
-      const msg = aiError?.message || String(aiError);
+      const msg = (aiError as any)?.message || String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
         { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { analyzePitchDeck, DeckAnalysisResult } from "@/lib/ai-service";
+import { analyzePitchDeck, analyzeDeckVisual, DeckAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 
@@ -126,10 +126,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Run REAL AI analysis
+    // Run AI analyses in parallel: content (text) + visual (vision)
+    // Visual analysis requires a file URL (blob upload) — skipped for pasted text or legacy file uploads
+    const hasVisualInput = !!(fileUrl || (file && (file.type?.includes('pdf') || file.name?.endsWith('.pdf'))));
+    const visualUrl = fileUrl || (file && (file.type?.includes('pdf') || file.name?.endsWith('.pdf')) ? fileUrl : null);
+
     let analysis: DeckAnalysisResult;
     try {
-      analysis = await analyzePitchDeck(analysisContent);
+      const [contentResult, visualResult] = await Promise.allSettled([
+        analyzePitchDeck(analysisContent),
+        hasVisualInput && visualUrl
+          ? analyzeDeckVisual(visualUrl)
+          : Promise.resolve(null),
+      ]);
+
+      if (contentResult.status === 'rejected') {
+        throw contentResult.reason;
+      }
+      analysis = contentResult.value;
+
+      // Merge visual scores from vision model if available
+      if (visualResult.status === 'fulfilled' && visualResult.value) {
+        const visual = visualResult.value;
+        analysis.designConsistencyScore = visual.designConsistencyScore;
+        analysis.readabilityScore = visual.readabilityScore;
+        analysis.visualHierarchyScore = visual.visualHierarchyScore;
+        analysis.colorSchemeScore = visual.colorSchemeScore;
+        analysis.typographyScore = visual.typographyScore;
+
+        // Enrich feedback with visual-specific insights
+        if (visual.visualWeaknesses.length > 0) {
+          analysis.weaknesses = [...analysis.weaknesses, ...visual.visualWeaknesses.slice(0, 2)];
+        }
+        if (visual.visualRecommendations.length > 0) {
+          analysis.recommendations = [...analysis.recommendations, ...visual.visualRecommendations.slice(0, 2)];
+        }
+
+        console.warn("[E1] Visual audit merged from vision model");
+      } else if (visualResult.status === 'rejected') {
+        console.warn("[E1] Visual audit skipped — vision model unavailable, using content-only visual scores");
+      }
     } catch (aiError: any) {
       console.error("[E1] AI deck analysis FAILED:", aiError);
       const msg = aiError?.message || String(aiError);

@@ -109,14 +109,14 @@ export async function POST(request: NextRequest) {
               plan: planFromProduct,
               status: 'ACTIVE',
               stripeCustomerId,
-              stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
+              stripeSubscriptionId: typeof sessionData.payment_intent === 'string' ? sessionData.payment_intent : sessionData.payment_intent?.id || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
             update: {
               plan: planFromProduct,
               status: 'ACTIVE',
               ...(stripeCustomerId && { stripeCustomerId }),
-              stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
+              stripeSubscriptionId: typeof sessionData.payment_intent === 'string' ? sessionData.payment_intent : sessionData.payment_intent?.id || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
           });
@@ -148,8 +148,8 @@ export async function POST(request: NextRequest) {
             data: {
               status: statusMap[subData.status] || 'ACTIVE',
               cancelAtPeriodEnd: subData.status === 'canceled',
-              ...(subData.current_period_end && {
-                stripeCurrentPeriodEnd: new Date(subData.current_period_end * 1000),
+              ...((subData as any).current_period_end && {
+                stripeCurrentPeriodEnd: new Date((subData as any).current_period_end * 1000),
               }),
             },
           });
@@ -183,9 +183,9 @@ export async function POST(request: NextRequest) {
         // Payment failure — mark subscription as past due
         const invoiceData = data as Stripe.Invoice;
 
-        const subscriptionId = typeof invoiceData.subscription === 'string'
-          ? invoiceData.subscription
-          : invoiceData.subscription?.id;
+        const subscriptionId = typeof (invoiceData as any).subscription === 'string'
+          ? (invoiceData as any).subscription
+          : (invoiceData as any).subscription?.id;
 
         if (subscriptionId) {
           const subscription = await prisma.subscription.findFirst({
