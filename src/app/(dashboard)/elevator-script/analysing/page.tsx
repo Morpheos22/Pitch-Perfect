@@ -34,7 +34,7 @@ export default function ElevatorScriptAnalysingPage() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/coach/script?id=${sessionId}`);
+      const response = await fetch(`/api/coach/script?id=${encodeURIComponent(sessionId)}`);
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -48,7 +48,7 @@ export default function ElevatorScriptAnalysingPage() {
       const result = await response.json();
 
       if (result.session?.status === "COMPLETED") {
-        router.replace(`/elevator-script/session/${sessionId}`);
+        router.replace(`/elevator-script/session/${encodeURIComponent(sessionId)}`);
         return;
       }
 

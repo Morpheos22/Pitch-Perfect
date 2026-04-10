@@ -538,6 +538,8 @@ export function getRateLimitStats(): {
 
 /**
  * Reset all rate limit counters. Useful for testing.
+ * WARNING: This should ONLY be called from authenticated admin endpoints.
+ * Calling this from unauthenticated routes will nullify all rate limiting.
  */
 export function resetRateLimits(): void {
   rateLimitStore.clear();

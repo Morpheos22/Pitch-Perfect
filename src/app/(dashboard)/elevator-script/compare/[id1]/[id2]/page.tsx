@@ -93,8 +93,8 @@ export default function CompareScriptPage({ params }: { params: Promise<{ id1: s
     async function fetchSessions() {
       try {
         const [res1, res2] = await Promise.all([
-          fetch(`/api/coach/script?id=${id1}`),
-          fetch(`/api/coach/script?id=${id2}`),
+          fetch(`/api/coach/script?id=${encodeURIComponent(id1)}`),
+          fetch(`/api/coach/script?id=${encodeURIComponent(id2)}`),
         ]);
 
         if (!res1.ok || !res2.ok) {

@@ -153,7 +153,7 @@ export default function ElevatorScriptSessionPage() {
 
   const fetchSessionData = async () => {
     try {
-      const response = await fetch(`/api/coach/script?id=${params.id}`);
+      const response = await fetch(`/api/coach/script?id=${encodeURIComponent(String(params.id))}`);
       
       if (!response.ok) {
         if (response.status === 401) {
@@ -251,7 +251,7 @@ export default function ElevatorScriptSessionPage() {
       if (res.ok) {
         const result = await res.json();
         toast.success("New version created! Comparing with previous analysis...");
-        router.push(`/elevator-script/session/${result.id}`);
+        router.push(`/elevator-script/session/${encodeURIComponent(result.id)}`);
       } else {
         toast.error("Failed to create new version");
       }
@@ -267,7 +267,7 @@ export default function ElevatorScriptSessionPage() {
     if (!window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/coach/script?id=${params.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/coach/script?id=${encodeURIComponent(String(params.id))}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Session deleted");
         router.push("/elevator-script/history");
@@ -396,7 +396,7 @@ export default function ElevatorScriptSessionPage() {
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-xs text-muted-foreground"
-                    onClick={() => router.push(`/elevator-script/session/${data.parentId}`)}
+                    onClick={() => router.push(`/elevator-script/session/${encodeURIComponent(String(data.parentId))}`)}
                   >
                     ← Previous version
                   </Button>

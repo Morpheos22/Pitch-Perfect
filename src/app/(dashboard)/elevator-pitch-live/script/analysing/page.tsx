@@ -54,14 +54,14 @@ function ScriptAnalysingContent() {
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/coach/script?id=${sessionId}`);
+        const res = await fetch(`/api/coach/script?id=${encodeURIComponent(sessionId)}`);
         if (!res.ok) throw new Error("Failed to fetch session");
 
         const json = await res.json();
         // Script API returns { id, status, ... } — check for COMPLETED status
         if (json.status === "COMPLETED" || json.status === "completed") {
           setProgress(100);
-          router.replace(`/elevator-pitch-live/script/session/${sessionId}`);
+          router.replace(`/elevator-pitch-live/script/session/${encodeURIComponent(sessionId)}`);
           return true;
         }
       } catch (err) {

@@ -34,7 +34,7 @@ export default function AnalysingPage() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/coach/deck?id=${sessionId}`);
+      const response = await fetch(`/api/coach/deck?id=${encodeURIComponent(sessionId)}`);
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -48,7 +48,7 @@ export default function AnalysingPage() {
       const result = await response.json();
 
       if (result.status === "COMPLETED") {
-        router.replace(`/pitch-deck-analyser/session/${sessionId}`);
+        router.replace(`/pitch-deck-analyser/session/${encodeURIComponent(sessionId)}`);
         return;
       }
 

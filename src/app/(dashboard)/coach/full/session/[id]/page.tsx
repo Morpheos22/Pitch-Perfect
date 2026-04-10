@@ -166,7 +166,7 @@ export default function FullPitchSessionPage() {
 
   const fetchSession = async () => {
     try {
-      const response = await fetch(`/api/coach/full?id=${sessionId}`);
+      const response = await fetch(`/api/coach/full?id=${encodeURIComponent(sessionId)}`);
       const data = await response.json();
       
       if (response.ok && data.id) {
@@ -250,7 +250,7 @@ export default function FullPitchSessionPage() {
       if (res.ok) {
         const result = await res.json();
         toast.success("New version created! Comparing with previous analysis...");
-        router.push(`/coach/full/session/${result.id}`);
+        router.push(`/coach/full/session/${encodeURIComponent(result.id)}`);
       } else {
         toast.error("Failed to create new version");
       }
@@ -266,7 +266,7 @@ export default function FullPitchSessionPage() {
     if (!window.confirm("Are you sure you want to delete this session? This action cannot be undone.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/coach/full?id=${sessionId}`, { method: "DELETE" });
+      const res = await fetch(`/api/coach/full?id=${encodeURIComponent(sessionId)}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Session deleted");
         router.push("/coach/full");
@@ -385,7 +385,7 @@ export default function FullPitchSessionPage() {
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-xs text-muted-foreground"
-                    onClick={() => router.push(`/coach/full/session/${session.parentId}`)}
+                    onClick={() => router.push(`/coach/full/session/${encodeURIComponent(String(session.parentId))}`)}
                   >
                     ← Previous version
                   </Button>
