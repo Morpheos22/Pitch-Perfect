@@ -5,7 +5,7 @@
 // TYPE DEFINITIONS
 // ============================================
 
-export interface ZohoLead {
+interface ZohoLead {
   id?: string;
   email: string;
   firstName?: string;
@@ -24,7 +24,7 @@ export interface ZohoLead {
   Customer_Type?: 'Free' | 'Paid' | 'Gifted';
 }
 
-export interface ZohoContact extends ZohoLead {
+interface ZohoContact extends ZohoLead {
   mailingStreet?: string;
   mailingCity?: string;
   mailingState?: string;
@@ -32,7 +32,7 @@ export interface ZohoContact extends ZohoLead {
   mailingCountry?: string;
 }
 
-export interface ZohoDeal {
+interface ZohoDeal {
   id?: string;
   dealName: string;
   stage: 'Qualification' | 'Needs Analysis' | 'Value Proposition' | 'Negotiation' | 'Closed Won' | 'Closed Lost';
@@ -46,7 +46,7 @@ export interface ZohoDeal {
   description?: string;
 }
 
-export interface ZohoSessionRecord {
+interface ZohoSessionRecord {
   userId: string;
   sessionId: string;
   sessionType: 'deck' | 'script' | 'live' | 'full';
@@ -160,13 +160,13 @@ export async function createOrUpdateLead(lead: ZohoLead): Promise<{ id: string; 
   return { id: result.data[0].details.id, created: true };
 }
 
-export async function updateLeadStatus(leadId: string, status: ZohoLead['leadStatus']): Promise<void> {
+async function updateLeadStatus(leadId: string, status: ZohoLead['leadStatus']): Promise<void> {
   await zohoApiRequest(`/Leads/${leadId}`, 'PUT', {
     data: [{ Lead_Status: status }],
   });
 }
 
-export async function convertLeadToContact(leadId: string): Promise<{ contactId: string }> {
+async function convertLeadToContact(leadId: string): Promise<{ contactId: string }> {
   const result = await zohoApiRequest(`/Leads/${leadId}/actions/convert`, 'POST', {
     data: [{
       convert_to: ['Contacts'],
@@ -180,7 +180,7 @@ export async function convertLeadToContact(leadId: string): Promise<{ contactId:
 // CONTACT MANAGEMENT
 // ============================================
 
-export async function getContactByEmail(email: string): Promise<ZohoContact | null> {
+async function getContactByEmail(email: string): Promise<ZohoContact | null> {
   try {
     const result = await zohoApiRequest(
       `/Contacts/search?email=${encodeURIComponent(email)}`
@@ -192,7 +192,7 @@ export async function getContactByEmail(email: string): Promise<ZohoContact | nu
   }
 }
 
-export async function updateContact(contactId: string, data: Partial<ZohoContact>): Promise<void> {
+async function updateContact(contactId: string, data: Partial<ZohoContact>): Promise<void> {
   await zohoApiRequest(`/Contacts/${contactId}`, 'PUT', {
     data: [data],
   });
@@ -202,7 +202,7 @@ export async function updateContact(contactId: string, data: Partial<ZohoContact
 // DEAL MANAGEMENT
 // ============================================
 
-export async function createDeal(deal: ZohoDeal): Promise<{ id: string }> {
+async function createDeal(deal: ZohoDeal): Promise<{ id: string }> {
   const result = await zohoApiRequest('/Deals', 'POST', {
     data: [deal],
   }) as { data: Array<{ details: { id: string } }> };
@@ -210,7 +210,7 @@ export async function createDeal(deal: ZohoDeal): Promise<{ id: string }> {
   return { id: result.data[0].details.id };
 }
 
-export async function updateDealStage(dealId: string, stage: ZohoDeal['stage']): Promise<void> {
+async function updateDealStage(dealId: string, stage: ZohoDeal['stage']): Promise<void> {
   await zohoApiRequest(`/Deals/${dealId}`, 'PUT', {
     data: [{ Stage: stage }],
   });
@@ -221,7 +221,7 @@ export async function updateDealStage(dealId: string, stage: ZohoDeal['stage']):
 // ============================================
 
 // Custom module for tracking sessions (needs to be created in Zoho CRM)
-export async function createSessionRecord(session: ZohoSessionRecord): Promise<{ id: string }> {
+async function createSessionRecord(session: ZohoSessionRecord): Promise<{ id: string }> {
   const result = await zohoApiRequest('/Sessions', 'POST', {
     data: [{
       Name: `${session.sessionType}-${session.sessionId}`,
@@ -238,7 +238,7 @@ export async function createSessionRecord(session: ZohoSessionRecord): Promise<{
   return { id: result.data[0].details.id };
 }
 
-export async function getUserSessions(userId: string): Promise<ZohoSessionRecord[]> {
+async function getUserSessions(userId: string): Promise<ZohoSessionRecord[]> {
   const result = await zohoApiRequest(
     `/Sessions/search?User_ID=${encodeURIComponent(userId)}`
   ) as { data?: ZohoSessionRecord[] };
@@ -250,7 +250,7 @@ export async function getUserSessions(userId: string): Promise<ZohoSessionRecord
 // ENTITLEMENT MANAGEMENT
 // ============================================
 
-export interface Entitlement {
+interface Entitlement {
   userId: string;
   productId: string;
   modules: Array<{
@@ -264,7 +264,7 @@ export interface Entitlement {
   transactionId: string;
 }
 
-export async function createEntitlement(entitlement: Entitlement): Promise<{ id: string }> {
+async function createEntitlement(entitlement: Entitlement): Promise<{ id: string }> {
   // Store in Zoho CRM as a custom module
   const result = await zohoApiRequest('/Entitlements', 'POST', {
     data: [{
@@ -282,7 +282,7 @@ export async function createEntitlement(entitlement: Entitlement): Promise<{ id:
   return { id: result.data[0].details.id };
 }
 
-export async function getEntitlement(userId: string, productId: string): Promise<Entitlement | null> {
+async function getEntitlement(userId: string, productId: string): Promise<Entitlement | null> {
   try {
     const result = await zohoApiRequest(
       `/Entitlements/search?User_ID=${encodeURIComponent(userId)}&Product_ID=${encodeURIComponent(productId)}`
@@ -307,7 +307,7 @@ export async function getEntitlement(userId: string, productId: string): Promise
   }
 }
 
-export async function updateEntitlementUsage(
+async function updateEntitlementUsage(
   entitlementId: string,
   moduleId: string,
   incrementBy: number = 1

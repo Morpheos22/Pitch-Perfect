@@ -30,12 +30,12 @@ async function getZai(): Promise<ZAIInstance> {
 // Module mapping: E3_TRANSCRIPTION, E4_FULL_SESSION
 // Use case: Transcribe video recordings for deeper text analysis
 
-export interface ASRResult {
+interface ASRResult {
   text: string;
   confidence?: number;
 }
 
-export async function transcribeAudio(audioSource: string | Buffer): Promise<ASRResult> {
+async function transcribeAudio(audioSource: string | Buffer): Promise<ASRResult> {
   const zai = await getZai();
   const params: Record<string, unknown> = {};
 
@@ -64,9 +64,9 @@ export async function transcribeAudio(audioSource: string | Buffer): Promise<ASR
 // Module mapping: FEEDBACK_NARRATION
 // Use case: Narrate coaching feedback for accessibility, audio reports
 
-export type TTSVoice = 'tongtong' | 'chelsie' | 'diana' | 'emma' | 'aria';
+type TTSVoice = 'tongtong' | 'chelsie' | 'diana' | 'emma' | 'aria';
 
-export interface TTSOptions {
+interface TTSOptions {
   voice?: TTSVoice;
   speed?: number;        // 0.5–2.0, default 1.0
   responseFormat?: 'wav' | 'pcm';
@@ -94,7 +94,7 @@ export async function synthesizeSpeech(
 // Module mapping: MARKET_RESEARCH, E4_COMPETITIVE_INTEL
 // Use case: Validate market claims, competitive intelligence, investor research
 
-export interface WebSearchResult {
+interface WebSearchResult {
   url: string;
   name: string;
   snippet: string;
@@ -122,7 +122,7 @@ export async function webSearch(
 // ============================================
 // Use case: Deep-read investor articles, competitor websites
 
-export interface PageContent {
+interface PageContent {
   html: string;
   title: string;
   url: string;
@@ -171,14 +171,14 @@ export async function readPage(url: string): Promise<PageContent> {
 // Module mapping: REPORT_COVER
 // Use case: Generate report covers, pitch deck template visuals
 
-export type ImageSize = '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440';
+type ImageSize = '1024x1024' | '768x1344' | '864x1152' | '1344x768' | '1152x864' | '1440x720' | '720x1440';
 
-export interface GeneratedImage {
+interface GeneratedImage {
   base64: string;
   mimeType?: string;
 }
 
-export async function generateImage(
+async function generateImage(
   prompt: string,
   options?: { size?: ImageSize; model?: string }
 ): Promise<GeneratedImage> {
@@ -199,7 +199,7 @@ export async function generateImage(
   };
 }
 
-export async function editImage(
+async function editImage(
   prompt: string,
   image: string,  // URL or data URI
   options?: { size?: ImageSize; model?: string }
@@ -239,7 +239,7 @@ export async function editImage(
 // ============================================
 // Use case: Marketing demos, coaching example videos
 
-export interface VideoGenOptions {
+interface VideoGenOptions {
   prompt?: string;
   imageUrl?: string | string[];
   quality?: 'speed' | 'quality';
@@ -250,12 +250,12 @@ export interface VideoGenOptions {
   duration?: 5 | 10;
 }
 
-export interface VideoGenResult {
+interface VideoGenResult {
   taskId: string;
   status: 'PROCESSING' | 'SUCCESS' | 'FAIL';
 }
 
-export async function generateVideo(options: VideoGenOptions): Promise<VideoGenResult> {
+async function generateVideo(options: VideoGenOptions): Promise<VideoGenResult> {
   const zai = await getZai();
   const response = await zai.video.generations.create({
     prompt: options.prompt,
@@ -274,7 +274,7 @@ export async function generateVideo(options: VideoGenOptions): Promise<VideoGenR
   };
 }
 
-export async function getVideoResult(taskId: string): Promise<{
+async function getVideoResult(taskId: string): Promise<{
   status: string;
   videoUrl?: string;
   videoBase64?: string;
@@ -298,7 +298,7 @@ export async function getVideoResult(taskId: string): Promise<{
 // CAPABILITY HEALTH CHECK
 // ============================================
 
-export async function checkCapabilitiesHealth(): Promise<{
+async function checkCapabilitiesHealth(): Promise<{
   asr: { available: boolean; error?: string };
   tts: { available: boolean; error?: string };
   webSearch: { available: boolean; error?: string };

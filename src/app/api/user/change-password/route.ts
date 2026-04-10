@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { changePasswordSchema } from '@/lib/validation/schemas';
 
 // POST /api/user/change-password
 // Proxies password change to Clerk Backend API to avoid CORS issues
@@ -14,7 +15,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { currentPassword, newPassword } = body;
+    const parsed = changePasswordSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const { currentPassword, newPassword } = validatedData;
 
     if (!currentPassword || !newPassword) {
       return NextResponse.json(

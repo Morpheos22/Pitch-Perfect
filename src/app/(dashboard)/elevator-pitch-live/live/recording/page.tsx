@@ -92,7 +92,6 @@ export default function LiveRecordingPage() {
     const mode = (sessionStorage.getItem("liveRecordingMode") as "video" | "audio") || "video";
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessionName(name);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecordingMode(mode);
 
     // Initialize media stream

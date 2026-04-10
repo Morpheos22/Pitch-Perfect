@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma as db } from '@/lib/db';
+import { videoNotesSchema } from '@/lib/validation/schemas';
 import {
   isWorkDriveConfigured,
   uploadToWorkDrive,
@@ -114,10 +115,14 @@ export async function POST(request: NextRequest) {
 
     // ── STRATEGY 1: Zoho WorkDrive ──
     if (isWorkDriveConfigured()) {
+      const folderId = process.env.ZOHO_WORKDRIVE_FOLDER_ID;
+      if (!folderId) {
+        return NextResponse.json({ error: "Zoho WorkDrive folder not configured" }, { status: 500 });
+      }
       const uploadResult = await uploadToWorkDrive(
         buffer,
         videoFile.name,
-        process.env.ZOHO_WORKDRIVE_FOLDER_ID!
+        folderId
       );
       downloadUrl = uploadResult.downloadUrl;
       fileId = uploadResult.fileId;
@@ -330,7 +335,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { videoId, duration } = body;
+    const parsed = videoNotesSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const videoId = validatedData.id;
+    const duration = (body as Record<string, unknown>).duration as number | undefined;
 
     if (!videoId) {
       return NextResponse.json(

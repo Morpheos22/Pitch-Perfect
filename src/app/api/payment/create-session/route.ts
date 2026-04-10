@@ -12,6 +12,7 @@ import {
 } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
 import { syncUserToCRM } from '@/lib/zoho-crm';
+import { createSessionSchema } from '@/lib/validation/schemas';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +23,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { productId, country } = body;
+    const parsed = createSessionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const productId = validatedData.plan;
+    const country = (body as Record<string, unknown>).country as string | undefined;
 
     // Validate country code format (ISO 3166-1 alpha-2)
     if (country && !/^[A-Z]{2}$/i.test(country)) {

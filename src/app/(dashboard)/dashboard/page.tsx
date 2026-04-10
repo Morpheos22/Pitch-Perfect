@@ -111,7 +111,9 @@ export default function DashboardPage() {
   const fetchUserData = useCallback(async () => {
     try {
       // POST first to ensure user is synced to DB (handles Clerk webhook race condition)
-      await fetch("/api/user/sync", { method: "POST" }).catch(() => {});
+      await fetch("/api/user/sync", { method: "POST" }).catch((err) => {
+        console.warn("[Dashboard] User sync POST failed (non-fatal):", err);
+      });
       // Then GET the fresh user data
       const res = await fetch("/api/user/sync");
       if (!res.ok) throw new Error("Failed to fetch user data");

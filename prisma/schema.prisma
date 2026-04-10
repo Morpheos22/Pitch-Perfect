@@ -317,6 +317,9 @@ model PitchVideo {
   transcript               String? // Full transcript
   transcriptWithTimestamps Json? // Word-level timestamps
 
+  // User Notes
+  notes String? // Free-form notes (auto-save from session detail page)
+
   // Timestamps
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

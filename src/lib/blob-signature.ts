@@ -73,7 +73,7 @@ export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffe
 /**
  * Check if a URL is a Vercel Blob URL.
  */
-export function isBlobUrl(url: string): boolean {
+function isBlobUrl(url: string): boolean {
   return (
     url.startsWith("https://blob.vercel-storage.com") ||
     url.startsWith("https://public.blob.vercel-storage.com")
@@ -103,7 +103,7 @@ export function generateBlobDownloadUrl(blobUrlOrPathname: string): string {
  *
  * Used by the blob download proxy route to prevent unauthorized access.
  */
-export async function verifyBlobOwnership(
+async function verifyBlobOwnership(
   userId: string,
   pathname: string
 ): Promise<boolean> {
@@ -119,7 +119,7 @@ export async function verifyBlobOwnership(
       select: { id: true },
     }),
     prisma.pitchScript.findFirst({
-      where: { userId, fileUrl: { contains: pathname } },
+      where: { userId, inputFileUrl: { contains: pathname } },
       select: { id: true },
     }),
     prisma.pitchVideo.findFirst({

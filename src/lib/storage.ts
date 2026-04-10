@@ -61,7 +61,7 @@ export function getStorageBackend(): string {
  * Uses the refresh token to obtain a new access token.
  * Caches the token until it expires.
  */
-export async function getWorkDriveAccessToken(): Promise<string> {
+async function getWorkDriveAccessToken(): Promise<string> {
   // Return cached token if still valid
   if (cachedAccessToken && Date.now() < tokenExpiresAt) {
     return cachedAccessToken;
@@ -174,7 +174,7 @@ const FILE_SIZE_LIMITS = {
  * @param allowedTypes - Array of allowed file extensions (e.g. ['.pdf', '.pptx'])
  * @returns Object with valid flag and optional error message
  */
-export function validateFileType(
+function validateFileType(
   fileName: string,
   allowedTypes: string[]
 ): { valid: boolean; error?: string } {
@@ -226,7 +226,7 @@ export function validateFileTypeByCategory(
  * @param maxSizeBytes - Maximum allowed size in bytes
  * @returns Object with valid flag and optional error message
  */
-export function validateFileSize(
+function validateFileSize(
   fileSize: number,
   maxSizeBytes: number
 ): { valid: boolean; error?: string } {
@@ -342,7 +342,7 @@ export function getWorkDriveFileUrl(fileId: string): string {
  * Delete a file from Zoho WorkDrive.
  * @param fileId - The WorkDrive file ID to delete
  */
-export async function deleteWorkDriveFile(fileId: string): Promise<void> {
+async function deleteWorkDriveFile(fileId: string): Promise<void> {
   const accessToken = await getWorkDriveAccessToken();
 
   const response = await fetch(

@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { generateCoachingDrills } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
+import { drillsSchema } from "@/lib/validation/schemas";
 
 // POST /api/coach/drills
 // Generates personalized coaching drills based on an existing analysis session.
@@ -25,7 +26,24 @@ export async function POST(request: NextRequest) {
 
     // ── Entitlement check: drills require at least one module access ──
     const body = await request.json();
-    const { sessionId, module: moduleType } = body;
+    const parsed = drillsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const validatedData = parsed.data;
+    const sessionId = validatedData.sessionId;
+    // Map schema e-code to friendly module name used by business logic
+    const eCodeToModule: Record<string, 'deck' | 'script' | 'live' | 'full'> = {
+      e1: 'deck',
+      e2: 'script',
+      e3: 'live',
+      e4: 'full',
+      e5: 'full',
+    };
+    const moduleType = eCodeToModule[validatedData.moduleType];
 
     const moduleEntitlementMap: Record<string, 'e1' | 'e2' | 'e3' | 'e4'> = {
       deck: 'e1',

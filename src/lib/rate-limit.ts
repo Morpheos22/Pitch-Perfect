@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Types
 // ──────────────────────────────────────────────
 
-export interface RateLimitConfig {
+interface RateLimitConfig {
   /** Maximum number of requests allowed within the window */
   limit: number;
   /** Sliding window duration in milliseconds */
@@ -29,7 +29,7 @@ export interface RateLimitConfig {
   name?: string;
 }
 
-export interface RateLimitResult {
+interface RateLimitResult {
   /** Whether the request is allowed */
   allowed: boolean;
   /** Number of remaining requests in the current window */
@@ -86,7 +86,7 @@ async function getRedis(): Promise<RedisClient | null> {
 // ──────────────────────────────────────────────
 
 /** Predefined rate limit tiers for common route patterns */
-export const RATE_LIMIT_TIERS = {
+const RATE_LIMIT_TIERS = {
   /** AI analysis routes — expensive, limit aggressively */
   ai: {
     limit: 5,
@@ -136,7 +136,7 @@ export const RATE_LIMIT_TIERS = {
  *
  * Order matters — more specific patterns are checked first.
  */
-export function getRateLimitConfig(pathname: string): RateLimitConfig {
+function getRateLimitConfig(pathname: string): RateLimitConfig {
   // AI analysis routes (most expensive — limit aggressively)
   if (
     pathname.startsWith("/api/coach/") ||
@@ -185,7 +185,7 @@ export function getRateLimitConfig(pathname: string): RateLimitConfig {
  * Determine if a route should be entirely skipped from rate limiting.
  * Webhooks from external services and Next.js internal routes should never be limited.
  */
-export function shouldSkipRateLimit(pathname: string): boolean {
+function shouldSkipRateLimit(pathname: string): boolean {
   // Webhook routes — external services, must always pass
   if (pathname.startsWith("/api/webhooks/")) {
     return true;
@@ -219,7 +219,7 @@ export function shouldSkipRateLimit(pathname: string): boolean {
  * Extract client IP address from the request.
  * Checks X-Forwarded-For, X-Real-IP, then falls back to a generic hash.
  */
-export function getClientIp(request: NextRequest): string {
+function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     // First IP in the chain is the original client
@@ -364,7 +364,7 @@ async function checkRateLimitRedis(
  * @param config - Rate limit configuration (optional, auto-detected from path)
  * @param userId - Optional Clerk user ID (if already resolved)
  */
-export async function checkRateLimit(
+async function checkRateLimit(
   request: NextRequest,
   config?: RateLimitConfig,
   userId?: string
@@ -398,7 +398,7 @@ export async function checkRateLimit(
  *   X-RateLimit-Remaining: How many requests are left
  *   X-RateLimit-Reset: Unix timestamp when the window resets
  */
-export function setRateLimitHeaders(
+function setRateLimitHeaders(
   response: NextResponse,
   result: RateLimitResult
 ): NextResponse {
@@ -411,7 +411,7 @@ export function setRateLimitHeaders(
 /**
  * Create a 429 Too Many Requests response with rate limit headers.
  */
-export function rateLimitResponse(result: RateLimitResult): NextResponse {
+function rateLimitResponse(result: RateLimitResult): NextResponse {
   const response = NextResponse.json(
     {
       error: "Too Many Requests",
@@ -471,7 +471,7 @@ export async function rateLimitMiddleware(
 // Higher-order wrapper for individual routes
 // ──────────────────────────────────────────────
 
-export type ApiHandler = (
+type ApiHandler = (
   request: NextRequest,
   context?: { params?: Promise<Record<string, string>> }
 ) => Promise<NextResponse> | NextResponse;
@@ -488,7 +488,7 @@ export type ApiHandler = (
  * });
  * ```
  */
-export function withRateLimit(
+function withRateLimit(
   handler: ApiHandler,
   config: RateLimitConfig,
   customUserId?: string
@@ -532,7 +532,7 @@ export function withRateLimit(
  * Get rate limiter status (for debugging/admin).
  * Returns whether Redis is connected and configured.
  */
-export async function getRateLimitStats(): Promise<{
+async function getRateLimitStats(): Promise<{
   redisConnected: boolean;
   backend: "redis" | "fallback";
 }> {
