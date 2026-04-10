@@ -137,10 +137,10 @@ export async function POST(request: NextRequest) {
         deliveryPresence: analysis.deliveryPresence,
         overallReadinessScore: analysis.overallReadinessScore,
         investorReadinessLevel: (() => {
-          const validLevels = ['NOT_READY', 'EARLY_STAGE', 'DEVELOPING', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
+          const validLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
           return validLevels.includes(analysis.investorReadinessLevel)
             ? analysis.investorReadinessLevel
-            : 'DEVELOPING';
+            : 'NEEDS_WORK';
         })() as any,
         contentScores: analysis.contentScores,
         deliveryScores: analysis.deliveryScores,
