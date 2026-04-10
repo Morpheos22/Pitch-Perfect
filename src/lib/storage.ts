@@ -284,7 +284,7 @@ export async function uploadToWorkDrive(
   formData.append('parent_id', folderId);
 
   // Append file as a Blob with the correct name
-  const blob = new Blob([file]);
+  const blob = new Blob([new Uint8Array(file)]);
   formData.append('content', blob, fileName);
 
   const response = await fetch('https://workdrive.zoho.com/api/v1/upload', {
@@ -427,7 +427,7 @@ export async function uploadFile(
   if (isVercelBlobConfigured()) {
     try {
       const { put } = await import('@vercel/blob');
-      const blob = new Blob([buffer], { type: mimeType });
+      const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
       const blobResult = await put(key, blob, {
         access: 'public',
         addRandomSuffix: true,

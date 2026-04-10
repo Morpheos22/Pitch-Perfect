@@ -100,7 +100,7 @@ export default function CompareScriptPage({ params }: { params: Promise<{ id1: s
         if (!res1.ok || !res2.ok) {
           const errBody1 = !res1.ok ? await res1.json().catch(() => ({})) : {};
           const errBody2 = !res2.ok ? await res2.json().catch(() => ({})) : {};
-          const missing = [];
+          const missing: string[] = [];
           if (!res1.ok) missing.push(`Session 1: ${errBody1.error || res1.status}`);
           if (!res2.ok) missing.push(`Session 2: ${errBody2.error || res2.status}`);
           setError(missing.join(" | "));

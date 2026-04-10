@@ -460,7 +460,7 @@ export async function executeWithFallback(
           temperature: vr.temperature,
           max_tokens: vr.max_tokens,
           thinking: config.thinkingEnabled ? { type: 'enabled' as const } : { type: 'disabled' as const },
-        });
+        } as any);
       } else {
         const cr = request as ChatRequest;
         response = await zai.chat.completions.create({
@@ -856,6 +856,97 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   result.overallScore = validatedOverall;
 
   return result;
+}
+
+// ============================================
+// DECK VISUAL AUDIT (E1 — Vision Model)
+// ============================================
+
+interface VisualAuditResult {
+  designConsistencyScore: number;
+  readabilityScore: number;
+  visualHierarchyScore: number;
+  colorSchemeScore: number;
+  typographyScore: number;
+  visualStrengths: string[];
+  visualWeaknesses: string[];
+  visualRecommendations: string[];
+}
+
+/**
+ * Analyze a pitch deck's visual design using the vision model (glm-4.6v).
+ * The vision model actually "sees" the slide images, unlike the text-only analysis.
+ *
+ * @param fileUrl - Public URL to the uploaded deck file (PDF/PPTX blob URL)
+ * @returns Visual audit scores and feedback, or null if vision analysis fails
+ */
+export async function analyzeDeckVisual(fileUrl: string): Promise<VisualAuditResult | null> {
+  try {
+    const systemPrompt = `You are an expert presentation design consultant. Analyze the visual design quality of this pitch deck.
+
+Score each criterion from 0-100:
+1. Design Consistency: Consistent styling, colors, fonts, spacing across all slides
+2. Readability: Text is easy to read, appropriate font sizes, not too dense, good line spacing
+3. Visual Hierarchy: Clear information hierarchy, key points stand out, proper use of headers/subheaders
+4. Color Scheme: Professional palette, good contrast, on-brand, not distracting
+5. Typography: Professional font choices, consistent formatting, good text-image balance
+
+Respond ONLY in valid JSON format:
+{
+  "designConsistencyScore": <number 0-100>,
+  "readabilityScore": <number 0-100>,
+  "visualHierarchyScore": <number 0-100>,
+  "colorSchemeScore": <number 0-100>,
+  "typographyScore": <number 0-100>,
+  "visualStrengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+  "visualWeaknesses": ["<weakness 1>", "<weakness 2>", "<weakness 3>"],
+  "visualRecommendations": ["<recommendation 1>", "<recommendation 2>", "<recommendation 3>"]
+}`;
+
+    const userPrompt = `Analyze the visual design of this pitch deck. Focus on slide layout, typography, color usage, and overall design professionalism.
+
+Provide your analysis as a JSON object (no markdown formatting).`;
+
+    const { response, modelUsed } = await executeWithFallback('E1_DECK_VISUAL', (model) => ({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userPrompt },
+            { type: 'image_url', image_url: { url: fileUrl } },
+          ],
+        },
+      ],
+      temperature: MODULE_MODEL_MAP.E1_DECK_VISUAL.temperature,
+    }));
+
+    const content = response.choices?.[0]?.message?.content;
+    if (!content) {
+      console.warn('[E1 Visual] No response content from vision model');
+      return null;
+    }
+
+    const parsed = parseJsonResponse<Record<string, unknown>>(content);
+    const result: VisualAuditResult = {
+      designConsistencyScore: clampScore(parsed.designConsistencyScore),
+      readabilityScore: clampScore(parsed.readabilityScore),
+      visualHierarchyScore: clampScore(parsed.visualHierarchyScore),
+      colorSchemeScore: clampScore(parsed.colorSchemeScore),
+      typographyScore: clampScore(parsed.typographyScore),
+      visualStrengths: validateStringArray(parsed.visualStrengths),
+      visualWeaknesses: validateStringArray(parsed.visualWeaknesses),
+      visualRecommendations: validateStringArray(parsed.visualRecommendations),
+    };
+
+    console.warn(`[E1 Visual] Vision audit complete via ${modelUsed}`);
+    return result;
+  } catch (error: any) {
+    // Graceful degradation — visual audit is additive, not blocking
+    console.warn('[E1 Visual] Vision analysis failed, falling back to content-only scores:', error?.message);
+    return null;
+  }
 }
 
 // ============================================
@@ -1386,9 +1477,9 @@ export async function checkAIServiceHealth(): Promise<{
     gatewayRouting: { text: resolvedTextModel, vision: resolvedVisionModel },
     moduleMapping: Object.entries(MODULE_MODEL_MAP).map(([key, val]) => ({
       module: key,
-      models: val.models,
+      models: [...val.models],
       temperature: val.temperature,
-      thinkingEnabled: !!val.thinkingEnabled,
+      thinkingEnabled: !!(val as any).thinkingEnabled,
       method: val.method,
     })),
     configFound: true,
