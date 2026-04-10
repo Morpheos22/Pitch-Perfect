@@ -769,12 +769,14 @@ CONTENT SCORING CRITERIA (0-100):
 7. Financials: Are projections realistic and well-presented? Is the ask justified?
 8. Ask Clarity: Is the funding amount clear? Use of funds specific? Terms reasonable?
 
-VISUAL AUDIT CRITERIA (0-100):
-1. Design Consistency: Consistent styling, colors, fonts throughout all slides
-2. Readability: Text is easy to read, appropriate font sizes, not too dense
-3. Visual Hierarchy: Clear information hierarchy, key points stand out
-4. Color Scheme: Professional, on-brand, not distracting, good contrast
-5. Typography: Professional font choices, consistent formatting, readable
+VISUAL AUDIT CRITERIA (0-100) — ESTIMATES ONLY (no visual input provided):
+Base these estimates on content structure, text density, and formatting cues:
+1. Design Consistency: Infer from content organization and slide descriptions
+2. Readability: Estimate from text length, structure, and complexity
+3. Visual Hierarchy: Infer from heading structure and content ordering
+4. Color Scheme: Estimate from brand/product descriptions if available
+5. Typography: Estimate from text formatting cues in the extracted content
+Note: These are rough estimates. A separate visual audit may override these scores.
 ${CALIBRATION_ANCHOR}
 Respond ONLY in valid JSON format without any markdown formatting.`;
 
@@ -793,11 +795,11 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "financialsScore": <number 0-100>,
   "askClarityScore": <number 0-100>,
   "overallScore": <number 0-100, weighted average>,
-  "designConsistencyScore": <number 0-100>,
-  "readabilityScore": <number 0-100>,
-  "visualHierarchyScore": <number 0-100>,
-  "colorSchemeScore": <number 0-100>,
-  "typographyScore": <number 0-100>,
+  "designConsistencyScore": <number 0-100, estimate based on content description only>,
+  "readabilityScore": <number 0-100, estimate based on content description only>,
+  "visualHierarchyScore": <number 0-100, estimate based on content description only>,
+  "colorSchemeScore": <number 0-100, estimate based on content description only>,
+  "typographyScore": <number 0-100, estimate based on content description only>,
   "strengths": ["<specific strength 1>", "<specific strength 2>", "<specific strength 3>"],
   "weaknesses": ["<specific weakness 1>", "<specific weakness 2>", "<specific weakness 3>"],
   "recommendations": ["<specific actionable recommendation 1>", "<specific actionable recommendation 2>", "<specific actionable recommendation 3>", "<specific actionable recommendation 4>", "<specific actionable recommendation 5>"]

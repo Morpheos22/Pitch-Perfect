@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { analyzePitchDeck } from "@/lib/ai-service";
+import { analyzePitchDeck, analyzeDeckVisual } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 
@@ -53,8 +53,12 @@ export async function POST(request: NextRequest) {
       // Blob upload flow
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
-      } catch (e) {
+      } catch (e: any) {
         console.error("[Deck Iterate] Failed to extract from Blob URL:", e);
+        return NextResponse.json(
+          { error: `Failed to process uploaded file: ${e?.message || 'unknown error'}` },
+          { status: 400 }
+        );
       }
     }
 
@@ -80,19 +84,22 @@ export async function POST(request: NextRequest) {
 
     // If no new content provided, reuse parent deck content (user may just want re-analysis with improved model)
     if (!analysisContent) {
-      // Try to reconstruct from rawAnalysis
-      if (parentDeck.rawAnalysis && typeof parentDeck.rawAnalysis === "object") {
-        const raw = parentDeck.rawAnalysis as Record<string, unknown>;
-        // We don't store original content, so we can't re-analyze without it
+      // If no new content provided, fetch parent's file URL and try to extract text
+      if (parentDeck.fileUrl) {
+        try {
+          analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
+        } catch (e) {
+          console.warn("[Deck Iterate] Could not re-extract text from parent file URL:", e);
+        }
+      }
+
+      // If still no content, return error
+      if (!analysisContent || analysisContent.length < 50) {
         return NextResponse.json(
-          { error: "No new content provided. Please upload a new version of your deck or paste content." },
+          { error: "Cannot re-analyze — original file content is unavailable. Please upload a new version of your deck." },
           { status: 400 }
         );
       }
-      return NextResponse.json(
-        { error: "No content available for re-analysis" },
-        { status: 400 }
-      );
     }
 
     // Truncate if needed
@@ -124,8 +131,32 @@ export async function POST(request: NextRequest) {
       recommendations: parentDeck.recommendations,
     };
 
-    // Run AI analysis with iteration context
-    const analysis = await analyzePitchDeck(analysisContent, previousAnalysis);
+    // Run analyses in parallel: content (text) + visual (vision if file URL available)
+    const [contentResult, visualResult] = await Promise.allSettled([
+      analyzePitchDeck(analysisContent, previousAnalysis),
+      fileUrl ? analyzeDeckVisual(fileUrl) : Promise.resolve(null),
+    ]);
+
+    if (contentResult.status === 'rejected') {
+      throw contentResult.reason;
+    }
+    const analysis = contentResult.value;
+
+    // Merge visual scores from vision model if available
+    if (visualResult.status === 'fulfilled' && visualResult.value) {
+      const visual = visualResult.value;
+      analysis.designConsistencyScore = visual.designConsistencyScore;
+      analysis.readabilityScore = visual.readabilityScore;
+      analysis.visualHierarchyScore = visual.visualHierarchyScore;
+      analysis.colorSchemeScore = visual.colorSchemeScore;
+      analysis.typographyScore = visual.typographyScore;
+      if (visual.visualWeaknesses.length > 0) {
+        analysis.weaknesses = [...analysis.weaknesses, ...visual.visualWeaknesses.slice(0, 2)];
+      }
+      if (visual.visualRecommendations.length > 0) {
+        analysis.recommendations = [...analysis.recommendations, ...visual.visualRecommendations.slice(0, 2)];
+      }
+    }
 
     // Determine version number
     const parentVersion = parentDeck.version || 1;
@@ -163,11 +194,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Increment usage
-    await prisma.usage.update({
-      where: { userId: user.id },
-      data: { e1DeckAnalyses: { increment: 1 } },
-    });
+    // Increment usage (non-blocking — don't fail the response if usage tracking fails)
+    try {
+      await prisma.usage.update({
+        where: { userId: user.id },
+        data: { e1DeckAnalyses: { increment: 1 } },
+      });
+    } catch (usageErr) {
+      console.error("[E1 Iterate] Failed to update usage counter (non-fatal):", usageErr);
+    }
 
     return NextResponse.json({
       success: true,

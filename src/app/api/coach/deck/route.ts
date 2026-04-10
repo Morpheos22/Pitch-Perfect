@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     const fileName = formData.get("fileName") as string | null;
     const deckContent = formData.get("content") as string;
     const sessionName = formData.get("sessionName") as string | null;
+    const fileSizeStr = formData.get("fileSize") as string | null;
 
     if (!file && !deckContent && !fileUrl) {
       return NextResponse.json(
@@ -127,9 +128,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Run AI analyses in parallel: content (text) + visual (vision)
-    // Visual analysis requires a file URL (blob upload) — skipped for pasted text or legacy file uploads
-    const hasVisualInput = !!(fileUrl || (file && (file.type?.includes('pdf') || file.name?.endsWith('.pdf'))));
-    const visualUrl = fileUrl || (file && (file.type?.includes('pdf') || file.name?.endsWith('.pdf')) ? fileUrl : null);
+    // Visual analysis requires a public URL (blob upload only).
+    // Legacy file uploads have no public URL, so skip visual audit for those.
+    const visualUrl = fileUrl || null;
+    const hasVisualInput = !!visualUrl;
 
     let analysis: DeckAnalysisResult;
     try {
@@ -184,7 +186,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         fileName: sessionName || fileName || file?.name || "text-input",
         fileUrl: fileUrl || (file ? file.name : ""),
-        fileSize: Number.isFinite(file?.size) ? file!.size : 0,
+        fileSize: Number.isFinite(file?.size) ? file!.size : parseInt(fileSizeStr || '0', 10) || 0,
         fileType: file?.type || "text/plain",
         status: "COMPLETED",
         problemClarityScore: analysis.problemClarityScore,
@@ -209,11 +211,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Increment usage counter
-    await prisma.usage.update({
-      where: { userId: user.id },
-      data: { e1DeckAnalyses: { increment: 1 } },
-    });
+    // Increment usage counter (non-blocking — don't fail the response if usage tracking fails)
+    try {
+      await prisma.usage.update({
+        where: { userId: user.id },
+        data: { e1DeckAnalyses: { increment: 1 } },
+      });
+    } catch (usageErr) {
+      console.error("[E1] Failed to update usage counter (non-fatal):", usageErr);
+    }
 
     // Return real result
     return NextResponse.json({
@@ -289,8 +295,11 @@ export async function PATCH(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, notes: updated.notes });
-  } catch (error) {
+  } catch (error: any) {
     console.error("PATCH deck error:", error);
+    if (error.code === 'P2025') {
+      return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    }
     return NextResponse.json({ error: "Failed to update deck" }, { status: 500 });
   }
 }
@@ -323,8 +332,11 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error("DELETE deck error:", error);
+    if (error.code === 'P2025') {
+      return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    }
     return NextResponse.json({ error: "Failed to delete deck" }, { status: 500 });
   }
 }

@@ -47,13 +47,13 @@ export default function AnalysingPage() {
 
       const result = await response.json();
 
-      if (result.session?.status === "COMPLETED") {
+      if (result.status === "COMPLETED") {
         router.replace(`/pitch-deck-analyser/session/${sessionId}`);
         return;
       }
 
       // Check for failed status
-      if (result.session?.status === "FAILED") {
+      if (result.status === "FAILED") {
         setError("Analysis failed. Please try again.");
         return;
       }
