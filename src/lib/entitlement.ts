@@ -128,6 +128,30 @@ export async function requireModuleAccess(
         plan: sub.plan,
       };
     }
+    // Check module-specific usage limits for paid plans
+    if (module !== 'e5') {
+      const usageField = MODULE_USAGE_FIELD[module];
+      const usage = await prisma.usage.findUnique({
+        where: { userId },
+        select: { [usageField]: true },
+      });
+      const usedCount = usage?.[usageField] ?? 0;
+
+      const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
+        STARTER: { e1: 5, e2: 10, e3: 3, e4: 2 },
+        PROFESSIONAL: { e1: 20, e2: 50, e3: 10, e4: 5 },
+        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
+      };
+      const moduleLimit = PLAN_MODULE_LIMITS[sub.plan]?.[module];
+      if (moduleLimit !== undefined && usedCount >= moduleLimit) {
+        return {
+          allowed: false,
+          reason: `You've reached the ${sub.plan} plan limit (${moduleLimit}) for this module. Upgrade your plan for more analyses.`,
+          plan: sub.plan,
+        };
+      }
+    }
+
     return { allowed: true, plan: sub.plan };
   }
 
