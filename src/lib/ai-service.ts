@@ -36,7 +36,7 @@
 //   ✅ Image Gen        → E5 network visuals, report covers
 //   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -195,22 +195,9 @@ function createZaiConfig(): boolean {
     console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var.');
     return false;
   }
-  const configJson = JSON.stringify(config);
-
-  // Ensure HOME is set (Vercel sets it to '/')
-  if (!process.env.HOME || process.env.HOME === '/') {
-    process.env.HOME = '/tmp';
-  }
-
-  // Write config to accessible locations
-  const writePaths = [join(process.cwd(), '.z-ai-config'), join(homedir(), '.z-ai-config')];
-  for (const loc of writePaths) {
-    try {
-      writeFileSync(loc, configJson);
-    } catch {
-      /* read-only fs, continue */
-    }
-  }
+  // NOTE: Previously this function wrote .z-ai-config to the filesystem.
+  // That was removed to prevent credential leaks. The SDK reads from env vars
+  // directly; the read paths above remain for backward compatibility only.
 
   configCreated = true;
   return true;

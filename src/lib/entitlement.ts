@@ -149,14 +149,17 @@ export async function requireModuleAccess(
     const usedField = MODULE_USED_FIELD[module]!;
 
     // Find the most recent unexpired ModuleAccess for this user
+    // Use OR to include both: (a) no expiry set (one-time purchases, expiresAt: null)
+    // and (b) expiry in the future. Prisma { gte } alone excludes null values.
     const moduleAccess = await prisma.moduleAccess.findFirst({
       where: {
         transaction: {
           userId,
         },
-        expiresAt: {
-          gte: new Date(),
-        },
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gte: new Date() } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
     });

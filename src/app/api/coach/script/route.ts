@@ -60,10 +60,10 @@ export async function POST(request: NextRequest) {
 
       // NEW: Blob upload flow — extract text from URL
       if (fileUrl && blobFileName) {
-        console.log("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName });
+        console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
-          console.log("[E2] Text extracted from Blob URL, length:", script.length);
+          console.warn("[E2] Text extracted from Blob URL, length:", script.length);
         } catch (e) {
           console.error("[E2] Failed to extract from Blob URL:", e);
           return NextResponse.json(
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
           );
         }
       } else if (file) {
-        console.log("[E2] File received:", { name: file.name, size: file.size, type: file.type });
+        console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type });
 
         // Server-side body size guard (legacy path only)
         if (file.size > 4.5 * 1024 * 1024) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         // Extract text from file using unified parser
         try {
           script = await extractFileText(file);
-          console.log("[E2] Text extracted successfully, length:", script.length);
+          console.warn("[E2] Text extracted successfully, length:", script.length);
         } catch (e) {
           console.error("[E2] Failed to extract file text:", e);
           return NextResponse.json(
