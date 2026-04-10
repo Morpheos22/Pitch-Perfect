@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession } from "@/lib/ai-service";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
@@ -20,6 +21,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e4');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const body = await request.json();

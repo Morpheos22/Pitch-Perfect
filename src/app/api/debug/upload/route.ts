@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Diagnostic endpoint: tests file upload chain end-to-end.
  * POST a file here to see exactly what the server receives.
- * BLOCKED in production — returns 403.
+ * BLOCKED in all non-development environments — returns 403.
  */
 export async function POST(request: NextRequest) {
-  // Guard: development only
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+  // Guard: development ONLY — also blocked in preview/staging
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not available outside development" }, { status: 403 });
   }
   const startTime = Date.now();
   const results: Record<string, unknown> = {};
@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
 
 // Allow in development only for debugging
 export async function GET() {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not available outside development" }, { status: 403 });
   }
   return NextResponse.json({
     message: "POST a file to this endpoint to diagnose upload issues",

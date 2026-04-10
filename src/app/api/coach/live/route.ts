@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // E3: Live Elevator Pitch Coach API
 // Analyzes video recordings for delivery and body language using REAL AI
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e3');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const formData = await request.formData();

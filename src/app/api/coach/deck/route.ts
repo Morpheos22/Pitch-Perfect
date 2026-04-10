@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, DeckAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e1');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     const formData = await request.formData();

@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
+import { requireModuleAccess } from "@/lib/entitlement";
 
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ── Entitlement check ──
+    const entitlement = await requireModuleAccess(user.id, 'e2');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
     // Accept both JSON body (pasted text) and FormData (file upload)
