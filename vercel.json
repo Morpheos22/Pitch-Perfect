@@ -4,10 +4,10 @@
       "maxDuration": 60
     },
     "src/app/api/coach/**": {
-      "maxDuration": 120
+      "maxDuration": 60
     },
     "src/app/api/video/**": {
-      "maxDuration": 120
+      "maxDuration": 60
     },
     "src/app/api/user/**": {
       "maxDuration": 30
@@ -23,7 +23,6 @@
     {
       "source": "/(.*)",
       "headers": [
-        // NOTE: This origin must match NEXT_PUBLIC_APP_URL in production
         { "key": "Access-Control-Allow-Origin", "value": "https://pitchcoach-ai-morpheos-projects-73412392.vercel.app" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
