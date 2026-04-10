@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
           colorSchemeScore: 0,
           typographyScore: 0,
         };
-        console.log("[E4] Deck text extracted from Blob URL, length:", deckText.length);
+        console.warn("[E4] Deck text extracted from Blob URL, length:", deckText.length);
       } catch (parseErr) {
         console.error("[E4] Deck file parsing from URL failed:", parseErr);
         // Non-fatal: continue without deck context

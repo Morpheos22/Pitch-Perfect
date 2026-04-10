@@ -112,8 +112,6 @@ export async function POST(request: NextRequest) {
         anticipatedQuestions: analysis.anticipatedQuestions,
         competitiveAnalysis: analysis.competitiveAnalysis,
         transcript: analysis.transcript,
-        version: parentSession.version ? parentSession.version + 1 : 2,
-        parentFullSessionId: parentId,
         analyzedAt: new Date(),
       },
     });

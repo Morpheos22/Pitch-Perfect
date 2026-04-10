@@ -82,10 +82,10 @@ export async function POST(request: NextRequest) {
 
     if (!analysisContent && fileUrl && fileName) {
       // NEW: Blob upload flow — fetch from URL, extract text
-      console.log("[E1] Extracting text from Blob URL:", { fileUrl, fileName });
+      console.warn("[E1] Extracting text from Blob URL:", { fileUrl, fileName });
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
-        console.log("[E1] Text extracted from Blob URL, length:", analysisContent.length);
+        console.warn("[E1] Text extracted from Blob URL, length:", analysisContent.length);
       } catch (e) {
         console.error("[E1] Failed to extract from Blob URL:", e);
         return NextResponse.json(
@@ -97,10 +97,10 @@ export async function POST(request: NextRequest) {
 
     if (!analysisContent && file && !deckContent) {
       // LEGACY: Direct file upload (for backward compat / small files)
-      console.log("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
+      console.warn("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
       try {
         analysisContent = await extractFileText(file);
-        console.log("[E1] Text extracted, length:", analysisContent.length);
+        console.warn("[E1] Text extracted, length:", analysisContent.length);
       } catch (e: any) {
         console.error("[E1] Failed to extract file content:", e);
         const hint = e?.message?.includes("PDF")

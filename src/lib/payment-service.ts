@@ -340,10 +340,6 @@ export function parseWebhookPayload(
     case 'zoho':
       valid = verifyZohoWebhook(signature, body);
       break;
-    case 'stripe':
-      // Stripe uses its own verification mechanism
-      valid = !!signature;
-      break;
     default:
       valid = false;
   }

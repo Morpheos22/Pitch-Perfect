@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
           // Derive plan from product metadata
           const planFromProduct = getPlanFromProductId(productId);
 
+          // Resolve Stripe Customer ID (cus_xxx)
+          // sessionData.customer can be a string (cus_xxx) or expanded Customer object
+          const stripeCustomerId = typeof sessionData.customer === 'string'
+            ? sessionData.customer
+            : sessionData.customer?.id || '';
+
           // Update subscription plan
           await prisma.subscription.upsert({
             where: { userId: transaction.userId },
@@ -102,13 +108,14 @@ export async function POST(request: NextRequest) {
               userId: transaction.userId,
               plan: planFromProduct,
               status: 'ACTIVE',
-              stripeCustomerId: sessionData.customer_details?.email || '',
+              stripeCustomerId,
               stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
             update: {
               plan: planFromProduct,
               status: 'ACTIVE',
+              ...(stripeCustomerId && { stripeCustomerId }),
               stripeSubscriptionId: sessionData.payment_intent || sessionData.id,
               stripeCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
