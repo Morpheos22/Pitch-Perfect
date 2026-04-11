@@ -1,16 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle, Type, Clock, ChevronLeft } from "lucide-react";
+import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+
+// Allowed file formats for E3 Script: PDF, DOCX, DOC, TXT
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
+const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain",
+];
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -23,27 +31,51 @@ const frameworkElements = [
 export default function ElevatorPitchLiveScriptNewPage() {
   const router = useRouter();
   const [sessionName, setSessionName] = useState("");
-  const [inputTab, setInputTab] = useState<"upload" | "paste">("upload");
   const [file, setFile] = useState<File | null>(null);
-  const [scriptText, setScriptText] = useState("");
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const wordCount = scriptText.trim() ? scriptText.trim().split(/\s+/).length : 0;
-  const estimatedDuration = Math.round(wordCount / 150 * 60);
+  // Session counter state
+  const [usedCount, setUsedCount] = useState<number | null>(null);
+  const [limitCount, setLimitCount] = useState<number | null>(null);
+  const [isEnterprise, setIsEnterprise] = useState(false);
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/sync");
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success && json.user) {
+        const plan = json.user.subscription?.plan || "FREE";
+        const usage = json.user.usage;
+        const limits = { FREE: { e2: 1 }, STARTER: { e2: 10 }, PROFESSIONAL: { e2: 30 }, ENTERPRISE: { e2: 999 } };
+        const planLimits = limits[plan as keyof typeof limits] || limits.FREE;
+        setUsedCount(usage?.e2ScriptCoachSessions ?? 0);
+        setLimitCount(planLimits.e2);
+        setIsEnterprise(plan === "ENTERPRISE");
+      }
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md", ".key"];
-      const hasValidExtension = validExtensions.some(ext => selectedFile.name.toLowerCase().endsWith(ext));
+      const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!hasValidExtension) {
-        toast.error("Only PDF, DOCX, DOC, TXT, MD, and Keynote files are supported");
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        toast.error("File exceeds the 10MB limit");
+      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Invalid file type. Only PDF, DOCX, DOC, and TXT files are accepted.`);
+        return;
+      }
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error(`File is too large. Maximum size is 50MB.`);
         return;
       }
       setFile(selectedFile);
@@ -55,30 +87,24 @@ export default function ElevatorPitchLiveScriptNewPage() {
       toast.error("Please enter a session name");
       return;
     }
-    if (inputTab === "upload" && !file) {
-      toast.error("Please upload a file");
-      return;
-    }
-    if (inputTab === "paste" && wordCount < 30) {
-      toast.error("Your script seems too short. Please enter at least 30 words.");
+    if (!file) {
+      toast.error("Please upload a script file");
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024;
-
       let response: Response;
 
-      if (inputTab === "upload" && file) {
-        if (file.size > VERCEL_BODY_LIMIT) {
-          toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is ${(VERCEL_BODY_LIMIT / 1024 / 1024).toFixed(0)}MB. Try pasting your content instead.`);
-          return;
-        }
-        // Send file as FormData so server can handle PDF parsing
+      // Upload to Blob first (bypasses 4.5MB serverless limit)
+      try {
+        const { uploadFileToBlob } = await import("@/lib/blob-upload");
+        const blobResult = await uploadFileToBlob(file, "script");
+
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("fileUrl", blobResult.url);
+        formData.append("fileName", file.name);
         formData.append("sessionName", sessionName);
         formData.append("targetAudience", "investors");
         formData.append("targetDuration", "60");
@@ -87,22 +113,21 @@ export default function ElevatorPitchLiveScriptNewPage() {
           method: "POST",
           body: formData,
         });
-      } else {
-        // Send pasted text as JSON
-        if (scriptText.trim().length < 20) {
-          throw new Error("Script content is too short. Please provide at least 20 words.");
+      } catch (uploadError) {
+        console.warn("[E3-Script] Blob upload failed, falling back to legacy:", uploadError);
+        if (file.size <= 4 * 1024 * 1024) {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("sessionName", sessionName);
+          formData.append("targetAudience", "investors");
+          formData.append("targetDuration", "60");
+          response = await fetch("/api/coach/script", {
+            method: "POST",
+            body: formData,
+          });
+        } else {
+          throw uploadError;
         }
-
-        response = await fetch("/api/coach/script", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            script: scriptText,
-            sessionName: sessionName,
-            targetAudience: "investors",
-            targetDuration: 60,
-          }),
-        });
       }
 
       const data = await safeJson(response);
@@ -128,6 +153,18 @@ export default function ElevatorPitchLiveScriptNewPage() {
     }
   };
 
+  const sessionLabel = isEnterprise
+    ? "Unlimited sessions"
+    : usedCount !== null && limitCount !== null
+      ? `Session ${usedCount + 1} of ${limitCount}`
+      : "Loading...";
+
+  const remainingLabel = isEnterprise
+    ? "Unlimited"
+    : usedCount !== null && limitCount !== null
+      ? `${Math.max(0, limitCount - usedCount)} remaining`
+      : "—";
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Breadcrumb */}
@@ -148,9 +185,9 @@ export default function ElevatorPitchLiveScriptNewPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Script session</p>
-              <p className="font-semibold">Session 1 of 2</p>
+              <p className="font-semibold">{sessionLabel}</p>
             </div>
-            <Badge variant="secondary">1 script session remaining</Badge>
+            <Badge variant="secondary">{remainingLabel}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -200,70 +237,45 @@ export default function ElevatorPitchLiveScriptNewPage() {
         </CardContent>
       </Card>
 
-      {/* Input Tabs */}
+      {/* File Upload */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Your Script</CardTitle>
+          <CardTitle className="text-lg">Upload Your Script</CardTitle>
+          <CardDescription>Upload a file containing your elevator pitch script</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={inputTab} onValueChange={(v) => setInputTab(v as "upload" | "paste")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="upload">Upload a file</TabsTrigger>
-              <TabsTrigger value="paste">Type or paste</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="upload" className="mt-4">
-              {!file ? (
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                  <input
-                    type="file"
-                    accept=".pdf,.docx,.doc,.txt,.md,.key"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="font-medium">Drag your script here, or click to browse</p>
-                    <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, TXT, MD, Keynote up to 10MB</p>
-                  </label>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{file.name}</p>
-                      <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-secondary" />
-                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>Remove</Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="paste" className="mt-4">
-              <Textarea
-                placeholder="Paste your elevator pitch script here..."
-                value={scriptText}
-                onChange={(e) => setScriptText(e.target.value)}
-                maxLength={5000}
-                className="min-h-[200px]"
+          {!file ? (
+            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.txt"
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
               />
-              <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1"><Type className="h-4 w-4" />{wordCount} words</span>
-                  <span className="flex items-center gap-1"><Clock className="h-4 w-4" />~{Math.floor(estimatedDuration / 60)}:{(estimatedDuration % 60).toString().padStart(2, '0')} spoken</span>
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="font-medium">Drag your script here, or click to browse</p>
+                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, or TXT — up to 50MB</p>
+              </label>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
                 </div>
-                <span>{scriptText.length}/5000</span>
+                <div>
+                  <p className="font-medium">{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
               </div>
-            </TabsContent>
-          </Tabs>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-secondary" />
+                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>Remove</Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -272,7 +284,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
         <Button variant="outline" onClick={() => router.push("/elevator-pitch-live/new")}>Cancel</Button>
         <Button
           onClick={handleSubmit}
-          disabled={!sessionName.trim() || (inputTab === "upload" ? !file : wordCount < 20) || submitting}
+          disabled={!sessionName.trim() || !file || submitting}
           className="bg-primary hover:bg-primary/90"
         >
           {submitting ? (

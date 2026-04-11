@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error("[Deck Iterate] Failed to extract from Blob URL:", e);
         return NextResponse.json(
-          { error: "Failed to process uploaded file. Please try pasting your deck content directly." },
+          { error: "Failed to process uploaded file. Please upload a new version of your deck." },
           { status: 400 }
         );
       }

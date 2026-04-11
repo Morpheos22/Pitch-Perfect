@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
-    // Accept both JSON body (pasted text) and FormData (file upload)
+    // Accept both JSON body and FormData (file upload)
     let script: string = '';
     let targetAudience: string | undefined;
     let targetDuration: number | undefined;
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error("[E2] Failed to extract from Blob URL:", e);
           return NextResponse.json(
-            { error: "Could not extract text from uploaded file. Please try pasting your script directly." },
+            { error: "Could not extract text from uploaded file. Please try uploading a different file format." },
             { status: 400 }
           );
         }
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
         // Server-side body size guard (legacy path only)
         if (file.size > 4.5 * 1024 * 1024) {
           return NextResponse.json(
-            { error: "File too large. Maximum size is 4MB. Please paste your script directly." },
+            { error: "File too large. Maximum size is 4MB for direct upload. Please use a smaller file." },
             { status: 413 }
           );
         }
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error("[E2] Failed to extract file text:", e);
           return NextResponse.json(
-            { error: "Could not extract text from file. Please try pasting your script directly." },
+            { error: "Could not extract text from file. Please try uploading a different file format." },
             { status: 400 }
           );
         }
@@ -98,12 +98,12 @@ export async function POST(request: NextRequest) {
 
       if (!script || script.trim().length < 20) {
         return NextResponse.json(
-          { error: "Could not extract enough text from file. Please try pasting your script directly." },
+          { error: "Could not extract enough text from file. Please upload a text-based file." },
           { status: 400 }
         );
       }
     } else {
-      // JSON: pasted text
+      // JSON body
       const body = await request.json();
       const parsed = scriptInputSchema.safeParse(body);
       if (!parsed.success) {

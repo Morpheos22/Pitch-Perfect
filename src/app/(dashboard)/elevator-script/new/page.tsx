@@ -2,15 +2,23 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle, Type, Clock } from "lucide-react";
+import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+
+// Allowed file formats for E2: Script Check
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
+const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain",
+];
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (Blob upload bypasses 4.5MB serverless limit)
 
 const PLAN_LIMITS: Record<string, { e2: number }> = {
   FREE: { e2: 1 },
@@ -30,9 +38,7 @@ const frameworkElements = [
 export default function ElevatorScriptNewPage() {
   const router = useRouter();
   const [sessionName, setSessionName] = useState("");
-  const [inputTab, setInputTab] = useState<"upload" | "paste">("upload");
   const [file, setFile] = useState<File | null>(null);
-  const [scriptText, setScriptText] = useState("");
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,27 +67,23 @@ export default function ElevatorScriptNewPage() {
 
   useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
-  const wordCount = scriptText.trim() ? scriptText.trim().split(/\s+/).length : 0;
-  const estimatedDuration = Math.round(wordCount / 150 * 60); // ~150 words per minute
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const validTypes = [
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-        "text/plain",
-        "text/markdown",
-      ];
-      const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md"];
-      const hasValidExtension = validExtensions.some(ext => selectedFile.name.toLowerCase().endsWith(ext));
+      const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!validTypes.includes(selectedFile.type) && !hasValidExtension) {
-        toast.error("Only PDF, DOCX, DOC, TXT, and MD files are supported");
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      // No size limit check — Blob upload bypasses the 4.5MB serverless limit
+      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Invalid file type. Only PDF, DOCX, DOC, and TXT files are accepted.`);
+        return;
+      }
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error(`File is too large. Maximum size is 50MB.`);
+        return;
+      }
       setFile(selectedFile);
     }
   };
@@ -91,12 +93,8 @@ export default function ElevatorScriptNewPage() {
       toast.error("Please enter a session name");
       return;
     }
-    if (inputTab === "upload" && !file) {
-      toast.error("Please upload a file");
-      return;
-    }
-    if (inputTab === "paste" && wordCount < 30) {
-      toast.error("Your script seems too short. Please enter at least 30 words.");
+    if (!file) {
+      toast.error("Please upload a script file");
       return;
     }
 
@@ -105,57 +103,39 @@ export default function ElevatorScriptNewPage() {
     try {
       let response: Response;
 
-      if (inputTab === "upload" && file) {
-        // PRIMARY: Upload to Blob first (bypasses 4.5MB serverless limit)
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const blobResult = await uploadFileToBlob(file, "script");
+      // Upload to Blob first (bypasses 4.5MB serverless limit)
+      try {
+        const { uploadFileToBlob } = await import("@/lib/blob-upload");
+        const blobResult = await uploadFileToBlob(file, "script");
 
-          // Send only URL to API — tiny payload, no size limit
+        // Send only URL to API — tiny payload, no size limit
+        const formData = new FormData();
+        formData.append("fileUrl", blobResult.url);
+        formData.append("fileName", file.name);
+        formData.append("sessionName", sessionName);
+        formData.append("targetAudience", "investors");
+        formData.append("targetDuration", "60");
+
+        response = await fetch("/api/coach/script", {
+          method: "POST",
+          body: formData,
+        });
+      } catch (uploadError) {
+        console.warn("[E2] Blob upload failed, falling back to legacy:", uploadError);
+        // FALLBACK: Try legacy FormData upload for small files
+        if (file.size <= 4 * 1024 * 1024) {
           const formData = new FormData();
-          formData.append("fileUrl", blobResult.url);
-          formData.append("fileName", file.name);
+          formData.append("file", file);
           formData.append("sessionName", sessionName);
           formData.append("targetAudience", "investors");
           formData.append("targetDuration", "60");
-
           response = await fetch("/api/coach/script", {
             method: "POST",
             body: formData,
           });
-        } catch (uploadError) {
-          console.warn("[E2] Blob upload failed, falling back to legacy:", uploadError);
-          // FALLBACK: Try legacy FormData upload for small files
-          if (file.size <= 4 * 1024 * 1024) {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("sessionName", sessionName);
-            formData.append("targetAudience", "investors");
-            formData.append("targetDuration", "60");
-            response = await fetch("/api/coach/script", {
-              method: "POST",
-              body: formData,
-            });
-          } else {
-            throw uploadError;
-          }
+        } else {
+          throw uploadError;
         }
-      } else {
-        // Send pasted text as JSON
-        if (scriptText.trim().length < 20) {
-          throw new Error("Script content is too short. Please provide at least 20 words.");
-        }
-
-        response = await fetch("/api/coach/script", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            script: scriptText,
-            sessionName: sessionName,
-            targetAudience: "investors",
-            targetDuration: 60,
-          }),
-        });
       }
 
       const data = await safeJson(response);
@@ -166,7 +146,7 @@ export default function ElevatorScriptNewPage() {
     } catch (error: any) {
       console.error("Submit error:", error);
       if (error?.status === 413) {
-        toast.error("File is too large for upload. Please use a smaller file (under 4MB) or paste your script directly.");
+        toast.error("File is too large for upload. Please use a smaller file (under 50MB).");
         return;
       }
       if (error?.status === 403) {
@@ -270,86 +250,49 @@ export default function ElevatorScriptNewPage() {
         </CardContent>
       </Card>
 
-      {/* Input Tabs */}
+      {/* File Upload */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Your Script</CardTitle>
-          <CardDescription>Upload a file or paste your script directly</CardDescription>
+          <CardTitle className="text-lg">Upload Your Script</CardTitle>
+          <CardDescription>Upload a file containing your elevator pitch script</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={inputTab} onValueChange={(v) => setInputTab(v as "upload" | "paste")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="upload">Upload a file</TabsTrigger>
-              <TabsTrigger value="paste">Type or paste</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="upload" className="mt-4">
-              {!file ? (
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                  <input
-                    type="file"
-                    accept=".pdf,.docx,.doc,.txt,.md"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="font-medium">Drag your script here, or click to browse</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      PDF, DOCX, DOC, TXT, MD (no size limit)
-                    </p>
-                  </label>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{file.name}</p>
-                      <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-secondary" />
-                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="paste" className="mt-4">
-              <Textarea
-                placeholder="Paste your elevator pitch script here, or type directly..."
-                value={scriptText}
-                onChange={(e) => setScriptText(e.target.value)}
-                maxLength={5000}
-                className="min-h-[200px]"
+          {!file ? (
+            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.txt"
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
               />
-              <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1">
-                    <Type className="h-4 w-4" />
-                    {wordCount} words
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    ~{Math.floor(estimatedDuration / 60)}:{(estimatedDuration % 60).toString().padStart(2, '0')} spoken
-                  </span>
-                </div>
-                <span>{scriptText.length}/5000</span>
-              </div>
-              {wordCount > 0 && wordCount < 30 && (
-                <p className="text-sm text-yellow-500 mt-2">
-                  Your script seems very short. Are you sure you&apos;re ready to submit?
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="font-medium">Drag your script here, or click to browse</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  PDF, DOCX, DOC, or TXT — up to 50MB
                 </p>
-              )}
-            </TabsContent>
-          </Tabs>
+              </label>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-secondary" />
+                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
+                  Remove
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -360,7 +303,7 @@ export default function ElevatorScriptNewPage() {
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!sessionName.trim() || (inputTab === "upload" ? !file : wordCount < 30) || submitting}
+          disabled={!sessionName.trim() || !file || submitting}
           className="bg-primary hover:bg-primary/90"
         >
           {submitting ? (

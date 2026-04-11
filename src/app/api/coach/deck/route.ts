@@ -72,14 +72,14 @@ export async function POST(request: NextRequest) {
       const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024;
       if (!Number.isFinite(file.size) || file.size > VERCEL_BODY_LIMIT) {
         return NextResponse.json(
-          { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Vercel limits uploads to 4.5MB. Try pasting your deck content directly.` },
+          { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum upload size is 4.5MB for direct upload. Please use a smaller file.` },
           { status: 413 }
         );
       }
     }
 
     // Get content for analysis
-    // Priority: deckContent (pasted) > fileUrl (Blob upload) > file (legacy upload)
+    // Priority: deckContent > fileUrl (Blob upload) > file (legacy upload)
     let analysisContent = deckContent || "";
 
     if (!analysisContent && fileUrl && fileName) {
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error("[E1] Failed to extract from Blob URL:", e);
         return NextResponse.json(
-          { error: "Failed to process uploaded file. Please try pasting content directly." },
+          { error: "Failed to process uploaded file. Please try uploading a different file format." },
           { status: 400 }
         );
       }
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       } catch (e: any) {
         console.error("[E1] Failed to extract file content:", e);
         const hint = e?.message?.includes("PDF")
-          ? " This PDF may be password-protected, scanned (image-only), or corrupted. Try pasting your deck content directly."
+          ? " This PDF may be password-protected, scanned (image-only), or corrupted. Please upload a text-based PDF."
           : "";
         return NextResponse.json(
           { error: `Failed to read file content.${hint}` },
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
     if (!analysisContent || analysisContent.length < 50) {
       return NextResponse.json(
-        { error: "Insufficient content for analysis. Could not extract enough text — the file may be image-based or empty. Please paste your deck content directly." },
+        { error: "Insufficient content for analysis. Could not extract enough text — the file may be image-based or empty. Please upload a text-based file." },
         { status: 400 }
       );
     }
