@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
+import { isAdminEmail } from "@/lib/dev-auth";
 import { syncUserToCRM } from "@/lib/zoho-crm";
 
 // Sync Clerk user with database
@@ -91,6 +92,17 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // ── Developer/Admin override: Auto-upgrade to ENTERPRISE ──
+    // Developer emails (configured via DEVELOPER_EMAILS env var) always get
+    // ENTERPRISE access. This ensures the dashboard, sidebar, and billing
+    // pages all show the correct plan from the very first page load.
+    if (isAdminEmail(email)) {
+      await prisma.subscription.updateMany({
+        where: { userId: user.id },
+        data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+      });
+    }
+
     return NextResponse.json({ success: true, user });
   } catch (error) {
     console.error("User sync error:", error);
@@ -145,6 +157,30 @@ export async function GET() {
         { error: "User not found" },
         { status: 404 }
       );
+    }
+
+    // ── Developer/Admin override: Ensure ENTERPRISE plan is returned ──
+    // The POST handler auto-upgrades the DB record, but this GET handler
+    // may be called before the POST runs (e.g. page refresh). Apply the
+    // override at read time too, and backfill the DB if needed.
+    if (user.email && isAdminEmail(user.email)) {
+      if (user.subscription?.plan !== 'ENTERPRISE' || user.subscription?.status !== 'ACTIVE') {
+        await prisma.subscription.updateMany({
+          where: { userId: user.id },
+          data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+        });
+      }
+      // Return ENTERPRISE regardless of DB state (avoids stale cache)
+      return NextResponse.json({
+        success: true,
+        user: {
+          ...user,
+          subscription: {
+            plan: 'ENTERPRISE',
+            status: 'ACTIVE',
+          },
+        },
+      });
     }
 
     return NextResponse.json({ success: true, user });

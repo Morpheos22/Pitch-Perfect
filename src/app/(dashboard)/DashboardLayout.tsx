@@ -33,6 +33,7 @@ import {
 import { useState, useEffect } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useClerk, useUser } from "@clerk/nextjs";
+import { useInactivityLogout } from "@/hooks/use-inactivity-logout";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -159,6 +160,9 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useUser();
   const { signOut } = useClerk();
+
+  // Session timeout: sign out if browser closed for >5 minutes
+  useInactivityLogout();
 
   return (
     <div className="min-h-screen bg-muted/30">

@@ -38,7 +38,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      afterSignOutUrl="/sign-in"
+    >
       <html lang="en" suppressHydrationWarning>
         <body
           className={`${nunitoSans.variable} font-sans antialiased bg-background text-foreground`}
