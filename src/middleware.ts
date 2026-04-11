@@ -18,7 +18,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
-  // NOTE: /api/debug/* is NOT public — removed from this list (C5 fix)
+  "/api/user/onboarding",
+  "/api/user/sync",
 ]);
 
 // Routes that should not redirect to onboarding
@@ -26,6 +27,43 @@ const isOnboardingOrApi = createRouteMatcher([
   "/onboarding(.*)",
   "/api(.*)",
 ]);
+
+// ── In-memory onboarding cache (per-instance, avoids repeated Clerk API calls) ──
+// Key: clerkUserId, Value: { completed: boolean; ts: number }
+const onboardingCache = new Map<string, { completed: boolean; ts: number }>();
+const CACHE_TTL_MS = 60_000; // Cache for 60 seconds
+
+function getCachedOnboarding(userId: string): boolean | null {
+  const entry = onboardingCache.get(userId);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    onboardingCache.delete(userId);
+    return null;
+  }
+  return entry.completed;
+}
+
+function setCachedOnboarding(userId: string, completed: boolean): void {
+  onboardingCache.set(userId, { completed, ts: Date.now() });
+  // Prune old entries to prevent memory leak
+  if (onboardingCache.size > 10_000) {
+    const now = Date.now();
+    for (const [key, val] of onboardingCache) {
+      if (now - val.ts > CACHE_TTL_MS) onboardingCache.delete(key);
+    }
+  }
+}
+
+// ── Timeout wrapper for Clerk API calls ──
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Clerk API call timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
 
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
@@ -63,34 +101,52 @@ export default clerkMiddleware(async (auth, request) => {
 
       // If JWT clearly says onboarding is completed, skip the slow check
       if (onboardingCompleted) {
+        setCachedOnboarding(userId, true);
         return NextResponse.next();
       }
     }
 
-    // SLOW PATH: JWT is stale, missing, or inconclusive — ask Clerk API directly
+    // CACHE PATH: Check in-memory cache before hitting Clerk API
+    const cached = getCachedOnboarding(userId);
+    if (cached === true) {
+      return NextResponse.next();
+    }
+    if (cached === false) {
+      const url = new URL("/onboarding", request.url);
+      return NextResponse.redirect(url);
+    }
+
+    // SLOW PATH: JWT is stale/missing AND no cache — ask Clerk API with timeout
     try {
       const client = await clerkClient();
-      const user = await client.users.getUser(userId);
+      const user = await withTimeout(client.users.getUser(userId), 5000);
 
       // Admin bypass via Clerk API (always fresh)
       const email = user.emailAddresses[0]?.emailAddress;
       if (email && isAdminEmail(email)) {
+        setCachedOnboarding(userId, true);
         return NextResponse.next();
       }
 
       // Check onboarding status from live user metadata
       const onboardingCompleted =
         user.publicMetadata?.onboardingCompleted === true;
+
+      setCachedOnboarding(userId, onboardingCompleted);
+
       if (!onboardingCompleted) {
         const url = new URL("/onboarding", request.url);
         return NextResponse.redirect(url);
       }
     } catch (error) {
       console.error("[middleware] Onboarding check error:", error);
-      // Fail-CLOSE: redirect to onboarding if Clerk API is unreachable.
-      // Prevents non-onboarded users from accessing dashboard during Clerk outages.
-      const url = new URL("/onboarding", request.url);
-      return NextResponse.redirect(url);
+      // Fail-OPEN: if Clerk API is unreachable or timed out, let the request through.
+      // Fail-CLOSE (redirect to onboarding) caused infinite redirect loops when
+      // the Clerk API was slow — the onboarding page itself would trigger the
+      // same middleware check, which would timeout again, creating a loop.
+      // Security trade-off: a non-onboarded user could briefly access the dashboard
+      // during a Clerk outage, but this is better than locking out ALL users.
+      // The next successful Clerk API call will correct the redirect.
     }
   }
 
