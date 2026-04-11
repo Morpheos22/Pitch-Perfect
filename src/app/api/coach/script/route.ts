@@ -237,17 +237,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
     const validatedData = parsed.data;
-    const notes = body.notes;
+    const notes = validatedData.notes;
 
     if (!validatedData.id) {
       return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
-    }
-
-    if (notes !== undefined && typeof notes !== "string") {
-      return NextResponse.json({ error: "Notes must be a string" }, { status: 400 });
-    }
-    if (typeof notes === "string" && notes.length > 2000) {
-      return NextResponse.json({ error: "Notes must be under 2000 characters" }, { status: 400 });
     }
 
     const updateData: Record<string, unknown> = {};
