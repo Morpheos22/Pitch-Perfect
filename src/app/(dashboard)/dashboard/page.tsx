@@ -73,7 +73,7 @@ const PLAN_LIMITS: Record<string, { e1: number; e2: number; e3: number; e4: numb
   FREE: { e1: 1, e2: 1, e3: 0, e4: 0 },
   STARTER: { e1: 5, e2: 10, e3: 3, e4: 0 },
   PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3 },
-  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 10 },
+  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
 };
 
 function formatPlanName(plan: string): string {

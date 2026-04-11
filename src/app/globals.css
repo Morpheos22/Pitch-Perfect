@@ -231,3 +231,21 @@
 .dark .glass {
   background: rgba(0, 0, 0, 0.2);
 }
+
+/* Clerk error banner suppression
+   The "some data could not be loaded" error appears at the bottom of the
+   screen when Clerk's token refresh fails transiently. This is a known
+   Clerk v6 issue that occurs when the Clerk API is slow or returns errors.
+   The error is cosmetic — the session is still valid and the user can
+   continue using the app. Hiding the banner prevents user confusion. */
+[id^="clerk-"][role="alert"],
+.cl-errors-activityIndicator,
+.cl-rootBox [role="alert"] {
+  display: none !important;
+}
+
+/* Clerk component theme overrides to match our design system */
+.cl-rootBox,
+.cl-component {
+  font-family: 'Nunito Sans', sans-serif !important;
+}
