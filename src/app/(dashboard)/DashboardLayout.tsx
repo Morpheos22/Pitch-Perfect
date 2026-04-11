@@ -41,11 +41,27 @@ interface PlanBadgeProps {
   className?: string;
 }
 
+// Simple session-level cache for plan data to avoid re-fetching /api/user/sync
+// on every navigation within the dashboard
+let _planCache: { plan: string; ts: number } | null = null;
+const PLAN_CACHE_TTL = 30_000; // 30 seconds
+
 function PlanBadge({ className }: PlanBadgeProps) {
-  const [plan, setPlan] = useState<string | null>(null);
+  const [plan, setPlan] = useState<string | null>(() => {
+    // Initialize from cache if available and fresh
+    if (_planCache && Date.now() - _planCache.ts < PLAN_CACHE_TTL) {
+      return _planCache.plan;
+    }
+    return null;
+  });
 
   useEffect(() => {
     async function fetchPlan() {
+      // Skip fetch if we already have a fresh cached plan
+      if (_planCache && Date.now() - _planCache.ts < PLAN_CACHE_TTL) {
+        return; // plan already set via useState initializer
+      }
+
       try {
         const res = await fetch("/api/user/sync");
         if (res.ok) {
@@ -57,8 +73,11 @@ function PlanBadge({ className }: PlanBadgeProps) {
               PROFESSIONAL: "Professional",
               ENTERPRISE: "Enterprise",
             };
-            setPlan(names[json.user.subscription.plan] || json.user.subscription.plan);
+            const planName = names[json.user.subscription.plan] || json.user.subscription.plan;
+            _planCache = { plan: planName, ts: Date.now() };
+            setPlan(planName);
           } else {
+            _planCache = { plan: "Free", ts: Date.now() };
             setPlan("Free");
           }
         }
