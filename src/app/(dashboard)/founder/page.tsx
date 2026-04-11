@@ -107,7 +107,7 @@ export default function FounderPage() {
   const completedCount = completedModules.size;
   const totalModules = subModules.length;
 
-  const hasAccess = userPlan === "PROFESSIONAL" || userPlan === "ENTERPRISE";
+  const hasAccess = userPlan === "ENTERPRISE";
 
   useEffect(() => {
     async function fetchPlan() {

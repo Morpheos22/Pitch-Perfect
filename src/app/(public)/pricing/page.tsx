@@ -49,9 +49,9 @@ const plans = [
     period: "forever",
     description: "Try the platform with basic access to pitch analysis and coaching.",
     icon: Rocket,
-    color: "text-slate-500",
-    bgColor: "bg-slate-500/10",
-    borderColor: "border-slate-200",
+    color: "text-muted-foreground",
+    bgColor: "bg-muted/50",
+    borderColor: "border-border",
     features: [
       { label: "Pitch Deck Analyses", value: "1" },
       { label: "Script Coach Sessions", value: "1" },
@@ -87,9 +87,9 @@ const plans = [
     period: "/month",
     description: "The most popular plan for founders actively raising capital.",
     icon: Sparkles,
-    color: "text-[#4ECDC4]",
-    bgColor: "bg-[#4ECDC4]/10",
-    borderColor: "border-[#4ECDC4]",
+    color: "text-secondary",
+    bgColor: "bg-secondary/10",
+    borderColor: "border-secondary",
     popular: true,
     features: [
       { label: "Pitch Deck Analyses", value: "15" },
@@ -152,12 +152,12 @@ const comparisonRows: PlanFeature[] = [
 
 function CellValue({ value }: { value: string | boolean }) {
   if (value === true) {
-    return <Check className="h-5 w-5 text-[#4ECDC4] mx-auto" />;
+    return <Check className="h-5 w-5 text-secondary mx-auto" />;
   }
   if (value === false) {
-    return <X className="h-5 w-5 text-slate-300 mx-auto" />;
+    return <X className="h-5 w-5 text-muted-foreground/40 mx-auto" />;
   }
-  return <span className="text-sm font-medium">{value}</span>;
+  return <span className="text-sm font-medium text-foreground">{value}</span>;
 }
 
 // ─── Page Component ──────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
 
       <main className="flex-1">
@@ -186,10 +186,10 @@ export default function PricingPage() {
               <Badge variant="secondary" className="mb-4">
                 Simple, transparent pricing
               </Badge>
-              <h1 className="text-4xl md:text-5xl font-bold mb-4 font-heading text-[#2D3748]">
+              <h1 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">
                 Choose Your Plan
               </h1>
-              <p className="text-lg text-[#718096] max-w-2xl mx-auto">
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                 From free exploration to unlimited coaching — pick the plan that matches
                 where you are in your fundraising journey. Upgrade or downgrade anytime.
               </p>
@@ -202,13 +202,13 @@ export default function PricingPage() {
                   key={plan.id}
                   className={`relative flex flex-col ${
                     plan.popular
-                      ? `border-2 ${plan.borderColor} shadow-xl shadow-[#4ECDC4]/10 xl:scale-105`
+                      ? `border-2 ${plan.borderColor} shadow-xl shadow-secondary/10 xl:scale-105`
                       : `border ${plan.borderColor}`
                   }`}
                 >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                      <Badge className="bg-[#4ECDC4] text-white text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap shadow-sm">
+                      <Badge className="bg-secondary text-secondary-foreground text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap shadow-sm">
                         Most Popular
                       </Badge>
                     </div>
@@ -220,20 +220,20 @@ export default function PricingPage() {
                         <plan.icon className={`h-5 w-5 ${plan.color}`} />
                       </div>
                     </div>
-                    <CardTitle className="text-xl font-heading text-[#2D3748]">
+                    <CardTitle className="text-xl text-foreground">
                       {plan.name}
                     </CardTitle>
-                    <CardDescription className="text-sm text-[#718096]">
+                    <CardDescription className="text-sm text-muted-foreground">
                       {plan.description}
                     </CardDescription>
                   </CardHeader>
 
                   <CardContent className="flex-1">
                     <div className="text-center mb-6">
-                      <span className="text-4xl font-bold text-[#2D3748]">
+                      <span className="text-4xl font-bold text-foreground">
                         {plan.priceDisplay}
                       </span>
-                      <span className="text-[#718096] ml-1">{plan.period}</span>
+                      <span className="text-muted-foreground ml-1">{plan.period}</span>
                     </div>
 
                     <Separator className="mb-6" />
@@ -241,15 +241,15 @@ export default function PricingPage() {
                     <ul className="space-y-3">
                       {plan.features.map((f) => (
                         <li key={f.label} className="flex items-center justify-between text-sm">
-                          <span className="text-[#4A5568]">{f.label}</span>
+                          <span className="text-muted-foreground">{f.label}</span>
                           {typeof f.value === "boolean" ? (
                             f.value ? (
-                              <Check className="h-4 w-4 text-[#4ECDC4] shrink-0" />
+                              <Check className="h-4 w-4 text-secondary shrink-0" />
                             ) : (
-                              <X className="h-4 w-4 text-slate-300 shrink-0" />
+                              <X className="h-4 w-4 text-muted-foreground/40 shrink-0" />
                             )
                           ) : (
-                            <span className="font-semibold text-[#2D3748]">{f.value}</span>
+                            <span className="font-semibold text-foreground">{f.value}</span>
                           )}
                         </li>
                       ))}
@@ -262,8 +262,8 @@ export default function PricingPage() {
                         asChild
                         className={`w-full ${
                           plan.popular
-                            ? "bg-[#4ECDC4] hover:bg-[#3AB8B0] text-white"
-                            : "bg-[#2D3748] hover:bg-[#1A202C] text-white"
+                            ? "bg-secondary hover:bg-secondary/90 text-secondary-foreground"
+                            : "bg-primary hover:bg-primary/90 text-primary-foreground"
                         }`}
                         size="lg"
                       >
@@ -275,8 +275,8 @@ export default function PricingPage() {
                         asChild
                         className={`w-full ${
                           plan.popular
-                            ? "bg-[#4ECDC4] hover:bg-[#3AB8B0] text-white"
-                            : "bg-[#2D3748] hover:bg-[#1A202C] text-white"
+                            ? "bg-secondary hover:bg-secondary/90 text-secondary-foreground"
+                            : "bg-primary hover:bg-primary/90 text-primary-foreground"
                         }`}
                         size="lg"
                       >
@@ -289,14 +289,14 @@ export default function PricingPage() {
             </div>
 
             {/* Gift Code Section */}
-            <div className="max-w-md mx-auto mb-20 p-6 border border-[#E2E8F0] rounded-lg bg-[#F7FAFA]">
+            <div className="max-w-md mx-auto mb-20 p-6 border border-border rounded-lg bg-muted/30">
               <div className="flex items-center gap-2 mb-4">
-                <Gift className="h-5 w-5 text-[#FF6B6B]" />
-                <h3 className="font-semibold font-heading text-[#2D3748]">
+                <Gift className="h-5 w-5 text-destructive" />
+                <h3 className="font-semibold text-foreground">
                   Have a Gift Code?
                 </h3>
               </div>
-              <p className="text-sm text-[#718096] mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Enter your gift code to unlock free access. For influencers, students,
                 and incubator cohorts.
               </p>
@@ -305,11 +305,11 @@ export default function PricingPage() {
                   placeholder="Enter gift code"
                   value={giftCode}
                   onChange={(e) => setGiftCode(e.target.value)}
-                  className="border-[#E2E8F0]"
+                  className="border-border"
                   onKeyDown={(e) => e.key === "Enter" && handleApplyGiftCode()}
                 />
                 <Button
-                  className="bg-[#4ECDC4] hover:bg-[#3AB8B0] text-white"
+                  className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
                   onClick={handleApplyGiftCode}
                 >
                   Apply
@@ -319,25 +319,25 @@ export default function PricingPage() {
 
             {/* Feature Comparison Table */}
             <div className="max-w-7xl mx-auto mb-20">
-              <h2 className="text-2xl md:text-3xl font-bold mb-2 text-center font-heading text-[#2D3748]">
+              <h2 className="text-2xl md:text-3xl font-bold mb-2 text-center text-foreground">
                 Full Feature Comparison
               </h2>
-              <p className="text-[#718096] text-center mb-10">
+              <p className="text-muted-foreground text-center mb-10">
                 See exactly what&apos;s included in every plan
               </p>
 
-              <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
-                <table className="w-full bg-white">
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full bg-card">
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-[#F7FAFA]">
-                      <th className="text-left py-4 px-4 font-semibold text-[#2D3748] text-sm min-w-[200px]">
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left py-4 px-4 font-semibold text-foreground text-sm min-w-[200px]">
                         Feature
                       </th>
                       {plans.map((p) => (
                         <th
                           key={p.id}
                           className={`text-center py-4 px-4 font-semibold text-sm min-w-[120px] ${
-                            p.popular ? "text-[#4ECDC4]" : "text-[#2D3748]"
+                            p.popular ? "text-secondary" : "text-foreground"
                           }`}
                         >
                           {p.name}
@@ -350,10 +350,10 @@ export default function PricingPage() {
                       <tr
                         key={row.label}
                         className={
-                          index % 2 === 0 ? "bg-white" : "bg-[#F7FAFA]/50"
+                          index % 2 === 0 ? "bg-card" : "bg-muted/20"
                         }
                       >
-                        <td className="py-3 px-4 text-sm text-[#4A5568]">
+                        <td className="py-3 px-4 text-sm text-muted-foreground">
                           {row.label}
                         </td>
                         <td className="text-center py-3 px-4">
@@ -362,7 +362,7 @@ export default function PricingPage() {
                         <td className="text-center py-3 px-4">
                           <CellValue value={row.starter} />
                         </td>
-                        <td className="text-center py-3 px-4 bg-[#4ECDC4]/5">
+                        <td className="text-center py-3 px-4 bg-secondary/5">
                           <CellValue value={row.pro} />
                         </td>
                         <td className="text-center py-3 px-4">
@@ -377,35 +377,35 @@ export default function PricingPage() {
 
             {/* Payment Provider Badges */}
             <div className="max-w-2xl mx-auto text-center mb-16">
-              <p className="text-sm text-[#718096] mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Secure payments powered by regional leaders
               </p>
               <div className="flex flex-wrap items-center justify-center gap-6">
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#F7FAFA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
                   <div className="w-8 h-8 rounded bg-[#0BA345] flex items-center justify-center">
                     <span className="text-white text-xs font-bold">PS</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-xs font-semibold text-[#2D3748]">Paystack</p>
-                    <p className="text-[10px] text-[#718096]">Africa</p>
+                    <p className="text-xs font-semibold text-foreground">Paystack</p>
+                    <p className="text-[10px] text-muted-foreground">Africa</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#F7FAFA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
                   <div className="w-8 h-8 rounded bg-[#635BFF] flex items-center justify-center">
                     <span className="text-white text-xs font-bold">S</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-xs font-semibold text-[#2D3748]">Stripe</p>
-                    <p className="text-[10px] text-[#718096]">International</p>
+                    <p className="text-xs font-semibold text-foreground">Stripe</p>
+                    <p className="text-[10px] text-muted-foreground">International</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#F7FAFA] border border-[#E2E8F0]">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
                   <div className="w-8 h-8 rounded bg-[#D7282D] flex items-center justify-center">
                     <span className="text-white text-xs font-bold">Z</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-xs font-semibold text-[#2D3748]">Zoho Billing</p>
-                    <p className="text-[10px] text-[#718096]">India</p>
+                    <p className="text-xs font-semibold text-foreground">Zoho Billing</p>
+                    <p className="text-[10px] text-muted-foreground">India</p>
                   </div>
                 </div>
               </div>

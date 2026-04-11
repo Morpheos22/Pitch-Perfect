@@ -28,6 +28,7 @@ import {
   History,
   Shield,
   Rocket,
+  PresentationIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -81,7 +82,8 @@ const navigation = [
   { name: "Pitch Deck Analyser", href: "/pitch-deck-analyser", icon: Presentation },
   { name: "Script Check", href: "/elevator-script", icon: MessageSquare },
   { name: "Elevator Live", href: "/elevator-pitch-live", icon: Video },
-  { name: "Founder", href: "/founder", icon: Rocket },
+  { name: "Full Pitch Session", href: "/coach/full", icon: LayoutDashboard },
+  { name: "Founder Coaching", href: "/founder", icon: Rocket },
   { name: "History", href: "/history", icon: History },
 ];
 
