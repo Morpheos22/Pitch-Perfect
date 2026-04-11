@@ -28,25 +28,17 @@ function getDevEmails(): Set<string> {
 }
 
 /** Check whether an email belongs to an admin/developer.
- *  Returns true ONLY in development mode. Production is never bypassed.
+ *  Returns true in development mode OR if the email is in the DEVELOPER_EMAILS list.
+ *  Developer emails always get ENTERPRISE entitlement regardless of environment —
+ *  this is intentional for testing all functionalities in production.
  */
 export function isAdminEmail(email: string): boolean {
-  // Must be in development mode
-  if (process.env.NODE_ENV !== 'development') {
-    return false;
-  }
-
   const lower = email.toLowerCase();
   return getDevEmails().has(lower);
 }
 
-/** Return the list of configured dev emails (for display in dev-tools).
- *  Returns empty array in production.
- */
+/** Return the list of configured dev emails (for display in dev-tools). */
 function getDevEmailList(): string[] {
-  if (process.env.NODE_ENV !== 'development') {
-    return [];
-  }
   return Array.from(getDevEmails());
 }
 

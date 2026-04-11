@@ -13,6 +13,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { isAdminEmail } from '@/lib/dev-auth';
 
 export type CoachModule = 'e1' | 'e2' | 'e3' | 'e4' | 'e5';
 
@@ -106,6 +107,7 @@ export async function requireModuleAccess(
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
+      email: true,
       subscription: {
         select: {
           plan: true,
@@ -119,6 +121,22 @@ export async function requireModuleAccess(
 
   if (!user) {
     return { allowed: false, reason: 'User not found' };
+  }
+
+  // ── Developer/Admin bypass: Always grant ENTERPRISE-level access ──
+  // Developer emails (configured via DEVELOPER_EMAILS env var) get full
+  // access to all modules regardless of subscription status. This ensures
+  // admins can test all functionalities in production.
+  if (isAdminEmail(user.email)) {
+    // Auto-upgrade subscription to ENTERPRISE if it isn't already
+    const sub = user.subscription;
+    if (sub && (sub.plan !== 'ENTERPRISE' || sub.status !== 'ACTIVE')) {
+      await prisma.subscription.updateMany({
+        where: { userId },
+        data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+      });
+    }
+    return { allowed: true, plan: 'ENTERPRISE' };
   }
 
   // ── Check 1: Active paid subscription ──
