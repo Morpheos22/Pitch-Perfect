@@ -18,6 +18,7 @@ export const paginationSchema = z.object({
 
 export const deckIterateSchema = z.object({
   id: z.string().min(1).max(100),
+  notes: z.string().max(2000).optional(),
   feedback: z.string().max(5000).optional(),
   focusArea: z.string().max(200).optional(),
 });
@@ -34,6 +35,7 @@ export const scriptInputSchema = z.object({
 
 export const scriptIterateSchema = z.object({
   id: z.string().min(1).max(100),
+  notes: z.string().max(2000).optional(),
   feedback: z.string().max(5000).optional(),
   focusElement: z.string().max(200).optional(),
 });
@@ -49,6 +51,7 @@ export const liveNotesSchema = z.object({
 
 export const fullPitchIterateSchema = z.object({
   id: z.string().min(1).max(100),
+  notes: z.string().max(2000).optional(),
   feedback: z.string().max(5000).optional(),
   focusArea: z.string().max(200).optional(),
 });
@@ -88,8 +91,9 @@ export const videoNotesSchema = z.object({
 // ── Blob Upload ──
 
 export const blobUploadSchema = z.object({
-  pathname: z.string().min(1).max(500),
-  contentType: z.string().max(200).optional(),
+  fileName: z.string().min(1).max(500),
+  fileType: z.string().max(200).optional(),
+  category: z.enum(['deck', 'script', 'video']),
 });
 
 // ── Payment ──

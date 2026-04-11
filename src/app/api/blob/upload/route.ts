@@ -39,25 +39,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const validatedData = parsed.data;
-    const fileName = validatedData.pathname;
-    const fileType = validatedData.contentType;
-    const category = (body as Record<string, unknown>).category as string | undefined;
-
-    if (!fileName || !category) {
-      return NextResponse.json(
-        { error: "fileName and category are required" },
-        { status: 400 }
-      );
-    }
-
-    const validCategories = ["deck", "script", "video"];
-    if (!validCategories.includes(category)) {
-      return NextResponse.json(
-        { error: `Invalid category. Must be one of: ${validCategories.join(", ")}` },
-        { status: 400 }
-      );
-    }
+    const { fileName, fileType, category } = parsed.data;
 
     // Validate fileType against known-safe MIME types for each category
     const allowedMimeTypes: Record<string, string[]> = {
