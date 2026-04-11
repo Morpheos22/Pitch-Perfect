@@ -7,10 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+
+// Allowed file formats for E1: Pitch Deck Analyser
+const ALLOWED_EXTENSIONS = [".pdf", ".pptx", ".ppt"];
+const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+];
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (Blob upload bypasses 4.5MB serverless limit)
 
 const PLAN_LIMITS: Record<string, { e1: number }> = {
   FREE: { e1: 1 },
@@ -44,8 +51,6 @@ export default function PitchDeckAnalyserNewPage() {
   const router = useRouter();
   const [sessionName, setSessionName] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [deckText, setDeckText] = useState("");
-  const [inputTab, setInputTab] = useState<"upload" | "paste">("upload");
   const [uploading, setUploading] = useState(false);
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
 
@@ -77,15 +82,20 @@ export default function PitchDeckAnalyserNewPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const validTypes = ["application/pdf", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"];
-      const validExtensions = [".pdf", ".pptx", ".ppt"];
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!validTypes.includes(selectedFile.type) && !validExtensions.includes(ext)) {
-        toast.error("Only PDF, PPTX, and PPT files are supported");
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Unsupported file format. Only PDF, PPTX, and PPT files are accepted.`);
         return;
       }
-      // No size limit check — Blob upload bypasses the 4.5MB serverless limit
+      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+        toast.error(`Invalid file type. Only PDF, PPTX, and PPT files are accepted.`);
+        return;
+      }
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error(`File is too large. Maximum size is 50MB.`);
+        return;
+      }
       setFile(selectedFile);
     }
   };
@@ -95,12 +105,8 @@ export default function PitchDeckAnalyserNewPage() {
       toast.error("Please enter a session name");
       return;
     }
-    if (inputTab === "upload" && !file) {
-      toast.error("Please upload a file");
-      return;
-    }
-    if (inputTab === "paste" && deckText.trim().length < 100) {
-      toast.error("Please provide more detailed pitch deck content (at least 100 characters)");
+    if (!file) {
+      toast.error("Please upload a pitch deck file");
       return;
     }
 
@@ -111,40 +117,32 @@ export default function PitchDeckAnalyserNewPage() {
       const formData = new FormData();
       formData.append("sessionName", sessionName);
 
-      if (inputTab === "upload" && file) {
-        // PRIMARY: Upload to Blob first (bypasses 4.5MB serverless limit)
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const blobResult = await uploadFileToBlob(file, "deck");
+      // Upload to Blob first (bypasses 4.5MB serverless limit)
+      try {
+        const { uploadFileToBlob } = await import("@/lib/blob-upload");
+        const blobResult = await uploadFileToBlob(file, "deck");
 
-          // Send only URL to API — tiny payload, no size limit
-          formData.append("fileUrl", blobResult.url);
-          formData.append("fileName", file.name);
-          formData.append("fileSize", String(file.size));
+        // Send only URL to API — tiny payload, no size limit
+        formData.append("fileUrl", blobResult.url);
+        formData.append("fileName", file.name);
+        formData.append("fileSize", String(file.size));
 
-          response = await fetch("/api/coach/deck", {
-            method: "POST",
-            body: formData,
-          });
-        } catch (uploadError) {
-          console.warn("[E1] Blob upload failed, falling back to legacy:", uploadError);
-          // FALLBACK: Try legacy FormData upload for small files
-          if (file.size <= 4 * 1024 * 1024) {
-            formData.append("file", file);
-            response = await fetch("/api/coach/deck", {
-              method: "POST",
-              body: formData,
-            });
-          } else {
-            throw uploadError;
-          }
-        }
-      } else {
-        formData.append("content", deckText);
         response = await fetch("/api/coach/deck", {
           method: "POST",
           body: formData,
         });
+      } catch (uploadError) {
+        console.warn("[E1] Blob upload failed, falling back to legacy:", uploadError);
+        // FALLBACK: Try legacy FormData upload for small files
+        if (file.size <= 4 * 1024 * 1024) {
+          formData.append("file", file);
+          response = await fetch("/api/coach/deck", {
+            method: "POST",
+            body: formData,
+          });
+        } else {
+          throw uploadError;
+        }
       }
 
       const data = await safeJson(response);
@@ -154,7 +152,7 @@ export default function PitchDeckAnalyserNewPage() {
     } catch (error: any) {
       console.error("Upload error:", error);
       if (error?.status === 413) {
-        toast.error("File is too large for upload. Please use a smaller file (under 4MB) or paste your content directly.");
+        toast.error("File is too large for upload. Please use a smaller file (under 50MB).");
         return;
       }
       if (error?.status === 403) {
@@ -272,75 +270,47 @@ export default function PitchDeckAnalyserNewPage() {
         </CardContent>
       </Card>
 
-      {/* File Upload / Paste Content Tabs */}
+      {/* File Upload */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Your Deck Content</CardTitle>
-          <CardDescription>Upload a deck file or paste your content directly</CardDescription>
+          <CardTitle className="text-lg">Upload Your Deck</CardTitle>
+          <CardDescription>Upload your pitch deck file for AI-powered analysis</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={inputTab} onValueChange={(v) => setInputTab(v as "upload" | "paste")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="upload">Upload Deck</TabsTrigger>
-              <TabsTrigger value="paste">Paste Content</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="upload" className="mt-4">
-              {!file ? (
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                  <input
-                    type="file"
-                    accept=".pdf,.pptx,.ppt"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="font-medium">Drag your deck here, or click to browse</p>
-                    <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT (no size limit)</p>
-                  </label>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{file.name}</p>
-                      <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-secondary" />
-                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="paste" className="mt-4">
-              <Textarea
-                placeholder="Paste your pitch deck content here — slide headings, bullet points, key data..."
-                value={deckText}
-                onChange={(e) => setDeckText(e.target.value)}
-                maxLength={20000}
-                className="min-h-[250px]"
+          {!file ? (
+            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+              <input
+                type="file"
+                accept=".pdf,.pptx,.ppt"
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
               />
-              <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
-                <span>{deckText.trim().split(/\s+/).filter(Boolean).length} words</span>
-                <span>{deckText.length}/20,000</span>
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="font-medium">Drag your deck here, or click to browse</p>
+                <p className="text-sm text-muted-foreground mt-1">PDF, PPTX, or PPT — up to 50MB</p>
+              </label>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
               </div>
-              {deckText.length > 0 && deckText.trim().length < 100 && (
-                <p className="text-sm text-yellow-500 mt-2">
-                  Please provide more content for a meaningful analysis (at least 100 characters).
-                </p>
-              )}
-            </TabsContent>
-          </Tabs>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-secondary" />
+                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
+                  Remove
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -351,11 +321,7 @@ export default function PitchDeckAnalyserNewPage() {
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={
-            !sessionName.trim() ||
-            (inputTab === "upload" ? !file : deckText.trim().length < 100) ||
-            uploading
-          }
+          disabled={!sessionName.trim() || !file || uploading}
           className="bg-primary hover:bg-primary/90"
         >
           {uploading ? (

@@ -106,7 +106,6 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [historyData, setHistoryData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -122,7 +121,9 @@ export default function DashboardPage() {
         setUserData(json.user);
       }
     } catch (err: any) {
-      setError(err.message);
+      // Non-fatal: dashboard should still render without user data
+      // Don't show error card for transient sync failures
+      console.warn("[Dashboard] User data fetch failed (non-fatal):", err?.message);
     }
   }, []);
 
@@ -560,14 +561,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Error toast */}
-      {error && (
-        <Card className="border-destructive/40">
-          <CardContent className="p-4">
-            <p className="text-sm text-destructive font-medium">Failed to load some data. Please refresh the page.</p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
