@@ -5,6 +5,7 @@ import { analyzePitchDeck, analyzeDeckVisual, DeckAnalysisResult } from "@/lib/a
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
+import { blobUrlToDataUri } from "@/lib/blob-signature";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
@@ -140,9 +141,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Run AI analyses in parallel: content (text) + visual (vision)
-    // Visual analysis requires a public URL (blob upload only).
-    // Legacy file uploads have no public URL, so skip visual audit for those.
-    // SSRF protection: only send known-safe storage URLs to the vision model.
+    // Visual analysis requires a URL the AI gateway can fetch, or a data URI.
+    // Private blob URLs must be converted to data URIs since the AI gateway
+    // cannot authenticate to fetch private blobs.
     const ALLOWED_VISUAL_HOSTS = [
       'public.blob.vercel-storage.com',
       'blob.vercel-storage.com',
@@ -155,13 +156,20 @@ export async function POST(request: NextRequest) {
         const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
         if (isAllowed) {
           // PPTX files cannot be visually analyzed — the vision model expects image/PDF formats.
-          // PPTX binary sent as image_url will silently fail and fall back to content-only scores.
-          // Skip explicitly to avoid wasting a vision model call.
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (['pptx', 'ppt'].includes(ext)) {
-            console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model (requires slide-to-image conversion)');
+            console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model');
           } else {
-            visualUrl = fileUrl;
+            // Private blob URLs need conversion to data URI for AI access
+            // Public blob URLs (workdrive, public.blob) can be used directly
+            if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+              // Private Vercel Blob — convert to data URI
+              console.warn('[E1] Converting private blob URL to data URI for vision model');
+              const dataUri = await blobUrlToDataUri(fileUrl);
+              visualUrl = dataUri || fileUrl; // Fallback to raw URL (may fail, but will degrade gracefully)
+            } else {
+              visualUrl = fileUrl;
+            }
           }
         } else {
           console.warn('[E1] Visual audit skipped — URL host not in allowlist:', parsedUrl.hostname);

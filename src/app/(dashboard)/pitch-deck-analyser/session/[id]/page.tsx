@@ -221,7 +221,7 @@ export default function PitchDeckSessionPage() {
       const res = await fetch("/api/coach/drills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: params.id, module: "deck" }),
+        body: JSON.stringify({ sessionId: params.id, moduleType: "e1" }),
       });
       if (res.ok) {
         const result = await res.json();
@@ -243,7 +243,7 @@ export default function PitchDeckSessionPage() {
       const res = await fetch("/api/coach/deck/iterate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentId: params.id }),
+        body: JSON.stringify({ id: params.id }),
       });
       if (res.ok) {
         const result = await res.json();

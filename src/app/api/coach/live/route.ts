@@ -5,6 +5,7 @@ import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { liveNotesSchema } from "@/lib/validation/schemas";
+import { blobUrlToDataUri } from "@/lib/blob-signature";
 
 // E3: Live Elevator Pitch Coach API
 // Analyzes video recordings for delivery and body language using REAL AI
@@ -124,9 +125,24 @@ export async function POST(request: NextRequest) {
     if (!analysisVideoUrl) {
       return NextResponse.json({ error: "Video URL is required for analysis" }, { status: 400 });
     }
+
+    // Private blob URLs need conversion to data URI for AI gateway access
+    // Note: Video data URIs can be large, but the AI gateway cannot fetch private blobs
+    let aiVideoUrl = analysisVideoUrl;
+    try {
+      const parsedUrl = new URL(analysisVideoUrl);
+      if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+        console.warn('[E3] Converting private blob URL to data URI for vision model');
+        const dataUri = await blobUrlToDataUri(analysisVideoUrl);
+        if (dataUri) {
+          aiVideoUrl = dataUri;
+        }
+      }
+    } catch { /* URL parse error, use as-is */ }
+
     let analysis: VideoAnalysisResult;
     try {
-      analysis = await analyzePitchVideo(analysisVideoUrl, duration);
+      analysis = await analyzePitchVideo(aiVideoUrl, duration);
     } catch (aiError: any) {
       console.error("AI video analysis failed:", aiError);
       const msg = aiError?.message || String(aiError);

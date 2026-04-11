@@ -9,12 +9,20 @@
 /** Parsed set of developer/admin emails from DEVELOPER_EMAILS env var */
 let _devEmails: Set<string> | null = null;
 
+/** Hardcoded dev email fallback — ensures admins always get ENTERPRISE tier
+ *  even if DEVELOPER_EMAILS env var is not set (e.g., during initial deploy). */
+const HARDCODED_DEV_EMAILS = new Set([
+  'helloautomagikal@gmail.com',
+  'morphylee22@gmail.com',
+]);
+
 function getDevEmails(): Set<string> {
   if (_devEmails !== null) return _devEmails;
 
   const raw = process.env.DEVELOPER_EMAILS;
   if (!raw || !raw.trim()) {
-    _devEmails = new Set();
+    // Use hardcoded fallback when env var is not set
+    _devEmails = HARDCODED_DEV_EMAILS;
     return _devEmails;
   }
 

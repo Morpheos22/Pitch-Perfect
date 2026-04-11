@@ -111,13 +111,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Run AI full pitch analysis
-    // Note: analyzeFullPitchSession doesn't take previousAnalysis param directly,
-    // but the deck context provides continuity
+    // Run AI full pitch analysis with previous analysis context for iteration awareness
+    const previousAnalysis = {
+      overallReadinessScore: parentSession.overallReadinessScore ?? undefined,
+      problemSolutionFit: parentSession.problemSolutionFit ?? undefined,
+      marketOpportunity: parentSession.marketOpportunity ?? undefined,
+      businessModelViability: parentSession.businessModelViability ?? undefined,
+      teamCredibility: parentSession.teamCredibility ?? undefined,
+      tractionMilestones: parentSession.tractionMilestones ?? undefined,
+      deliveryPresence: parentSession.deliveryPresence ?? undefined,
+      weaknesses: (parentSession.weaknesses as string[]) ?? undefined,
+      recommendedActions: (parentSession.recommendedActions as string[]) ?? undefined,
+    };
     const analysis = await analyzeFullPitchSession(
       analysisVideoUrl,
       analysisDuration,
-      deckAnalysis
+      deckAnalysis,
+      previousAnalysis
     );
 
     // H8: Atomic version numbering — query DB max instead of trusting client

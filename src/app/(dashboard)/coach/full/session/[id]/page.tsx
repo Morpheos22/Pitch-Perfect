@@ -223,7 +223,7 @@ export default function FullPitchSessionPage() {
       const res = await fetch("/api/coach/drills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sessionId, module: "full" }),
+        body: JSON.stringify({ sessionId: sessionId, moduleType: "e4" }),
       });
       if (res.ok) {
         const result = await res.json();
@@ -245,7 +245,7 @@ export default function FullPitchSessionPage() {
       const res = await fetch("/api/coach/full/iterate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentId: sessionId }),
+        body: JSON.stringify({ id: sessionId }),
       });
       if (res.ok) {
         const result = await res.json();

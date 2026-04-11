@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult } from "@/lib/ai-service";
+import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult, analyzePitchDeck } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured } from "@/lib/storage";
 import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
+import { blobUrlToDataUri } from "@/lib/blob-signature";
 
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
@@ -134,25 +135,32 @@ export async function POST(request: NextRequest) {
       // NEW: Blob upload flow — extract deck text from URL
       try {
         const deckText = await extractTextFromUrl(deckFileUrl, deckFileName);
-        deckAnalysis = {
-          overallScore: 0,
-          strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
-          weaknesses: [],
-          recommendations: [],
-          problemClarityScore: 0,
-          solutionClarityScore: 0,
-          marketOpportunityScore: 0,
-          businessModelScore: 0,
-          teamCredibilityScore: 0,
-          tractionScore: 0,
-          financialsScore: 0,
-          askClarityScore: 0,
-          designConsistencyScore: 0,
-          readabilityScore: 0,
-          visualHierarchyScore: 0,
-          colorSchemeScore: 0,
-          typographyScore: 0,
-        };
+        // Run a proper E1 analysis instead of creating a dummy all-zero result
+        console.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
+        try {
+          deckAnalysis = await analyzePitchDeck(deckText);
+        } catch (deckAnalysisErr) {
+          console.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
+          deckAnalysis = {
+            overallScore: 0,
+            strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
+            weaknesses: [],
+            recommendations: [],
+            problemClarityScore: 0,
+            solutionClarityScore: 0,
+            marketOpportunityScore: 0,
+            businessModelScore: 0,
+            teamCredibilityScore: 0,
+            tractionScore: 0,
+            financialsScore: 0,
+            askClarityScore: 0,
+            designConsistencyScore: 0,
+            readabilityScore: 0,
+            visualHierarchyScore: 0,
+            colorSchemeScore: 0,
+            typographyScore: 0,
+          };
+        }
         console.warn("[E4] Deck text extracted from Blob URL, length:", deckText.length);
       } catch (parseErr) {
         console.error("[E4] Deck file parsing from URL failed:", parseErr);
@@ -162,26 +170,32 @@ export async function POST(request: NextRequest) {
       // LEGACY: Parse uploaded deck file server-side
       try {
         const deckText = await extractFileText(deckFile);
-        // Build a minimal DeckAnalysisResult from extracted text so the AI can use it as context
-        deckAnalysis = {
-          overallScore: 0,
-          strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
-          weaknesses: [],
-          recommendations: [],
-          problemClarityScore: 0,
-          solutionClarityScore: 0,
-          marketOpportunityScore: 0,
-          businessModelScore: 0,
-          teamCredibilityScore: 0,
-          tractionScore: 0,
-          financialsScore: 0,
-          askClarityScore: 0,
-          designConsistencyScore: 0,
-          readabilityScore: 0,
-          visualHierarchyScore: 0,
-          colorSchemeScore: 0,
-          typographyScore: 0,
-        };
+        // Run a proper E1 analysis instead of creating a dummy all-zero result
+        console.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
+        try {
+          deckAnalysis = await analyzePitchDeck(deckText);
+        } catch (deckAnalysisErr) {
+          console.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
+          deckAnalysis = {
+            overallScore: 0,
+            strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
+            weaknesses: [],
+            recommendations: [],
+            problemClarityScore: 0,
+            solutionClarityScore: 0,
+            marketOpportunityScore: 0,
+            businessModelScore: 0,
+            teamCredibilityScore: 0,
+            tractionScore: 0,
+            financialsScore: 0,
+            askClarityScore: 0,
+            designConsistencyScore: 0,
+            readabilityScore: 0,
+            visualHierarchyScore: 0,
+            colorSchemeScore: 0,
+            typographyScore: 0,
+          };
+        }
       } catch (parseErr) {
         console.error('[E4] Deck file parsing failed:', parseErr);
         // Non-fatal: continue without deck context
@@ -200,9 +214,23 @@ export async function POST(request: NextRequest) {
     if (!analysisVideoUrl) {
       return NextResponse.json({ error: "Video URL is required for analysis" }, { status: 400 });
     }
+
+    // Private blob URLs need conversion to data URI for AI gateway access
+    let aiVideoUrl = analysisVideoUrl;
+    try {
+      const parsedUrl = new URL(analysisVideoUrl);
+      if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+        console.warn('[E4] Converting private blob URL to data URI for vision model');
+        const dataUri = await blobUrlToDataUri(analysisVideoUrl);
+        if (dataUri) {
+          aiVideoUrl = dataUri;
+        }
+      }
+    } catch { /* URL parse error, use as-is */ }
+
     let analysis: FullPitchAnalysisResult;
     try {
-      analysis = await analyzeFullPitchSession(analysisVideoUrl, duration, deckAnalysis);
+      analysis = await analyzeFullPitchSession(aiVideoUrl, duration, deckAnalysis);
     } catch (aiError: any) {
       console.error("AI full pitch analysis failed:", aiError);
       const msg = aiError?.message || String(aiError);

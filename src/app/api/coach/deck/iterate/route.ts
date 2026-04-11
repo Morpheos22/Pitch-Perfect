@@ -5,6 +5,7 @@ import { analyzePitchDeck, analyzeDeckVisual } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
+import { blobUrlToDataUri } from "@/lib/blob-signature";
 
 // POST /api/coach/deck/iterate
 // Creates a new version of a pitch deck analysis, incorporating the previous analysis for iteration context.
@@ -180,14 +181,32 @@ export async function POST(request: NextRequest) {
         if (isAllowed) {
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (!['pptx', 'ppt'].includes(ext)) {
-            safeVisualUrl = fileUrl;
+            // Private blob URLs need conversion to data URI for AI access
+            if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+              console.warn('[Deck Iterate] Converting private blob URL to data URI for vision model');
+              const dataUri = await blobUrlToDataUri(fileUrl);
+              safeVisualUrl = dataUri || fileUrl;
+            } else {
+              safeVisualUrl = fileUrl;
+            }
           }
         }
       } catch { /* skip visual */ }
     }
+    // Build previous visual scores context from parent for iteration awareness
+    const previousVisualScores = {
+      designConsistencyScore: parentDeck.designConsistencyScore ?? undefined,
+      readabilityScore: parentDeck.readabilityScore ?? undefined,
+      visualHierarchyScore: parentDeck.visualHierarchyScore ?? undefined,
+      colorSchemeScore: parentDeck.colorSchemeScore ?? undefined,
+      typographyScore: parentDeck.typographyScore ?? undefined,
+      visualWeaknesses: undefined as string[] | undefined,
+      visualRecommendations: undefined as string[] | undefined,
+    };
+
     const [contentResult, visualResult] = await Promise.allSettled([
       analyzePitchDeck(analysisContent, previousAnalysis),
-      safeVisualUrl ? analyzeDeckVisual(safeVisualUrl) : Promise.resolve(null),
+      safeVisualUrl ? analyzeDeckVisual(safeVisualUrl, previousVisualScores) : Promise.resolve(null),
     ]);
 
     if (contentResult.status === 'rejected') {

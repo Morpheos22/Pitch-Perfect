@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     let targetAudience: string | undefined;
     let targetDuration: number | undefined;
     let sessionName: string | null = null;
+    let scriptFileUrl: string | null = null;
 
     const contentType = request.headers.get("content-type") || "";
 
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
 
       // NEW: Blob upload flow — extract text from URL
       if (fileUrl && blobFileName) {
+        scriptFileUrl = fileUrl;
         console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
@@ -165,6 +167,7 @@ export async function POST(request: NextRequest) {
         fileName: sessionName || null,
         inputType: "TEXT",
         inputText: script,
+        inputFileUrl: scriptFileUrl,
         targetAudience: targetAudience || "investor",
         pitchDuration: targetDuration || 60,
         status: "COMPLETED",
