@@ -190,9 +190,9 @@ export async function requireModuleAccess(
       }
 
       const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
-        STARTER: { e1: 5, e2: 10, e3: 3, e4: 2 },
-        PROFESSIONAL: { e1: 20, e2: 50, e3: 10, e4: 5 },
-        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
+        STARTER: { e1: 5, e2: 10, e3: 3, e4: 0 },
+        PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3 },
+        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 10 },
       };
       const moduleLimit = PLAN_MODULE_LIMITS[sub.plan]?.[module];
       if (moduleLimit !== undefined) {

@@ -73,22 +73,22 @@ const milestones = [
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
 
       <main className="flex-1">
         {/* Hero Section */}
         <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#4ECDC4]/10 via-white to-[#FF6B6B]/5" />
+          <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 via-transparent to-destructive/5" />
           <div className="container mx-auto px-4 py-20 md:py-32 relative">
             <div className="max-w-4xl mx-auto text-center">
-              <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 font-heading text-[#2D3748]">
+              <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-foreground">
                 About{" "}
-                <span className="text-[#4ECDC4]">
+                <span className="text-secondary">
                   AutomagiKal
                 </span>
               </h1>
-              <p className="text-lg md:text-xl text-[#718096] max-w-3xl mx-auto">
+              <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto">
                 We help ambitious businesses build scalable systems—without losing
                 the spark that got them started. We work with founders and teams
                 moving from grit to growth, helping them create sustainable success
@@ -99,15 +99,15 @@ export default function AboutPage() {
         </section>
 
         {/* Mission Section */}
-        <section className="py-20 md:py-32 bg-[#F7FAFA]">
+        <section className="py-20 md:py-32 bg-muted/30">
           <div className="container mx-auto px-4">
             <div className="max-w-4xl mx-auto">
               <div className="text-center mb-12">
-                <h2 className="text-3xl md:text-4xl font-bold mb-4 font-heading text-[#2D3748]">Our Mission</h2>
-                <div className="w-20 h-1 bg-[#4ECDC4] mx-auto rounded-full" />
+                <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">Our Mission</h2>
+                <div className="w-20 h-1 bg-secondary mx-auto rounded-full" />
               </div>
               <div className="prose prose-lg max-w-none text-center">
-                <p className="text-lg text-[#718096] leading-relaxed">
+                <p className="text-lg text-muted-foreground leading-relaxed">
                   At AutomagiKal, we coach leaders, train managers, shift cultures,
                   and consult on systems and process development. We streamline
                   sales, marketing, customer, and culture systems for ambitious
@@ -124,8 +124,8 @@ export default function AboutPage() {
         <section className="py-20 md:py-32">
           <div className="container mx-auto px-4">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 font-heading text-[#2D3748]">Our Values</h2>
-              <p className="text-[#718096] max-w-2xl mx-auto">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">Our Values</h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
                 The principles that guide everything we do
               </p>
             </div>
@@ -134,14 +134,14 @@ export default function AboutPage() {
               {values.map((value) => (
                 <Card
                   key={value.title}
-                  className="border-[#E2E8F0] hover:border-[#4ECDC4] transition-colors"
+                  className="border-border hover:border-secondary transition-colors"
                 >
                   <CardContent className="pt-6">
-                    <div className="w-12 h-12 rounded-xl bg-[#4ECDC4]/10 flex items-center justify-center mb-4">
-                      <value.icon className="h-6 w-6 text-[#4ECDC4]" />
+                    <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4">
+                      <value.icon className="h-6 w-6 text-secondary" />
                     </div>
-                    <h3 className="text-xl font-semibold mb-3 font-heading text-[#2D3748]">{value.title}</h3>
-                    <p className="text-[#718096]">{value.description}</p>
+                    <h3 className="text-xl font-semibold mb-3 text-foreground">{value.title}</h3>
+                    <p className="text-muted-foreground">{value.description}</p>
                   </CardContent>
                 </Card>
               ))}
@@ -150,11 +150,11 @@ export default function AboutPage() {
         </section>
 
         {/* Journey Section */}
-        <section className="py-20 md:py-32 bg-[#F7FAFA]">
+        <section className="py-20 md:py-32 bg-muted/30">
           <div className="container mx-auto px-4">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 font-heading text-[#2D3748]">Our Journey</h2>
-              <p className="text-[#718096] max-w-2xl mx-auto">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">Our Journey</h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
                 Building systems that help businesses win
               </p>
             </div>
@@ -164,20 +164,20 @@ export default function AboutPage() {
                 <div key={milestone.title} className="relative pl-8 pb-12 last:pb-0">
                   {/* Timeline line */}
                   {index !== milestones.length - 1 && (
-                    <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-[#E2E8F0]" />
+                    <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-border" />
                   )}
                   {/* Timeline dot */}
-                  <div className="absolute left-0 top-1 w-6 h-6 rounded-full bg-[#4ECDC4]/10 border-2 border-[#4ECDC4] flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-[#4ECDC4]" />
+                  <div className="absolute left-0 top-1 w-6 h-6 rounded-full bg-secondary/10 border-2 border-secondary flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-secondary" />
                   </div>
                   <div className="ml-4">
-                    <span className="text-sm font-medium text-[#FF6B6B]">
+                    <span className="text-sm font-medium text-destructive">
                       {milestone.year}
                     </span>
-                    <h3 className="text-xl font-semibold mt-1 mb-2 font-heading text-[#2D3748]">
+                    <h3 className="text-xl font-semibold mt-1 mb-2 text-foreground">
                       {milestone.title}
                     </h3>
-                    <p className="text-[#718096]">{milestone.description}</p>
+                    <p className="text-muted-foreground">{milestone.description}</p>
                   </div>
                 </div>
               ))}
@@ -189,10 +189,10 @@ export default function AboutPage() {
         <section className="py-20 md:py-32">
           <div className="container mx-auto px-4">
             <div className="max-w-4xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 font-heading text-[#2D3748]">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">
                 Pitch Perfect: Our AI Innovation
               </h2>
-              <p className="text-lg text-[#718096] mb-8">
+              <p className="text-lg text-muted-foreground mb-8">
                 Pitch Perfect represents our commitment to leveraging AI for
                 practical business solutions. This platform helps founders and
                 entrepreneurs master their pitch through intelligent coaching,
@@ -200,28 +200,28 @@ export default function AboutPage() {
                 delivery.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
-                <Card className="border-[#E2E8F0]">
+                <Card className="border-border">
                   <CardContent className="pt-6">
-                    <h3 className="font-semibold mb-2 font-heading text-[#2D3748]">Deck Analysis</h3>
-                    <p className="text-sm text-[#718096]">
+                    <h3 className="font-semibold mb-2 text-foreground">Deck Analysis</h3>
+                    <p className="text-sm text-muted-foreground">
                       AI-powered pitch deck scoring against proven frameworks with
                       actionable improvement recommendations.
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="border-[#E2E8F0]">
+                <Card className="border-border">
                   <CardContent className="pt-6">
-                    <h3 className="font-semibold mb-2 font-heading text-[#2D3748]">Script Coaching</h3>
-                    <p className="text-sm text-[#718096]">
+                    <h3 className="font-semibold mb-2 text-foreground">Script Coaching</h3>
+                    <p className="text-sm text-muted-foreground">
                       Element-by-element feedback on elevator pitches and
                       presentations with rewrite suggestions.
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="border-[#E2E8F0]">
+                <Card className="border-border">
                   <CardContent className="pt-6">
-                    <h3 className="font-semibold mb-2 font-heading text-[#2D3748]">Live Practice</h3>
-                    <p className="text-sm text-[#718096]">
+                    <h3 className="font-semibold mb-2 text-foreground">Live Practice</h3>
+                    <p className="text-sm text-muted-foreground">
                       Record your pitch and receive AI coaching on delivery,
                       body language, and presentation skills.
                     </p>
@@ -233,19 +233,19 @@ export default function AboutPage() {
         </section>
 
         {/* CTA Section */}
-        <section className="py-20 md:py-32 bg-[#F7FAFA]">
+        <section className="py-20 md:py-32 bg-muted/30">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4 font-heading text-[#2D3748]">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">
                 Ready to Transform Your Business?
               </h2>
-              <p className="text-lg text-[#718096] mb-8">
+              <p className="text-lg text-muted-foreground mb-8">
                 Let&apos;s discuss how we can help you build scalable systems that
                 preserve what makes your business special.
               </p>
               <a
                 href="/contact"
-                className="inline-flex items-center justify-center rounded-md bg-[#FF6B6B] px-6 py-3 text-sm font-medium text-white hover:bg-[#E85555] transition-colors"
+                className="inline-flex items-center justify-center rounded-md bg-destructive px-6 py-3 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
               >
                 Get in Touch
               </a>
