@@ -97,6 +97,52 @@ export function generateBlobDownloadUrl(blobUrlOrPathname: string): string {
 }
 
 /**
+ * Convert a private blob URL to a data URI for AI vision models.
+ * The AI gateway cannot fetch private blob URLs directly — it needs
+ * either a public URL or a data URI. This function fetches the blob
+ * content server-side (using the SDK with BLOB_READ_WRITE_TOKEN) and
+ * converts it to a base64 data URI that can be passed directly to
+ * the AI vision endpoint.
+ *
+ * @param blobUrlOrPathname - The stored blob URL or pathname
+ * @returns A data URI string (e.g. "data:application/pdf;base64,...") or null on failure
+ */
+export async function blobUrlToDataUri(blobUrlOrPathname: string): Promise<string | null> {
+  try {
+    const pathname = isBlobUrl(blobUrlOrPathname)
+      ? extractBlobPathname(blobUrlOrPathname) || blobUrlOrPathname
+      : blobUrlOrPathname;
+
+    // Fetch the private blob content using the SDK
+    const buffer = await fetchPrivateBlob(pathname);
+
+    // Determine content type from pathname extension
+    const ext = pathname.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      pdf: 'application/pdf',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      ppt: 'application/vnd.ms-powerpoint',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+    };
+    const contentType = mimeTypes[ext || ''] || 'application/octet-stream';
+
+    // Convert to base64 data URI
+    const base64 = buffer.toString('base64');
+    return `data:${contentType};base64,${base64}`;
+  } catch (error) {
+    console.warn('[Blob] Failed to convert blob URL to data URI:', error);
+    return null;
+  }
+}
+
+/**
  * Verify that a blob pathname belongs to the authenticated user.
  * Checks the database for any record (PitchDeck, PitchScript, PitchVideo, FullPitchSession)
  * that references a URL containing the given pathname.

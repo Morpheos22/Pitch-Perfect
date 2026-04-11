@@ -36,7 +36,7 @@
 //   ✅ Image Gen        → E5 network visuals, report covers
 //   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -50,10 +50,68 @@ import { homedir } from 'os';
 // OPTIONAL: ZAI_TOKEN  (secondary X-Token header, not needed for most setups)
 // OPTIONAL: ZAI_USER_ID (maps to your API ID from the Z.ai platform)
 
-const GATEWAY_URL = process.env.ZAI_BASE_URL || 'https://zukijufuzu.xyz/api/v1';
-const GATEWAY_API_KEY = process.env.ZAI_API_KEY || '';
-const GATEWAY_TOKEN = process.env.ZAI_TOKEN || '';
-const GATEWAY_USER_ID = process.env.ZAI_USER_ID || '';
+// ═══════════════════════════════════════════════════════════════════════
+// GATEWAY CREDENTIAL RESOLUTION
+// ═══════════════════════════════════════════════════════════════════════
+// Priority: env vars > .z-ai-config file > hardcoded defaults
+// The default gateway is https://z.ai/model-api (the live Z.ai platform).
+
+const DEFAULT_GATEWAY_URL = 'https://z.ai/model-api';
+
+let _resolvedConfig: {
+  baseUrl: string;
+  apiKey: string;
+  token: string;
+  userId: string;
+  chatId: string;
+  source: string;
+} | null = null;
+
+function getResolvedConfig() {
+  // Always re-resolve to pick up env var changes at runtime.
+  // The previous implementation cached forever, which meant .env updates
+  // or .z-ai-config changes required a full process restart.
+  _resolvedConfig = null;
+
+  // Try reading from .z-ai-config file first (for SDK compatibility)
+  let fileConfig: Record<string, string | undefined> = {};
+  const readPaths = [
+    join(process.cwd(), '.z-ai-config'),
+    join(homedir(), '.z-ai-config'),
+    '/etc/.z-ai-config',
+  ];
+  let configSource = 'env';
+
+  for (const p of readPaths) {
+    try {
+      const raw = readFileSync(p, 'utf-8');
+      fileConfig = JSON.parse(raw);
+      configSource = p;
+      break;
+    } catch {
+      /* not found, continue */
+    }
+  }
+
+  _resolvedConfig = {
+    baseUrl: process.env.ZAI_BASE_URL || fileConfig.baseUrl || DEFAULT_GATEWAY_URL,
+    apiKey: process.env.ZAI_API_KEY || fileConfig.apiKey || '',
+    token: process.env.ZAI_TOKEN || fileConfig.token || '',
+    userId: process.env.ZAI_USER_ID || fileConfig.userId || '',
+    chatId: process.env.ZAI_CHAT_ID || fileConfig.chatId || '',
+    source: configSource,
+  };
+
+  return _resolvedConfig;
+}
+
+// NOTE: These are resolved lazily via getResolvedConfig() which now re-reads
+// config on each call. Direct property access is used in hot-path functions
+// that call getResolvedConfig() internally. For module-level convenience:
+const GATEWAY_URL = getResolvedConfig().baseUrl;
+const GATEWAY_API_KEY = getResolvedConfig().apiKey;
+const GATEWAY_TOKEN = getResolvedConfig().token;
+const GATEWAY_USER_ID = getResolvedConfig().userId;
 
 /** Whether we have minimum credentials for direct HTTP calls */
 function hasDirectCredentials(): boolean {
@@ -75,13 +133,22 @@ async function callGatewayText(
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
   };
-  // Auth: API Key as Bearer + X-Token (use ZAI_TOKEN if set, else API key)
+  // Auth: X-Token is the PRIMARY auth header for Z.ai gateway.
+  // The gateway uses X-Token (not Bearer) for authentication.
+  // ZAI_TOKEN is the dedicated token; fall back to ZAI_API_KEY if not set.
+  const authToken = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  if (authToken) {
+    headers['X-Token'] = authToken;
+  }
+  // Also send API key as Bearer for backward compatibility
   if (GATEWAY_API_KEY) {
     headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
-    headers['X-Token'] = GATEWAY_TOKEN || GATEWAY_API_KEY;
   }
-  // Optional: User/API ID for request attribution
+  // User ID for request attribution and session tracking
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
+  // Chat ID for session continuity
+  const chatId = getResolvedConfig().chatId;
+  if (chatId) headers['X-Chat-Id'] = chatId;
 
   const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
     method: 'POST',
@@ -122,12 +189,16 @@ async function callGatewayVision(
     'X-Z-AI-From': 'Z',
   };
   // Vision endpoint REQUIRES X-Token header (returns 401 without it)
-  // Use ZAI_TOKEN if set, otherwise fall back to ZAI_API_KEY
+  const authToken = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  if (authToken) {
+    headers['X-Token'] = authToken;
+  }
   if (GATEWAY_API_KEY) {
     headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
-    headers['X-Token'] = GATEWAY_TOKEN || GATEWAY_API_KEY;
   }
   if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
+  const chatId = getResolvedConfig().chatId;
+  if (chatId) headers['X-Chat-Id'] = chatId;
 
   const resp = await fetch(`${GATEWAY_URL}/chat/completions/vision`, {
     method: 'POST',
@@ -161,43 +232,60 @@ let configCreated = false;
 function createZaiConfig(): boolean {
   if (configCreated) return true;
 
-  // Try to read existing config from known locations (highest priority first)
-  let existingConfig: Record<string, string | undefined> = {};
-  const readPaths = [
-    join(process.cwd(), '.z-ai-config'),
-    join(homedir(), '.z-ai-config'),
-    '/etc/.z-ai-config',
-  ];
-
-  for (const p of readPaths) {
-    try {
-      const raw = readFileSync(p, 'utf-8');
-      existingConfig = JSON.parse(raw);
-      break; // Use first found
-    } catch {
-      /* not found, continue */
-    }
-  }
-
-  // Build config: existing values as defaults, env vars override only if set
-  const apiKey = process.env.ZAI_API_KEY || existingConfig.apiKey;
-  const config: Record<string, string | undefined> = {
-    baseUrl: process.env.ZAI_BASE_URL || existingConfig.baseUrl || 'https://zukijufuzu.xyz/api/v1',
-    apiKey: apiKey,
-    chatId: process.env.ZAI_CHAT_ID || existingConfig.chatId,
-    userId: process.env.ZAI_USER_ID || existingConfig.userId,
-    // Vision endpoint REQUIRES X-Token — use ZAI_TOKEN if set, else apiKey
-    token: process.env.ZAI_TOKEN || existingConfig.token || apiKey,
-  };
+  // Resolve credentials using the same priority as direct HTTP calls
+  const resolved = getResolvedConfig();
 
   // Validate minimum requirements
-  if (!config.apiKey) {
-    console.error('[ZAI] No API key configured. Set ZAI_API_KEY env var.');
+  if (!resolved.apiKey && !resolved.token) {
+    console.error('[ZAI] No API key or token configured. Set ZAI_API_KEY or ZAI_TOKEN env var, or create .z-ai-config.');
     return false;
   }
-  // NOTE: Previously this function wrote .z-ai-config to the filesystem.
-  // That was removed to prevent credential leaks. The SDK reads from env vars
-  // directly; the read paths above remain for backward compatibility only.
+
+  // Log resolved config for debugging (mask sensitive values)
+  console.log(`[ZAI] Config resolved from: ${resolved.source}`);
+  console.log(`[ZAI] Base URL: ${resolved.baseUrl}`);
+  console.log(`[ZAI] API Key: ${resolved.apiKey ? resolved.apiKey.slice(0, 8) + '...' : 'NOT SET'}`);
+  console.log(`[ZAI] Token: ${resolved.token ? resolved.token.slice(0, 8) + '...' : 'NOT SET'}`);
+  console.log(`[ZAI] User ID: ${resolved.userId || 'NOT SET'}`);
+
+  // The z-ai-web-dev-sdk reads from .z-ai-config and env vars automatically.
+  // Ensure the config file exists with resolved credentials so the SDK can find it.
+  const configPath = join(process.cwd(), '.z-ai-config');
+  try {
+    const existing = readFileSync(configPath, 'utf-8');
+    const existingCfg = JSON.parse(existing);
+    // Update the config file if our resolved values are different (env vars may have changed)
+    const needsUpdate = existingCfg.baseUrl !== resolved.baseUrl
+      || existingCfg.apiKey !== resolved.apiKey
+      || existingCfg.token !== resolved.token
+      || existingCfg.userId !== resolved.userId;
+    if (needsUpdate) {
+      const configToWrite = {
+        baseUrl: resolved.baseUrl,
+        apiKey: resolved.apiKey || resolved.token,
+        token: resolved.token || resolved.apiKey,
+        userId: resolved.userId,
+        chatId: resolved.chatId,
+      };
+      writeFileSync(configPath, JSON.stringify(configToWrite, null, 2));
+      console.log(`[ZAI] Updated .z-ai-config with latest credentials`);
+    }
+  } catch {
+    // Config file doesn't exist — write it so the SDK can initialize
+    try {
+      const configToWrite = {
+        baseUrl: resolved.baseUrl,
+        apiKey: resolved.apiKey || resolved.token,
+        token: resolved.token || resolved.apiKey,
+        userId: resolved.userId,
+        chatId: resolved.chatId,
+      };
+      writeFileSync(configPath, JSON.stringify(configToWrite, null, 2));
+      console.log(`[ZAI] Wrote .z-ai-config for SDK initialization`);
+    } catch (writeErr) {
+      console.warn('[ZAI] Could not write .z-ai-config (non-fatal):', writeErr);
+    }
+  }
 
   configCreated = true;
   return true;
@@ -586,7 +674,12 @@ function parseJsonResponse<T>(content: string): T {
 // ============================================
 
 function clampScore(value: unknown, min = 0, max = 100): number {
-  const num = typeof value === 'number' && Number.isFinite(value) ? value : 50;
+  const num = typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  if (num === undefined) {
+    // Non-numeric AI response — log warning instead of silently defaulting to 50
+    console.warn(`[ScoreValidation] Non-numeric score value received: ${JSON.stringify(value)}. Defaulting to 50.`);
+    return 50;
+  }
   return Math.round(Math.min(max, Math.max(min, num)));
 }
 
@@ -882,7 +975,18 @@ interface VisualAuditResult {
  * @param fileUrl - Public URL to the uploaded deck file (PDF/PPTX blob URL)
  * @returns Visual audit scores and feedback, or null if vision analysis fails
  */
-export async function analyzeDeckVisual(fileUrl: string): Promise<VisualAuditResult | null> {
+export async function analyzeDeckVisual(
+  fileUrl: string,
+  previousVisualScores?: {
+    designConsistencyScore?: number;
+    readabilityScore?: number;
+    visualHierarchyScore?: number;
+    colorSchemeScore?: number;
+    typographyScore?: number;
+    visualWeaknesses?: string[];
+    visualRecommendations?: string[];
+  }
+): Promise<VisualAuditResult | null> {
   try {
     // SSRF prevention: validate URL before passing to AI
     const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
@@ -895,6 +999,25 @@ export async function analyzeDeckVisual(fileUrl: string): Promise<VisualAuditRes
     } catch (err) {
       if (err instanceof TypeError) throw new Error('Invalid file URL format');
       throw err;
+    }
+
+    // Build iteration context if previous visual scores are provided
+    let iterationContext = '';
+    if (previousVisualScores) {
+      const prevScores = [
+        previousVisualScores.designConsistencyScore != null ? `Design Consistency: ${previousVisualScores.designConsistencyScore}/100` : null,
+        previousVisualScores.readabilityScore != null ? `Readability: ${previousVisualScores.readabilityScore}/100` : null,
+        previousVisualScores.visualHierarchyScore != null ? `Visual Hierarchy: ${previousVisualScores.visualHierarchyScore}/100` : null,
+        previousVisualScores.colorSchemeScore != null ? `Color Scheme: ${previousVisualScores.colorSchemeScore}/100` : null,
+        previousVisualScores.typographyScore != null ? `Typography: ${previousVisualScores.typographyScore}/100` : null,
+      ].filter(Boolean).join('\n');
+
+      const prevFeedback = [
+        ...(previousVisualScores.visualWeaknesses || []).map(w => `- Visual Weakness: ${w}`),
+        ...(previousVisualScores.visualRecommendations || []).map(r => `- Visual Recommendation: ${r}`),
+      ].join('\n');
+
+      iterationContext = `\n\nPREVIOUS VISUAL AUDIT (iteration context — previous scores:\n${prevScores}\n\nPrevious visual feedback:\n${prevFeedback}\n\nEvaluate the CURRENT deck visuals independently. Acknowledge improvements or regressions.)\n\n`;
     }
 
     const systemPrompt = `You are an expert presentation design consultant. Analyze the visual design quality of this pitch deck.
@@ -918,7 +1041,7 @@ Respond ONLY in valid JSON format:
   "visualRecommendations": ["<recommendation 1>", "<recommendation 2>", "<recommendation 3>"]
 }`;
 
-    const userPrompt = `Analyze the visual design of this pitch deck. Focus on slide layout, typography, color usage, and overall design professionalism.
+    const userPrompt = `${iterationContext}Analyze the visual design of this pitch deck. Focus on slide layout, typography, color usage, and overall design professionalism.
 
 Provide your analysis as a JSON object (no markdown formatting).`;
 
@@ -1304,7 +1427,18 @@ export interface FullPitchAnalysisResult {
 export async function analyzeFullPitchSession(
   videoUrl: string,
   duration: number,
-  deckAnalysis?: DeckAnalysisResult
+  deckAnalysis?: DeckAnalysisResult,
+  previousAnalysis?: {
+    overallReadinessScore?: number;
+    problemSolutionFit?: number;
+    marketOpportunity?: number;
+    businessModelViability?: number;
+    teamCredibility?: number;
+    tractionMilestones?: number;
+    deliveryPresence?: number;
+    weaknesses?: string[];
+    recommendedActions?: string[];
+  }
 ): Promise<FullPitchAnalysisResult> {
   // SSRF prevention: validate URL before passing to AI
   const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
@@ -1339,7 +1473,28 @@ Respond ONLY in valid JSON format without any markdown formatting.`;
     ? `\n\nPITCH DECK ANALYSIS: Score ${deckAnalysis.overallScore}/100 | Strengths: ${deckAnalysis.strengths.join(', ')} | Weaknesses: ${deckAnalysis.weaknesses.join(', ')}`
     : '';
 
-  const userPrompt = `Analyze this full investor pitch.
+  // Build iteration context if previous analysis is provided
+  let iterationContext = '';
+  if (previousAnalysis) {
+    const prevScores = [
+      `Overall Readiness: ${previousAnalysis.overallReadinessScore ?? 'N/A'}/100`,
+      previousAnalysis.problemSolutionFit != null ? `Problem-Solution Fit: ${previousAnalysis.problemSolutionFit}/100` : null,
+      previousAnalysis.marketOpportunity != null ? `Market Opportunity: ${previousAnalysis.marketOpportunity}/100` : null,
+      previousAnalysis.businessModelViability != null ? `Business Model Viability: ${previousAnalysis.businessModelViability}/100` : null,
+      previousAnalysis.teamCredibility != null ? `Team Credibility: ${previousAnalysis.teamCredibility}/100` : null,
+      previousAnalysis.tractionMilestones != null ? `Traction & Milestones: ${previousAnalysis.tractionMilestones}/100` : null,
+      previousAnalysis.deliveryPresence != null ? `Delivery & Presence: ${previousAnalysis.deliveryPresence}/100` : null,
+    ].filter(Boolean).join('\n');
+
+    const prevFeedback = [
+      ...(previousAnalysis.weaknesses || []).map(w => `- Weakness: ${w}`),
+      ...(previousAnalysis.recommendedActions || []).map(a => `- Recommended Action: ${a}`),
+    ].join('\n');
+
+    iterationContext = `\n\nPREVIOUS ANALYSIS (iteration context — the founder previously scored:\n${prevScores}\n\nPrevious feedback given:\n${prevFeedback}\n\nYour task: Evaluate the CURRENT pitch independently. If they improved, acknowledge it. If they regressed, flag it. Score the CURRENT quality, not the previous analysis.)\n\n`;
+  }
+
+  const userPrompt = `${iterationContext}Analyze this full investor pitch.
 
 Video URL: ${videoUrl}
 Duration: ${Math.floor(duration / 60)}m ${duration % 60}s
@@ -1443,38 +1598,21 @@ export function getZaiConfigStatus(): {
   configCreated: boolean;
   hasToken: boolean;
   hasApiKey: boolean;
+  hasBaseUrl: boolean;
+  hasUserId: boolean;
   configSource: string;
+  baseUrl: string;
 } {
-  // Check if config was successfully created
-  if (!configCreated) {
-    return { configCreated: false, hasToken: false, hasApiKey: false, configSource: 'none' };
-  }
-
-  // Try to read the current config from the written location
-  let hasToken = false;
-  let hasApiKey = false;
-  let configSource = 'none';
-
-  const checkPaths = [
-    join(process.cwd(), '.z-ai-config'),
-    join(homedir(), '.z-ai-config'),
-    '/etc/.z-ai-config',
-  ];
-
-  for (const p of checkPaths) {
-    try {
-      const raw = readFileSync(p, 'utf-8');
-      const cfg = JSON.parse(raw);
-      configSource = p;
-      hasToken = !!cfg.token;
-      hasApiKey = !!cfg.apiKey;
-      break;
-    } catch {
-      /* not found, continue */
-    }
-  }
-
-  return { configCreated: true, hasToken, hasApiKey, configSource };
+  const resolved = getResolvedConfig();
+  return {
+    configCreated,
+    hasToken: !!resolved.token,
+    hasApiKey: !!resolved.apiKey,
+    hasBaseUrl: !!resolved.baseUrl && resolved.baseUrl !== DEFAULT_GATEWAY_URL,
+    hasUserId: !!resolved.userId,
+    configSource: resolved.source,
+    baseUrl: resolved.baseUrl,
+  };
 }
 
 // ============================================

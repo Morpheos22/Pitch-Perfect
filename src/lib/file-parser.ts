@@ -41,16 +41,32 @@ async function parseDocxText(file: File): Promise<string> {
 }
 
 async function parsePdfText(file: File): Promise<string> {
+  // pdf-parse exports { PDFParse } as a named export.
+  // Usage: new PDFParse(data) → .getText() (load is called internally)
   const { PDFParse } = await import('pdf-parse');
   const arrayBuffer = await file.arrayBuffer();
   const uint8 = new Uint8Array(arrayBuffer);
   const parser = new PDFParse(uint8);
   try {
+    // getText() internally calls load() to initialize the document.
+    // The `load` method is private in TypeScript types but getText()
+    // handles initialization automatically.
     const result = await parser.getText();
     // result.text contains full text, result.pages[] has per-page text
     return result.text || '';
+  } catch (parseErr) {
+    // Some PDFs fail on first attempt — retry with a fresh parser instance
+    console.warn('[file-parser] PDF parse failed on first attempt, retrying:', parseErr);
+    try {
+      const retryParser = new PDFParse(uint8);
+      const result = await retryParser.getText();
+      return result.text || '';
+    } catch (retryErr) {
+      console.error('[file-parser] PDF parse retry also failed:', retryErr);
+      throw new Error('Failed to parse PDF file. The file may be corrupted or use unsupported encoding.');
+    }
   } finally {
-    parser.destroy();
+    try { parser.destroy(); } catch { /* ignore */ }
   }
 }
 

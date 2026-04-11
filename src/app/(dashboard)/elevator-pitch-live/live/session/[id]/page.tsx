@@ -209,7 +209,7 @@ export default function LiveSessionPage({ params }: { params: Promise<{ id: stri
       const res = await fetch("/api/coach/drills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: id, module: "live" }),
+        body: JSON.stringify({ sessionId: id, moduleType: "e3" }),
       });
       if (res.ok) {
         const result = await res.json();

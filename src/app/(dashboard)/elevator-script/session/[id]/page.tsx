@@ -217,7 +217,7 @@ export default function ElevatorScriptSessionPage() {
       const res = await fetch("/api/coach/drills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: params.id, module: "script" }),
+        body: JSON.stringify({ sessionId: params.id, moduleType: "e2" }),
       });
       if (res.ok) {
         const result = await res.json();
@@ -236,7 +236,7 @@ export default function ElevatorScriptSessionPage() {
   const handleIterate = async () => {
     setIterating(true);
     try {
-      const body: { parentId: string; script?: string } = { parentId: params.id as string };
+      const body: { id: string; script?: string } = { id: params.id as string };
       // Include current script text for re-analysis
       if (data?.analysis?.rewrittenScript) {
         body.script = data.analysis.rewrittenScript;

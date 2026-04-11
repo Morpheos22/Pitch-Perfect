@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
+import { isAdminEmail } from '@/lib/dev-auth';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -23,14 +24,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: 'ok', message: 'Full check requires authentication' });
   }
 
-  // Full health check — less sensitive data, no internal details
+  // Full health check — includes diagnostic details
   const startTime = Date.now();
 
   interface FullHealthResponse {
     status: string;
     database: { status: string };
     storage: { status: string; backend: string };
-    ai: { status: string; configFound: boolean };
+    ai: { status: string; configFound: boolean; configSource?: string; baseUrl?: string };
+    entitlement: { devEmailsConfigured: boolean };
     warnings?: string[];
     responseTime: string;
     timestamp: string;
@@ -41,11 +43,12 @@ export async function GET(request: NextRequest) {
     database: { status: 'checking' },
     storage: { status: 'checking', backend: 'none' },
     ai: { status: 'checking', configFound: false },
+    entitlement: { devEmailsConfigured: false },
     responseTime: '',
     timestamp: new Date().toISOString(),
   };
 
-  // Database check — safe tagged template literal
+  // Database check
   try {
     await prisma.$queryRaw`SELECT 1`;
     checks.database = { status: 'ok' };
@@ -59,33 +62,46 @@ export async function GET(request: NextRequest) {
     backend: getStorageBackend(),
   };
 
-  // AI config check
+  // AI config check — use resolved config (env vars + file)
   const configStatus = getZaiConfigStatus();
   checks.ai = {
     status: 'checking',
-    configFound: configStatus.configCreated,
+    configFound: configStatus.hasApiKey || configStatus.hasToken,
+    configSource: configStatus.configSource,
+    baseUrl: configStatus.baseUrl,
   };
 
-  // AI health check
+  // AI health check — test actual gateway connectivity
   try {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
       status: aiHealth.status,
-      configFound: aiHealth.configFound || false,
+      configFound: aiHealth.configFound || configStatus.hasApiKey || configStatus.hasToken,
+      configSource: configStatus.configSource,
+      baseUrl: configStatus.baseUrl,
     };
   } catch {
     checks.ai = {
       status: 'unhealthy',
-      configFound: false,
+      configFound: configStatus.hasApiKey || configStatus.hasToken,
+      configSource: configStatus.configSource,
+      baseUrl: configStatus.baseUrl,
     };
   }
+
+  // Entitlement check — verify dev emails are recognized
+  checks.entitlement = {
+    devEmailsConfigured: isAdminEmail('helloautomagikal@gmail.com'),
+  };
 
   const allHealthy = checks.database.status === 'ok' && checks.ai.status === 'ok';
 
   const warnings: string[] = [];
-  if (!configStatus.hasApiKey) warnings.push('AI API key not configured');
+  if (!configStatus.hasApiKey && !configStatus.hasToken) warnings.push('AI API key/token not configured');
+  if (!configStatus.hasUserId) warnings.push('AI User ID not configured');
   if (!isStorageConfigured()) warnings.push('No persistent storage configured');
   if (checks.database.status === 'unhealthy') warnings.push('Database connection issue');
+  if (!checks.entitlement.devEmailsConfigured) warnings.push('Developer emails not recognized — dev accounts will be on FREE tier');
 
   checks.status = allHealthy ? 'healthy' : 'degraded';
   if (checks.database.status === 'unhealthy' || checks.ai.status === 'unhealthy') {
