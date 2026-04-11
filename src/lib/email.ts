@@ -104,7 +104,7 @@ export async function sendWelcomeEmail({ email, firstName }: WelcomeEmailProps) 
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td align="center" style="padding: 10px 0 30px;">
-                        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://pitchperfect.ai'}"
+                        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://pitchcoachai.tech'}"
                            style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
                                   color: #ffffff; text-decoration: none; padding: 16px 40px;
                                   border-radius: 8px; font-size: 16px; font-weight: 600;">
@@ -171,7 +171,7 @@ export async function sendWelcomeEmail({ email, firstName }: WelcomeEmailProps) 
 
   try {
     const { data, error } = await getResend().emails.send({
-      from: 'Pitch Perfect <noreply@pitchperfect.ai>',
+      from: 'PitchCoach AI <noreply@pitchcoachai.tech>',
       to: email,
       subject: '🎤 Welcome to Pitch Perfect - Your AI Pitch Coach Awaits!',
       html,
