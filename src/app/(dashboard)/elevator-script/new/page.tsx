@@ -103,27 +103,35 @@ export default function ElevatorScriptNewPage() {
     try {
       let response: Response;
 
-      // Upload to Blob first (bypasses 4.5MB serverless limit)
-      try {
-        const { uploadFileToBlob } = await import("@/lib/blob-upload");
-        const blobResult = await uploadFileToBlob(file, "script");
-
-        // Send only URL to API — tiny payload, no size limit
+      // Direct upload for files under 4MB (most reliable — bypasses broken blob token flow)
+      // Blob upload only for larger files
+      const SERVERLESS_LIMIT = 4 * 1024 * 1024;
+      if (file.size <= SERVERLESS_LIMIT) {
         const formData = new FormData();
-        formData.append("fileUrl", blobResult.url);
-        formData.append("fileName", file.name);
+        formData.append("file", file);
         formData.append("sessionName", sessionName);
         formData.append("targetAudience", "investors");
         formData.append("targetDuration", "60");
-
         response = await fetch("/api/coach/script", {
           method: "POST",
           body: formData,
         });
-      } catch (uploadError) {
-        console.warn("[E2] Blob upload failed, falling back to legacy:", uploadError);
-        // FALLBACK: Try legacy FormData upload for small files
-        if (file.size <= 4 * 1024 * 1024) {
+      } else {
+        try {
+          const { uploadFileToBlob } = await import("@/lib/blob-upload");
+          const blobResult = await uploadFileToBlob(file, "script");
+          const formData = new FormData();
+          formData.append("fileUrl", blobResult.url);
+          formData.append("fileName", file.name);
+          formData.append("sessionName", sessionName);
+          formData.append("targetAudience", "investors");
+          formData.append("targetDuration", "60");
+          response = await fetch("/api/coach/script", {
+            method: "POST",
+            body: formData,
+          });
+        } catch (blobError) {
+          console.warn("[E2] Blob upload failed, trying direct:", blobError);
           const formData = new FormData();
           formData.append("file", file);
           formData.append("sessionName", sessionName);
@@ -133,8 +141,6 @@ export default function ElevatorScriptNewPage() {
             method: "POST",
             body: formData,
           });
-        } else {
-          throw uploadError;
         }
       }
 

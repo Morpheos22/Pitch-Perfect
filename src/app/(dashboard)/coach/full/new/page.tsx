@@ -108,36 +108,62 @@ export default function FullPitchNewPage() {
     setUploadProgress(0);
 
     try {
-      const { uploadFileToBlob } = await import("@/lib/blob-upload");
+      const SERVERLESS_LIMIT = 4 * 1024 * 1024;
 
-      // Step 1: Upload video directly to Blob (bypasses 4.5MB limit)
+      // Step 1: Upload video
+      // Videos are almost always > 4MB, so try blob first.
+      // If blob fails, try direct (may hit Vercel limit for large files).
       setUploadProgress(5);
-      let videoBlobResult;
-      try {
-        videoBlobResult = await uploadFileToBlob(videoFile, "video");
-      } catch (videoUploadError) {
-        console.error("[E4] Video Blob upload failed:", videoUploadError);
-        throw new Error("Failed to upload video. Please check your connection and try again.");
+      let videoUrl = "";
+      let videoPathname = "";
+
+      if (videoFile.size <= SERVERLESS_LIMIT) {
+        // Small video — direct upload via FormData
+        // We'll send it directly to the coach/full API
+      } else {
+        // Large video — must use blob
+        try {
+          const { uploadFileToBlob } = await import("@/lib/blob-upload");
+          const videoBlobResult = await uploadFileToBlob(videoFile, "video");
+          videoUrl = videoBlobResult.url;
+          videoPathname = videoBlobResult.pathname;
+        } catch (videoUploadError) {
+          console.error("[E4] Video Blob upload failed:", videoUploadError);
+          // Try direct as fallback
+        }
       }
       setUploadProgress(40);
       setVideoUploading(false);
 
-      // Step 2: Submit for AI analysis (deck optional via Blob upload)
+      // Step 2: Submit for AI analysis
       const analysisFormData = new FormData();
-      analysisFormData.append("videoUrl", videoBlobResult.url);
-      analysisFormData.append("videoId", videoBlobResult.pathname);
       analysisFormData.append("sessionName", sessionName);
       analysisFormData.append("duration", "900"); // Default 15 min
 
+      if (videoUrl) {
+        // Blob upload succeeded — send URL
+        analysisFormData.append("videoUrl", videoUrl);
+        analysisFormData.append("videoId", videoPathname);
+      } else {
+        // Direct upload — send file
+        analysisFormData.append("video", videoFile);
+      }
+
       if (deckFile) {
         setUploadProgress(50);
-        try {
-          const deckBlobResult = await uploadFileToBlob(deckFile, "deck");
-          analysisFormData.append("deckFileUrl", deckBlobResult.url);
-          analysisFormData.append("deckFileName", deckFile.name);
-        } catch (deckUploadError) {
-          console.warn("[E4] Deck Blob upload failed, continuing without deck:", deckUploadError);
-          // Non-fatal: continue without deck context
+        if (deckFile.size <= SERVERLESS_LIMIT) {
+          // Small deck — send directly
+          analysisFormData.append("deckFile", deckFile);
+        } else {
+          try {
+            const { uploadFileToBlob } = await import("@/lib/blob-upload");
+            const deckBlobResult = await uploadFileToBlob(deckFile, "deck");
+            analysisFormData.append("deckFileUrl", deckBlobResult.url);
+            analysisFormData.append("deckFileName", deckFile.name);
+          } catch (deckUploadError) {
+            console.warn("[E4] Deck Blob upload failed, trying direct:", deckUploadError);
+            analysisFormData.append("deckFile", deckFile);
+          }
         }
       }
 
