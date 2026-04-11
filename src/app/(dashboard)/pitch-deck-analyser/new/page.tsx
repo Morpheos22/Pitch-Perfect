@@ -114,34 +114,48 @@ export default function PitchDeckAnalyserNewPage() {
 
     try {
       let response: Response;
-      const formData = new FormData();
-      formData.append("sessionName", sessionName);
+      const SERVERLESS_LIMIT = 4 * 1024 * 1024; // 4MB safe threshold (Vercel limit is 4.5MB)
 
-      // Upload to Blob first (bypasses 4.5MB serverless limit)
-      try {
-        const { uploadFileToBlob } = await import("@/lib/blob-upload");
-        const blobResult = await uploadFileToBlob(file, "deck");
-
-        // Send only URL to API — tiny payload, no size limit
-        formData.append("fileUrl", blobResult.url);
-        formData.append("fileName", file.name);
-        formData.append("fileSize", String(file.size));
+      // STRATEGY: For files under 4MB, send directly to the coach API (most reliable).
+      // For larger files, try blob upload first to bypass the serverless body limit.
+      if (file.size <= SERVERLESS_LIMIT) {
+        // Direct upload — simplest and most reliable path
+        const formData = new FormData();
+        formData.append("sessionName", sessionName);
+        formData.append("file", file);
 
         response = await fetch("/api/coach/deck", {
           method: "POST",
           body: formData,
         });
-      } catch (uploadError) {
-        console.warn("[E1] Blob upload failed, falling back to legacy:", uploadError);
-        // FALLBACK: Try legacy FormData upload for small files
-        if (file.size <= 4 * 1024 * 1024) {
-          formData.append("file", file);
+      } else {
+        // Large file: try blob upload first, then fall back to direct
+        try {
+          const { uploadFileToBlob } = await import("@/lib/blob-upload");
+          const blobResult = await uploadFileToBlob(file, "deck");
+
+          // Send only URL to coach API — tiny payload, no size limit
+          const formData = new FormData();
+          formData.append("sessionName", sessionName);
+          formData.append("fileUrl", blobResult.url);
+          formData.append("fileName", file.name);
+          formData.append("fileSize", String(file.size));
+
           response = await fetch("/api/coach/deck", {
             method: "POST",
             body: formData,
           });
-        } else {
-          throw uploadError;
+        } catch (blobError) {
+          console.warn("[E1] Blob upload failed, trying direct upload:", blobError);
+          // Blob failed — try direct upload as last resort (may hit Vercel body limit)
+          const formData = new FormData();
+          formData.append("sessionName", sessionName);
+          formData.append("file", file);
+
+          response = await fetch("/api/coach/deck", {
+            method: "POST",
+            body: formData,
+          });
         }
       }
 
@@ -152,7 +166,7 @@ export default function PitchDeckAnalyserNewPage() {
     } catch (error: any) {
       console.error("Upload error:", error);
       if (error?.status === 413) {
-        toast.error("File is too large for upload. Please use a smaller file (under 50MB).");
+        toast.error("File is too large for upload. Please use a smaller file (under 4.5MB).");
         return;
       }
       if (error?.status === 403) {
