@@ -38,21 +38,10 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// Detect if we're connecting through Supabase PgBouncer pooler
-// (host contains "pooler.supabase.com"). PgBouncer in transaction mode
-// doesn't support prepared statements, so we must disable them.
-const isPooled = process.env.DATABASE_URL?.includes('pooler.supabase.com') ?? false;
-
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
-    ...(isPooled ? { __internal: { engine: { preparedStatements: false } } } : {}),
   });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
