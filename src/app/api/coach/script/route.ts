@@ -218,10 +218,21 @@ async function handlePost(request: NextRequest) {
       id: savedScript.id,
       modelUsed: analysis.modelUsed,
     });
-  } catch (error) {
-    console.error("Script analysis error:", error);
+  } catch (error: any) {
+    console.error("[E2] SCRIPT ANALYSIS FAILED — Full error:", error);
+    const msg = error?.message || String(error);
+    console.error(`[E2] Error message: ${msg}`);
+    console.error(`[E2] Error stack:`, error?.stack?.substring(0, 500));
+
+    if (msg.includes("BLOB_READ_WRITE_TOKEN") || msg.includes("Blob not found") || msg.includes("Blob returned")) {
+      return NextResponse.json(
+        { error: "File storage access error — could not retrieve uploaded file. Please try again or contact support." },
+        { status: 502 }
+      );
+    }
+    const isDev = process.env.NODE_ENV === 'development';
     return NextResponse.json(
-      { error: "Failed to analyze script" },
+      { error: isDev ? `Script analysis error: ${msg}` : "Failed to analyze script" },
       { status: 500 }
     );
   }

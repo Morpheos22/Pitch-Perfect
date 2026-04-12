@@ -111,6 +111,11 @@ export async function GET(request: NextRequest) {
   if (checks.ai.visionStatus === 'unhealthy') warnings.push('Vision model endpoint unhealthy — E1/E3/E4 video analysis will fail');
   if (checks.ai.visionStatus === 'degraded') warnings.push('Vision model endpoint degraded — E1/E3/E4 may return poor results');
 
+  // Vercel Blob check — verify BLOB_READ_WRITE_TOKEN is set for private blob reads
+  const blobTokenSet = !!process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — private blob uploads will fail to be read back');
+  (checks.storage as any).blobTokenConfigured = blobTokenSet;
+
   checks.status = allHealthy ? 'healthy' : 'degraded';
   if (checks.database.status === 'unhealthy' || checks.ai.status === 'unhealthy') {
     checks.status = 'unhealthy';
