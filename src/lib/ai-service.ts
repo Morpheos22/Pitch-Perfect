@@ -1589,12 +1589,23 @@ JSON structure (no markdown):
     tokensUsed: response.usage?.totalTokens,
     modelUsed,
   };
+  // Quality validation: cross-check overall score against weighted average
+  const readinessWeighted = computeWeightedOverall(SCORING_WEIGHTS.E4_READINESS, {
+    problemSolutionFit: result.problemSolutionFit, marketOpportunity: result.marketOpportunity,
+    businessModelViability: result.businessModelViability, teamCredibility: result.teamCredibility,
+    tractionMilestones: result.tractionMilestones, deliveryPresence: result.deliveryPresence,
+  });
+  const { validatedOverall: e4Validated } = validateScoreConsistency(
+    result.overallReadinessScore, readinessWeighted,
+    { problemSolutionFit: result.problemSolutionFit, marketOpportunity: result.marketOpportunity,
+      businessModelViability: result.businessModelViability, teamCredibility: result.teamCredibility,
+      tractionMilestones: result.tractionMilestones, deliveryPresence: result.deliveryPresence },
+    'E4_FULL'
+  );
+  result.overallReadinessScore = e4Validated;
+
   return result;
 }
-
-// ============================================
-// CONFIG STATUS (for health check diagnostics)
-// ============================================
 
 export function getZaiConfigStatus(): {
   configCreated: boolean;
@@ -1629,8 +1640,12 @@ export async function checkAIServiceHealth(): Promise<{
   configFound: boolean;
   configStatus: ReturnType<typeof getZaiConfigStatus>;
   zai?: { status: string; message?: string };
+  vision?: { status: string; message?: string };
 }> {
-  const results = { zai: { status: 'unknown' as string, message: '' as string } };
+  const results = {
+    zai: { status: 'unknown' as string, message: '' as string },
+    vision: { status: 'unknown' as string, message: '' as string },
+  };
   let resolvedTextModel = 'unknown';
   let resolvedVisionModel = 'unknown';
 
@@ -1652,8 +1667,39 @@ export async function checkAIServiceHealth(): Promise<{
     results.zai = { status: 'unhealthy', message: error instanceof Error ? error.message : 'Unknown' };
   }
 
+  // Test vision endpoint — critical for E1 visual audit, E3 live pitch, E4 full session
+  try {
+    const zai = await getZai();
+    // Minimal vision test: a 1x1 white PNG pixel as data URI
+    const testPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+    const visionResp = await zai.chat.completions.createVision({
+      model: AI_MODELS.PRIMARY_VISION,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Describe this image in one word.' },
+          { type: 'image_url', image_url: { url: testPixel } },
+        ],
+      } as any],
+      temperature: 0.1,
+      max_tokens: 10,
+    } as any);
+    resolvedVisionModel = visionResp.model || 'unknown';
+    const visionContent = visionResp.choices?.[0]?.message?.content;
+    if (visionContent && visionContent.length > 0) {
+      results.vision = { status: 'healthy', message: `${resolvedVisionModel} responding` };
+    } else {
+      results.vision = { status: 'degraded', message: 'Vision endpoint returned empty response' };
+    }
+  } catch (error) {
+    results.vision = { status: 'unhealthy', message: error instanceof Error ? error.message : 'Unknown' };
+  }
+
+  // Overall status: healthy only if both text and vision are healthy
+  const overallHealthy = results.zai.status === 'healthy' && results.vision.status !== 'unhealthy';
+
   return {
-    status: results.zai.status === 'healthy' ? 'healthy' : 'unhealthy',
+    status: overallHealthy ? 'healthy' : 'unhealthy',
     models: Object.values(AI_MODELS),
     gatewayRouting: { text: resolvedTextModel, vision: resolvedVisionModel },
     moduleMapping: Object.entries(MODULE_MODEL_MAP).map(([key, val]) => ({
@@ -1666,6 +1712,7 @@ export async function checkAIServiceHealth(): Promise<{
     configFound: true,
     configStatus: getZaiConfigStatus(),
     zai: results.zai,
+    vision: results.vision,
   };
 }
 

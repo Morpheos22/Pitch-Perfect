@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     status: string;
     database: { status: string };
     storage: { status: string; backend: string };
-    ai: { status: string; configFound: boolean; configSource?: string; baseUrl?: string };
+    ai: { status: string; configFound: boolean; configSource?: string; baseUrl?: string; textModel?: string; visionModel?: string; visionStatus?: string; visionMessage?: string };
     entitlement: { devEmailsConfigured: boolean };
     warnings?: string[];
     responseTime: string;
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
     baseUrl: configStatus.baseUrl,
   };
 
-  // AI health check — test actual gateway connectivity
+  // AI health check — test actual gateway connectivity (text + vision)
   try {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
@@ -79,6 +79,10 @@ export async function GET(request: NextRequest) {
       configFound: aiHealth.configFound || configStatus.hasApiKey || configStatus.hasToken,
       configSource: configStatus.configSource,
       baseUrl: configStatus.baseUrl,
+      textModel: aiHealth.gatewayRouting?.text,
+      visionModel: aiHealth.gatewayRouting?.vision,
+      visionStatus: aiHealth.vision?.status,
+      visionMessage: aiHealth.vision?.message,
     };
   } catch {
     checks.ai = {
@@ -86,6 +90,8 @@ export async function GET(request: NextRequest) {
       configFound: configStatus.hasApiKey || configStatus.hasToken,
       configSource: configStatus.configSource,
       baseUrl: configStatus.baseUrl,
+      visionStatus: 'unhealthy',
+      visionMessage: 'AI health check failed — could not reach gateway',
     };
   }
 
@@ -102,6 +108,8 @@ export async function GET(request: NextRequest) {
   if (!isStorageConfigured()) warnings.push('No persistent storage configured');
   if (checks.database.status === 'unhealthy') warnings.push('Database connection issue');
   if (!checks.entitlement.devEmailsConfigured) warnings.push('Developer emails not recognized — dev accounts will be on FREE tier');
+  if (checks.ai.visionStatus === 'unhealthy') warnings.push('Vision model endpoint unhealthy — E1/E3/E4 video analysis will fail');
+  if (checks.ai.visionStatus === 'degraded') warnings.push('Vision model endpoint degraded — E1/E3/E4 may return poor results');
 
   checks.status = allHealthy ? 'healthy' : 'degraded';
   if (checks.database.status === 'unhealthy' || checks.ai.status === 'unhealthy') {

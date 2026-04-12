@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Types
 // ──────────────────────────────────────────────
 
-interface RateLimitConfig {
+export interface RateLimitConfig {
   /** Maximum number of requests allowed within the window */
   limit: number;
   /** Sliding window duration in milliseconds */
@@ -488,7 +488,7 @@ type ApiHandler = (
  * });
  * ```
  */
-function withRateLimit(
+export function withRateLimit(
   handler: ApiHandler,
   config: RateLimitConfig,
   customUserId?: string

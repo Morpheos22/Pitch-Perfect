@@ -7,11 +7,12 @@ import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
@@ -241,6 +242,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Score consistency validation ──
+    // Clamp all numeric scores to 0-100 to guard against AI hallucinations
+    const clampScore = (v: number | null | undefined): number => {
+      if (v == null || !Number.isFinite(v)) return 0;
+      return Math.max(0, Math.min(100, Math.round(v)));
+    };
+
+    analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
+    analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
+    analysis.businessModelViability = clampScore(analysis.businessModelViability);
+    analysis.teamCredibility = clampScore(analysis.teamCredibility);
+    analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
+    analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
+    analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+
+    // Clamp nested score objects
+    if (analysis.contentScores) {
+      for (const key of Object.keys(analysis.contentScores) as (keyof typeof analysis.contentScores)[]) {
+        analysis.contentScores[key] = clampScore(analysis.contentScores[key]);
+      }
+    }
+    if (analysis.deliveryScores) {
+      for (const key of Object.keys(analysis.deliveryScores) as (keyof typeof analysis.deliveryScores)[]) {
+        analysis.deliveryScores[key] = clampScore(analysis.deliveryScores[key]);
+      }
+    }
+
+    // Validate investorReadinessLevel enum
+    const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
+    if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
+      console.warn(`[E4] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
+      analysis.investorReadinessLevel = 'NEEDS_WORK';
+    }
+
+    // Consistency check: overall vs sub-scores
+    const subScoreAvg = (
+      analysis.problemSolutionFit +
+      analysis.marketOpportunity +
+      analysis.businessModelViability +
+      analysis.teamCredibility +
+      analysis.tractionMilestones +
+      analysis.deliveryPresence
+    ) / 6;
+    const overallDelta = Math.abs(analysis.overallReadinessScore - subScoreAvg);
+    if (overallDelta > 30) {
+      console.warn(`[E4] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
+    }
+
     // Store analysis in database
     const savedSession = await prisma.fullPitchSession.create({
       data: {
@@ -312,6 +361,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});
 
 export async function PATCH(request: NextRequest) {
   try {
