@@ -17,13 +17,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { put } from "@vercel/blob";
-import {
-  generateFileKey,
-  validateFileTypeByCategory,
-  validateFileSizeByCategory,
-} from "@/lib/storage";
+import { generateFileKey } from "@/lib/storage";
 
-// Maximum file sizes per category (server-side enforcement)
+// Maximum file sizes per category — single source of truth for server-side enforcement.
+// Client blob-upload.ts must use the same limits.
 const MAX_FILE_SIZES: Record<string, number> = {
   deck: 50 * 1024 * 1024, // 50MB
   script: 10 * 1024 * 1024, // 10MB
@@ -34,6 +31,14 @@ const MAX_FILE_SIZES: Record<string, number> = {
 const VALID_CATEGORIES = ["deck", "script", "video"] as const;
 type Category = (typeof VALID_CATEGORIES)[number];
 
+// Allowed file extensions per category (extension-only check on server;
+// MIME type is unreliable across browsers)
+const ALLOWED_EXTENSIONS: Record<string, string[]> = {
+  deck: [".pdf", ".pptx", ".ppt"],
+  script: [".pdf", ".docx", ".doc", ".txt"],
+  video: [".mp4", ".webm", ".mov", ".avi"],
+};
+
 export async function POST(request: NextRequest) {
   try {
     // ── 1. Auth check ──
@@ -43,7 +48,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 2. Check BLOB_READ_WRITE_TOKEN ──
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    if (
+      !process.env.BLOB_READ_WRITE_TOKEN ||
+      process.env.BLOB_READ_WRITE_TOKEN.includes("placeholder")
+    ) {
       console.error("[Blob Upload] BLOB_READ_WRITE_TOKEN not configured");
       return NextResponse.json(
         { error: "Blob storage is not configured. Please contact support." },
@@ -72,16 +80,12 @@ export async function POST(request: NextRequest) {
 
     const validCategory = category as Category;
 
-    // ── 4. Validate file type ──
-    const mimeType = file.type || "application/octet-stream";
-    const typeValidation = validateFileTypeByCategory(
-      file.name,
-      mimeType,
-      validCategory
-    );
-    if (!typeValidation.valid) {
+    // ── 4. Validate file type (extension-based — MIME is unreliable) ──
+    const ext = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
+    const allowed = ALLOWED_EXTENSIONS[validCategory];
+    if (!allowed.includes(ext)) {
       return NextResponse.json(
-        { error: typeValidation.error },
+        { error: `Invalid file type "${ext}". Allowed: ${allowed.join(", ")}` },
         { status: 400 }
       );
     }
@@ -97,8 +101,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 6. Generate storage key ──
-    // Use clerkId as part of the key (we don't have the DB userId at this point,
-    // but the key just needs to be unique and organized)
     const key = generateFileKey(clerkId, validCategory, file.name);
 
     // ── 7. Upload to Vercel Blob ──
@@ -121,8 +123,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[Blob Upload] Failed:", error);
+    // Sanitize error messages in production — never leak internal details
     const message =
-      error instanceof Error ? error.message : "Upload failed unexpectedly";
+      process.env.NODE_ENV === "production"
+        ? "Upload failed. Please try again."
+        : error instanceof Error
+          ? error.message
+          : "Upload failed unexpectedly";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -9,7 +9,7 @@
 // FALLBACK:
 //   If blob upload fails (e.g. no BLOB_READ_WRITE_TOKEN), the caller
 //   falls back to sending the file directly to /api/coach/deck as FormData.
-//   This works for files under 4.5MB (Vercel serverless body limit).
+//   This works for files under 10MB (Vercel serverless body limit).
 
 // Allowed file formats per category — enforced client-side BEFORE upload
 const ALLOWED_FORMATS: Record<string, { extensions: string[]; mimeTypes: string[]; maxSize: number }> = {
@@ -20,7 +20,7 @@ const ALLOWED_FORMATS: Record<string, { extensions: string[]; mimeTypes: string[
       "application/vnd.ms-powerpoint",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ],
-    maxSize: 50 * 1024 * 1024, // 50MB (validated client-side; server enforces 4.5MB for serverless)
+    maxSize: 50 * 1024 * 1024, // 50MB
   },
   script: {
     extensions: [".pdf", ".docx", ".doc", ".txt"],
@@ -30,7 +30,7 @@ const ALLOWED_FORMATS: Record<string, { extensions: string[]; mimeTypes: string[
       "application/msword",
       "text/plain",
     ],
-    maxSize: 50 * 1024 * 1024,
+    maxSize: 10 * 1024 * 1024, // 10MB (must match server MAX_FILE_SIZES in blob/upload/route.ts)
   },
   video: {
     extensions: [".mp4", ".webm", ".mov", ".avi"],
@@ -116,6 +116,6 @@ export async function uploadFileToBlob(
 
   return {
     url: result.url,
-    pathname: result.pathname || result.downloadUrl || result.url,
+    pathname: result.pathname,
   };
 }
