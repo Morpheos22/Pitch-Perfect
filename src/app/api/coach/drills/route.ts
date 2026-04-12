@@ -6,6 +6,8 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { drillsSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // POST /api/coach/drills
 // Generates personalized coaching drills based on an existing analysis session.
 

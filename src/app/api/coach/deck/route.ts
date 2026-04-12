@@ -8,6 +8,8 @@ import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
 
@@ -288,10 +290,24 @@ async function handlePost(request: NextRequest) {
       id: savedDeck.id,
       modelUsed: analysis.modelUsed,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Deck analysis error:", error);
+    // Provide specific error messages for common failure modes
+    const msg = error?.message || String(error);
+    if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("timeout")) {
+      return NextResponse.json(
+        { error: "Network error — could not reach AI service. Please try again in a moment." },
+        { status: 502 }
+      );
+    }
+    if (msg.includes("413") || msg.includes("body") && msg.includes("limit")) {
+      return NextResponse.json(
+        { error: "File too large for serverless upload. Try a smaller file or use the blob upload path." },
+        { status: 413 }
+      );
+    }
     return NextResponse.json(
-      { error: "Failed to analyze deck" },
+      { error: "Failed to analyze deck. If the file is image-based or scanned, try uploading a text-based PDF instead." },
       { status: 500 }
     );
   }

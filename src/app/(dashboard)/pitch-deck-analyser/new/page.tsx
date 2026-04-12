@@ -166,7 +166,7 @@ export default function PitchDeckAnalyserNewPage() {
     } catch (error: any) {
       console.error("Upload error:", error);
       if (error?.status === 413) {
-        toast.error("File is too large for upload. Please use a smaller file (under 4.5MB).");
+        toast.error("File is too large for upload. Maximum size is 50MB.");
         return;
       }
       if (error?.status === 403) {
