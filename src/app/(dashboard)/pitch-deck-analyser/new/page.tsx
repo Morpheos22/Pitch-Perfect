@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+import { uploadFileToBlob, validateFileFormat } from "@/lib/blob-upload";
 
 // Allowed file formats for E1: Pitch Deck Analyser
 const ALLOWED_EXTENSIONS = [".pdf", ".pptx", ".ppt"];
@@ -17,7 +18,7 @@ const ALLOWED_MIME_TYPES = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (Blob upload bypasses 4.5MB serverless limit)
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const PLAN_LIMITS: Record<string, { e1: number }> = {
   FREE: { e1: 1 },
@@ -113,58 +114,43 @@ export default function PitchDeckAnalyserNewPage() {
     setUploading(true);
 
     try {
-      let response: Response;
-      const SERVERLESS_LIMIT = 4 * 1024 * 1024; // 4MB safe threshold (Vercel limit is 4.5MB)
+      // ── ALWAYS use blob upload ──
+      // This bypasses Vercel's 4.5MB serverless body limit entirely.
+      // The file goes directly from the browser to Vercel Blob storage.
+      // Only a lightweight token request hits our server.
+      let blobUrl: string;
+      let blobPathname: string;
 
-      // STRATEGY: For files under 4MB, send directly to the coach API (most reliable).
-      // For larger files, try blob upload first to bypass the serverless body limit.
-      if (file.size <= SERVERLESS_LIMIT) {
-        // Direct upload — simplest and most reliable path
-        const formData = new FormData();
-        formData.append("sessionName", sessionName);
-        formData.append("file", file);
-
-        response = await fetch("/api/coach/deck", {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        // Large file: try blob upload first, then fall back to direct
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const blobResult = await uploadFileToBlob(file, "deck");
-
-          // Send only URL to coach API — tiny payload, no size limit
-          const formData = new FormData();
-          formData.append("sessionName", sessionName);
-          formData.append("fileUrl", blobResult.url);
-          formData.append("fileName", file.name);
-          formData.append("fileSize", String(file.size));
-
-          response = await fetch("/api/coach/deck", {
-            method: "POST",
-            body: formData,
-          });
-        } catch (blobError) {
-          console.warn("[E1] Blob upload failed, trying direct upload:", blobError);
-          // Blob failed — try direct upload as last resort (may hit Vercel body limit)
-          const formData = new FormData();
-          formData.append("sessionName", sessionName);
-          formData.append("file", file);
-
-          response = await fetch("/api/coach/deck", {
-            method: "POST",
-            body: formData,
-          });
-        }
+      try {
+        const blobResult = await uploadFileToBlob(file, "deck");
+        blobUrl = blobResult.url;
+        blobPathname = blobResult.pathname;
+        console.log("[E1] Blob upload succeeded:", blobUrl);
+      } catch (blobError: any) {
+        console.error("[E1] Blob upload failed:", blobError);
+        toast.error(blobError?.message || "File upload failed. Please try again.");
+        return;
       }
+
+      // ── Send blob URL to coach API for analysis ──
+      // Only the URL is sent — tiny payload, no body limit concerns
+      const formData = new FormData();
+      formData.append("sessionName", sessionName);
+      formData.append("fileUrl", blobUrl);
+      formData.append("fileName", file.name);
+      formData.append("fileSize", String(file.size));
+
+      const response = await fetch("/api/coach/deck", {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await safeJson(response);
 
       toast.success("Analysis complete!");
       router.push(`/pitch-deck-analyser/session/${data.id}`);
     } catch (error: any) {
-      console.error("Upload error:", error);
+      console.error("[E1] Upload/analysis error:", error);
       if (error?.status === 413) {
         toast.error("File is too large for upload. Maximum size is 50MB.");
         return;
@@ -179,7 +165,13 @@ export default function PitchDeckAnalyserNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error("Failed to analyze deck. Please try again.");
+      // Surface the ACTUAL server error message — don't swallow it
+      const serverMessage = error?.message || error?.data?.error;
+      if (serverMessage && serverMessage !== "Request failed (500)") {
+        toast.error(serverMessage);
+      } else {
+        toast.error("Failed to analyze deck. Please try again.");
+      }
     } finally {
       setUploading(false);
     }

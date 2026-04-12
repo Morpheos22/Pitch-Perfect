@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+import { uploadFileToBlob } from "@/lib/blob-upload";
 
 // Allowed file formats for E3 Script: PDF, DOCX, DOC, TXT
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
@@ -18,7 +19,7 @@ const ALLOWED_MIME_TYPES = [
   "application/msword",
   "text/plain",
 ];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -75,7 +76,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
         return;
       }
       if (selectedFile.size > MAX_FILE_SIZE) {
-        toast.error(`File is too large. Maximum size is 50MB.`);
+        toast.error(`File is too large. Maximum size is 10MB.`);
         return;
       }
       setFile(selectedFile);
@@ -95,48 +96,32 @@ export default function ElevatorPitchLiveScriptNewPage() {
     setSubmitting(true);
 
     try {
-      let response: Response;
+      // ── ALWAYS use blob upload ──
+      // Bypasses Vercel's 4.5MB serverless body limit entirely.
+      let blobUrl: string;
 
-      // Direct upload for files under 4MB (most reliable — bypasses broken blob token flow)
-      // Blob upload only for larger files
-      const SERVERLESS_LIMIT = 4 * 1024 * 1024;
-      if (file.size <= SERVERLESS_LIMIT) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("sessionName", sessionName);
-        formData.append("targetAudience", "investors");
-        formData.append("targetDuration", "60");
-        response = await fetch("/api/coach/script", {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const blobResult = await uploadFileToBlob(file, "script");
-          const formData = new FormData();
-          formData.append("fileUrl", blobResult.url);
-          formData.append("fileName", file.name);
-          formData.append("sessionName", sessionName);
-          formData.append("targetAudience", "investors");
-          formData.append("targetDuration", "60");
-          response = await fetch("/api/coach/script", {
-            method: "POST",
-            body: formData,
-          });
-        } catch (blobError) {
-          console.warn("[E3-Script] Blob upload failed, trying direct:", blobError);
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("sessionName", sessionName);
-          formData.append("targetAudience", "investors");
-          formData.append("targetDuration", "60");
-          response = await fetch("/api/coach/script", {
-            method: "POST",
-            body: formData,
-          });
-        }
+      try {
+        const blobResult = await uploadFileToBlob(file, "script");
+        blobUrl = blobResult.url;
+        console.log("[E2] Blob upload succeeded:", blobUrl);
+      } catch (blobError: any) {
+        console.error("[E2] Blob upload failed:", blobError);
+        toast.error(blobError?.message || "File upload failed. Please try again.");
+        return;
       }
+
+      // Send blob URL to coach API — tiny payload
+      const formData = new FormData();
+      formData.append("fileUrl", blobUrl);
+      formData.append("fileName", file.name);
+      formData.append("sessionName", sessionName);
+      formData.append("targetAudience", "investors");
+      formData.append("targetDuration", "60");
+
+      const response = await fetch("/api/coach/script", {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await safeJson(response);
 
@@ -144,7 +129,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
       router.push(`/elevator-pitch-live/script/session/${data.id}`);
 
     } catch (error: any) {
-      console.error("Submit error:", error);
+      console.error("[E2] Submit error:", error);
       if (error?.status === 403) {
         toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-pitch-live/upgrade");
@@ -155,7 +140,13 @@ export default function ElevatorPitchLiveScriptNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error("Failed to analyze script. Please try again.");
+      // Surface the ACTUAL server error message
+      const serverMessage = error?.message || error?.data?.error;
+      if (serverMessage && serverMessage !== "Request failed (500)") {
+        toast.error(serverMessage);
+      } else {
+        toast.error("Failed to analyze script. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -264,7 +255,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
               <label htmlFor="file-upload" className="cursor-pointer">
                 <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium">Drag your script here, or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, or TXT — up to 50MB</p>
+                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, or TXT — up to 10MB</p>
               </label>
             </div>
           ) : (
