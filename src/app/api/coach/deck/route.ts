@@ -44,6 +44,14 @@ async function handlePost(request: NextRequest) {
     const sessionName = formData.get("sessionName") as string | null;
     const fileSizeStr = formData.get("fileSize") as string | null;
 
+    console.log("[E1] Request received:", {
+      hasFile: !!file,
+      fileUrl: fileUrl ? fileUrl.substring(0, 80) + "..." : null,
+      fileName,
+      fileSize: fileSizeStr,
+      hasContent: !!deckContent,
+    });
+
     if (!file && !deckContent && !fileUrl) {
       return NextResponse.json(
         { error: "Either file, fileUrl, or content is required" },
@@ -99,10 +107,10 @@ async function handlePost(request: NextRequest) {
       } catch {
         return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
       }
-      console.warn("[E1] Extracting text from Blob URL:", { fileUrl, fileName });
+      console.log("[E1] Extracting text from Blob URL:", { fileUrl: fileUrl.substring(0, 80), fileName });
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
-        console.warn("[E1] Text extracted from Blob URL, length:", analysisContent.length);
+        console.log("[E1] Text extracted from Blob URL, length:", analysisContent.length);
       } catch (e) {
         console.error("[E1] Failed to extract from Blob URL:", e);
         return NextResponse.json(
@@ -137,6 +145,7 @@ async function handlePost(request: NextRequest) {
     }
 
     if (!analysisContent || analysisContent.length < 50) {
+      console.error("[E1] Insufficient content:", { length: analysisContent.length, source: fileUrl ? 'blob' : file ? 'direct' : 'content' });
       return NextResponse.json(
         { error: "Insufficient content for analysis. Could not extract enough text — the file may be image-based or empty. Please upload a text-based file." },
         { status: 400 }
@@ -182,6 +191,8 @@ async function handlePost(request: NextRequest) {
       }
     }
     const hasVisualInput = !!visualUrl;
+
+    console.log("[E1] Starting AI analysis:", { contentLength: analysisContent.length, hasVisualInput, visualSource: visualUrl ? 'provided' : 'none' });
 
     let analysis: DeckAnalysisResult;
     try {
