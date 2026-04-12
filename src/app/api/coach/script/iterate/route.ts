@@ -56,10 +56,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Parent script not found" }, { status: 404 });
     }
 
-    // Determine script content
+    // Determine script content and input type
     let scriptText = script || "";
+    let detectedInputType: "TEXT" | "PDF" | "DOCX" = parentScript.inputType || "TEXT";
 
     if (!scriptText && fileUrl && fileName) {
+      // Detect input type from file extension
+      const ext = fileName.toLowerCase().split('.').pop();
+      if (ext === 'pdf') detectedInputType = 'PDF';
+      else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
       // SSRF prevention: validate file URL host
       const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
       try {
@@ -131,7 +136,7 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         fileName: fileName || parentScript.fileName || "iteration",
-        inputType: "TEXT",
+        inputType: detectedInputType,
         inputText: scriptText,
         targetAudience: parentScript.targetAudience || "investor",
         pitchDuration: parentScript.pitchDuration || 60,

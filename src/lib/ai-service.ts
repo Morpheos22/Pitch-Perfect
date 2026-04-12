@@ -105,17 +105,14 @@ function getResolvedConfig() {
   return _resolvedConfig;
 }
 
-// NOTE: These are resolved lazily via getResolvedConfig() which now re-reads
-// config on each call. Direct property access is used in hot-path functions
-// that call getResolvedConfig() internally. For module-level convenience:
-const GATEWAY_URL = getResolvedConfig().baseUrl;
-const GATEWAY_API_KEY = getResolvedConfig().apiKey;
-const GATEWAY_TOKEN = getResolvedConfig().token;
-const GATEWAY_USER_ID = getResolvedConfig().userId;
+// NOTE: Gateway credentials are resolved LIVE on each call via getResolvedConfig().
+// Previous implementation used module-level constants that were frozen at import time,
+// causing stale credentials if env vars rotated at runtime. Now every function
+// re-resolves the config to ensure fresh credentials.
 
 /** Whether we have minimum credentials for direct HTTP calls */
 function hasDirectCredentials(): boolean {
-  return !!GATEWAY_API_KEY;
+  return !!(process.env.ZAI_API_KEY || process.env.ZAI_TOKEN);
 }
 
 /** Call the Z.ai gateway text endpoint directly via fetch */
@@ -129,6 +126,9 @@ async function callGatewayText(
     throw new Error('No gateway credentials. Set ZAI_API_KEY env var.');
   }
 
+  // Resolve credentials LIVE — never use stale module-level constants
+  const config = getResolvedConfig();
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
@@ -136,21 +136,20 @@ async function callGatewayText(
   // Auth: X-Token is the PRIMARY auth header for Z.ai gateway.
   // The gateway uses X-Token (not Bearer) for authentication.
   // ZAI_TOKEN is the dedicated token; fall back to ZAI_API_KEY if not set.
-  const authToken = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  const authToken = config.token || config.apiKey;
   if (authToken) {
     headers['X-Token'] = authToken;
   }
   // Also send API key as Bearer for backward compatibility
-  if (GATEWAY_API_KEY) {
-    headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+  if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
   }
   // User ID for request attribution and session tracking
-  if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
+  if (config.userId) headers['X-User-Id'] = config.userId;
   // Chat ID for session continuity
-  const chatId = getResolvedConfig().chatId;
-  if (chatId) headers['X-Chat-Id'] = chatId;
+  if (config.chatId) headers['X-Chat-Id'] = config.chatId;
 
-  const resp = await fetch(`${GATEWAY_URL}/chat/completions`, {
+  const resp = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -184,23 +183,25 @@ async function callGatewayVision(
     throw new Error('No gateway credentials. Set ZAI_API_KEY env var.');
   }
 
+  // Resolve credentials LIVE — never use stale module-level constants
+  const config = getResolvedConfig();
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
   };
   // Vision endpoint REQUIRES X-Token header (returns 401 without it)
-  const authToken = GATEWAY_TOKEN || GATEWAY_API_KEY;
+  const authToken = config.token || config.apiKey;
   if (authToken) {
     headers['X-Token'] = authToken;
   }
-  if (GATEWAY_API_KEY) {
-    headers['Authorization'] = `Bearer ${GATEWAY_API_KEY}`;
+  if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
   }
-  if (GATEWAY_USER_ID) headers['X-User-Id'] = GATEWAY_USER_ID;
-  const chatId = getResolvedConfig().chatId;
-  if (chatId) headers['X-Chat-Id'] = chatId;
+  if (config.userId) headers['X-User-Id'] = config.userId;
+  if (config.chatId) headers['X-Chat-Id'] = config.chatId;
 
-  const resp = await fetch(`${GATEWAY_URL}/chat/completions/vision`, {
+  const resp = await fetch(`${config.baseUrl}/chat/completions/vision`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -568,7 +569,8 @@ export async function executeWithFallback(
   }
 
   // ── STRATEGY 2: Direct HTTP fallback to gateway (bypass SDK) ──
-  console.warn(`[ZAI] All SDK models failed for ${moduleKey}. Trying direct HTTP fallback to ${GATEWAY_URL}...`);
+  const fallbackConfig = getResolvedConfig();
+  console.warn(`[ZAI] All SDK models failed for ${moduleKey}. Trying direct HTTP fallback to ${fallbackConfig.baseUrl}...`);
 
   for (const model of config.models) {
     try {

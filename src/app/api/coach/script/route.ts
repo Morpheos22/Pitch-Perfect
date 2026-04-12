@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     let targetDuration: number | undefined;
     let sessionName: string | null = null;
     let scriptFileUrl: string | null = null;
+    let detectedInputType: "TEXT" | "PDF" | "DOCX" = "TEXT";
 
     const contentType = request.headers.get("content-type") || "";
 
@@ -63,7 +64,11 @@ export async function POST(request: NextRequest) {
       // NEW: Blob upload flow — extract text from URL
       if (fileUrl && blobFileName) {
         scriptFileUrl = fileUrl;
-        console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName });
+        // Detect input type from file extension
+        const ext = blobFileName.toLowerCase().split('.').pop();
+        if (ext === 'pdf') detectedInputType = 'PDF';
+        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName, inputType: detectedInputType });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
           console.warn("[E2] Text extracted from Blob URL, length:", script.length);
@@ -75,7 +80,11 @@ export async function POST(request: NextRequest) {
           );
         }
       } else if (file) {
-        console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type });
+        // Detect input type from uploaded file extension
+        const ext = file.name.toLowerCase().split('.').pop();
+        if (ext === 'pdf') detectedInputType = 'PDF';
+        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
 
         // Server-side body size guard (legacy path only)
         if (file.size > 4.5 * 1024 * 1024) {
@@ -165,7 +174,7 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         fileName: sessionName || null,
-        inputType: "TEXT",
+        inputType: detectedInputType,
         inputText: script,
         inputFileUrl: scriptFileUrl,
         targetAudience: targetAudience || "investor",

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
+import { blobUrlToDataUri } from "@/lib/blob-signature";
 
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
@@ -123,8 +124,22 @@ export async function POST(request: NextRequest) {
       weaknesses: (parentSession.weaknesses as string[]) ?? undefined,
       recommendedActions: (parentSession.recommendedActions as string[]) ?? undefined,
     };
+    // Private blob URLs need conversion to data URI for AI gateway access
+    // (same pattern as parent /api/coach/full route)
+    let aiVideoUrl = analysisVideoUrl;
+    try {
+      const parsedUrl = new URL(analysisVideoUrl);
+      if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+        console.warn('[E4-iterate] Converting private blob URL to data URI for vision model');
+        const dataUri = await blobUrlToDataUri(analysisVideoUrl);
+        if (dataUri) {
+          aiVideoUrl = dataUri;
+        }
+      }
+    } catch { /* URL parse error, use as-is */ }
+
     const analysis = await analyzeFullPitchSession(
-      analysisVideoUrl,
+      aiVideoUrl,
       analysisDuration,
       deckAnalysis,
       previousAnalysis
