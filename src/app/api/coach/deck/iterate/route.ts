@@ -8,6 +8,8 @@ import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // POST /api/coach/deck/iterate
 // Creates a new version of a pitch deck analysis, incorporating the previous analysis for iteration context.
 

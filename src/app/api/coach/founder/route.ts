@@ -7,6 +7,8 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { founderInputSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // E5: Pitch Founder API
 // Routes to appropriate AI service based on moduleType
 

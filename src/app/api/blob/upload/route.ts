@@ -1,25 +1,29 @@
 // POST /api/blob/upload
-// Server-side blob upload proxy for Vercel Blob storage.
+// Server-side route for Vercel Blob client-side upload token generation.
 //
 // WHY THIS EXISTS:
-//   @vercel/blob v2.3.3 requires server-side put() with BLOB_READ_WRITE_TOKEN.
-//   The client cannot call put() directly — it must go through a server route.
-//   The client-side blob-upload.ts POSTs FormData to this route, which then
-//   calls put() server-side and returns the blob URL.
+//   Vercel's serverless functions have a 4.5MB request body limit on Hobby,
+//   50MB on Pro. To support files of ANY size, we use @vercel/blob's
+//   client-side upload pattern:
+//
+//   1. Browser calls upload() from @vercel/blob/client with handleUploadUrl pointing here
+//   2. This route receives a lightweight JSON request (no file!) to generate a client token
+//   3. The client token contains constraints (max size, allowed types, addRandomSuffix)
+//   4. Browser uploads the file DIRECTLY to Vercel Blob using the token
+//   5. No serverless body limit is ever hit because the file never passes through our function
 //
 // FLOW:
-//   1. Verify Clerk authentication
-//   2. Parse FormData (file + category)
-//   3. Validate file type and size
-//   4. Upload to Vercel Blob using @vercel/blob put() with access: 'private'
-//   5. Return { url, pathname } to the client
+//   Client: upload(filename, file, { access: 'private', handleUploadUrl: '/api/blob/upload', clientPayload: '{"category":"deck"}' })
+//   → Server: handleUpload() → onBeforeGenerateToken() validates auth + category → returns token options
+//   → Client: uploads directly to Vercel Blob → returns { url, pathname, downloadUrl }
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { put } from "@vercel/blob";
-import { generateFileKey } from "@/lib/storage";
+import { handleUpload } from "@vercel/blob/client";
 
-// Maximum file sizes per category — single source of truth for server-side enforcement.
+export const maxDuration = 60;
+
+// Maximum file sizes per category — single source of truth.
 // Client blob-upload.ts must use the same limits.
 const MAX_FILE_SIZES: Record<string, number> = {
   deck: 50 * 1024 * 1024, // 50MB
@@ -27,109 +31,95 @@ const MAX_FILE_SIZES: Record<string, number> = {
   video: 500 * 1024 * 1024, // 500MB
 };
 
+// Allowed MIME types per category — enforced in the client token.
+// The client token constrains what content types Vercel Blob will accept.
+const ALLOWED_CONTENT_TYPES: Record<string, string[]> = {
+  deck: [
+    "application/pdf",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ],
+  script: [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/plain",
+  ],
+  video: [
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-msvideo",
+  ],
+};
+
 // Valid categories
 const VALID_CATEGORIES = ["deck", "script", "video"] as const;
 type Category = (typeof VALID_CATEGORIES)[number];
 
-// Allowed file extensions per category (extension-only check on server;
-// MIME type is unreliable across browsers)
-const ALLOWED_EXTENSIONS: Record<string, string[]> = {
-  deck: [".pdf", ".pptx", ".ppt"],
-  script: [".pdf", ".docx", ".doc", ".txt"],
-  video: [".mp4", ".webm", ".mov", ".avi"],
-};
-
 export async function POST(request: NextRequest) {
   try {
-    // ── 1. Auth check ──
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // Parse the request body — handleUpload expects the raw body from the client
+    const body = await request.json();
 
-    // ── 2. Check BLOB_READ_WRITE_TOKEN ──
-    if (
-      !process.env.BLOB_READ_WRITE_TOKEN ||
-      process.env.BLOB_READ_WRITE_TOKEN.includes("placeholder")
-    ) {
-      console.error("[Blob Upload] BLOB_READ_WRITE_TOKEN not configured");
-      return NextResponse.json(
-        { error: "Blob storage is not configured. Please contact support." },
-        { status: 503 }
-      );
-    }
+    const response = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (
+        pathname: string,
+        clientPayload: string | null,
+        multipart: boolean,
+      ) => {
+        // ── 1. Auth check ──
+        const { userId: clerkId } = await auth();
+        if (!clerkId) {
+          throw new Error("Unauthorized — you must be signed in to upload files");
+        }
 
-    // ── 3. Parse FormData ──
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const category = formData.get("category") as string | null;
+        // ── 2. Parse client payload to get category ──
+        let category: Category = "deck"; // default
+        if (clientPayload) {
+          try {
+            const parsed = JSON.parse(clientPayload);
+            if (parsed.category && VALID_CATEGORIES.includes(parsed.category)) {
+              category = parsed.category;
+            }
+          } catch {
+            // Invalid JSON — use default category
+          }
+        }
 
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
-    }
+        // ── 3. Validate file extension against category ──
+        const ext = pathname.toLowerCase().split(".").pop() || "";
+        const ALLOWED_EXTENSIONS: Record<string, string[]> = {
+          deck: [".pdf", ".pptx", ".ppt"],
+          script: [".pdf", ".docx", ".doc", ".txt"],
+          video: [".mp4", ".webm", ".mov", ".avi"],
+        };
+        const allowed = ALLOWED_EXTENSIONS[category] || [];
+        if (!allowed.includes(`.${ext}`)) {
+          throw new Error(
+            `Invalid file type ".${ext}" for category "${category}". Allowed: ${allowed.join(", ")}`
+          );
+        }
 
-    if (!category || !VALID_CATEGORIES.includes(category as Category)) {
-      return NextResponse.json(
-        { error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` },
-        { status: 400 }
-      );
-    }
-
-    const validCategory = category as Category;
-
-    // ── 4. Validate file type (extension-based — MIME is unreliable) ──
-    const ext = file.name.toLowerCase().substring(file.name.lastIndexOf("."));
-    const allowed = ALLOWED_EXTENSIONS[validCategory];
-    if (!allowed.includes(ext)) {
-      return NextResponse.json(
-        { error: `Invalid file type "${ext}". Allowed: ${allowed.join(", ")}` },
-        { status: 400 }
-      );
-    }
-
-    // ── 5. Validate file size ──
-    const maxSize = MAX_FILE_SIZES[validCategory];
-    if (file.size > maxSize) {
-      const maxMB = (maxSize / (1024 * 1024)).toFixed(0);
-      return NextResponse.json(
-        { error: `File too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum: ${maxMB}MB` },
-        { status: 400 }
-      );
-    }
-
-    // ── 6. Generate storage key ──
-    const key = generateFileKey(clerkId, validCategory, file.name);
-
-    // ── 7. Upload to Vercel Blob ──
-    console.log(
-      `[Blob Upload] Uploading ${file.name} (${(file.size / 1024).toFixed(1)}KB) to category: ${validCategory}`
-    );
-
-    const blob = await put(key, file, {
-      access: "private",
-      addRandomSuffix: true,
+        // ── 4. Return token options with constraints ──
+        // These constraints are enforced by Vercel Blob when the client uploads.
+        return {
+          allowedContentTypes: ALLOWED_CONTENT_TYPES[category] || [],
+          maximumSizeInBytes: MAX_FILE_SIZES[category],
+          addRandomSuffix: true,
+          tokenPayload: clientPayload,
+        };
+      },
     });
 
-    console.log(`[Blob Upload] Success: ${blob.pathname}`);
-
-    // ── 8. Return result ──
-    return NextResponse.json({
-      url: blob.url,
-      pathname: blob.pathname,
-      downloadUrl: blob.downloadUrl,
-    });
+    return NextResponse.json(response);
   } catch (error) {
-    console.error("[Blob Upload] Failed:", error);
-    // Sanitize error messages in production — never leak internal details
+    console.error("[Blob Upload] Token generation failed:", error);
     const message =
-      process.env.NODE_ENV === "production"
-        ? "Upload failed. Please try again."
-        : error instanceof Error
-          ? error.message
-          : "Upload failed unexpectedly";
-    return NextResponse.json({ error: message }, { status: 500 });
+      error instanceof Error ? error.message : "Upload token generation failed";
+    const status = message.includes("Unauthorized") ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

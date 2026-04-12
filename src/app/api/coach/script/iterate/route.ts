@@ -7,6 +7,8 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // POST /api/coach/script/iterate
 // Creates a new version of a script analysis, incorporating the previous analysis for iteration context.
 

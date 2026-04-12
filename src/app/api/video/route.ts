@@ -17,6 +17,8 @@ import {
 } from '@/lib/storage';
 import { requireModuleAccess } from '@/lib/entitlement';
 
+export const maxDuration = 120;
+
 // SSRF protection: check if a URL resolves to a private/reserved IP range
 function isPrivateUrl(url: string): boolean {
   try {

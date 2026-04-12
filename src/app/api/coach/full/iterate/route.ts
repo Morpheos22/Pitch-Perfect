@@ -7,6 +7,8 @@ import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 120;
+
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
 

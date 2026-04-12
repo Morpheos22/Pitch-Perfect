@@ -7,6 +7,8 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 60;
+
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
 

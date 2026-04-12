@@ -9,6 +9,8 @@ import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 
+export const maxDuration = 120;
+
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
 

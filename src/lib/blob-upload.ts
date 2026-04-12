@@ -1,15 +1,20 @@
 // src/lib/blob-upload.ts
-// Client-side Blob upload utility.
+// Client-side Blob upload utility using @vercel/blob client-side uploads.
+//
+// CRITICAL FIX: Previous version posted files to /api/blob/upload as FormData,
+// which hit Vercel's 4.5MB serverless body limit. This version uses the
+// @vercel/blob/client upload() function, which uploads files DIRECTLY from
+// the browser to Vercel Blob storage — completely bypassing the serverless
+// function body limit.
 //
 // FLOW:
-//   1. POST /api/blob/upload with FormData { file, category }
-//   2. Server uploads to Vercel Blob using @vercel/blob put()
-//   3. Returns { url, pathname } — the blob URL for the coach API
+//   1. upload(filename, file, { access: 'private', handleUploadUrl, clientPayload })
+//   2. Internally: browser → lightweight JSON request to /api/blob/upload for token
+//   3. Server validates auth + category, returns client token with constraints
+//   4. Browser uploads file directly to Vercel Blob using the token
+//   5. Returns { url, pathname } — the blob URL for the coach API
 //
-// FALLBACK:
-//   If blob upload fails (e.g. no BLOB_READ_WRITE_TOKEN), the caller
-//   falls back to sending the file directly to /api/coach/deck as FormData.
-//   This works for files under 10MB (Vercel serverless body limit).
+// This supports files of ANY size up to the category limit (50MB deck, 10MB script, 500MB video).
 
 // Allowed file formats per category — enforced client-side BEFORE upload
 const ALLOWED_FORMATS: Record<string, { extensions: string[]; mimeTypes: string[]; maxSize: number }> = {
@@ -76,13 +81,20 @@ export function validateFileFormat(file: File, category: "deck" | "script" | "vi
 }
 
 export interface BlobUploadResult {
-  url: string;       // Full blob URL (e.g. https://public.blob.vercel-storage.com/deck/...)
+  url: string;       // Full blob URL (e.g. https://blob.vercel-storage.com/deck/...)
   pathname: string;  // Blob pathname for reference
 }
 
 /**
- * Upload a file to Vercel Blob storage via our server-side proxy route.
- * The server handles the actual @vercel/blob put() call.
+ * Upload a file to Vercel Blob storage using client-side direct upload.
+ *
+ * This uses @vercel/blob/client upload() which sends the file directly
+ * from the browser to Vercel Blob, bypassing Vercel's serverless body
+ * size limit entirely. Only a lightweight token request goes to our server.
+ *
+ * @param file - The File object to upload
+ * @param category - Upload category: "deck", "script", or "video"
+ * @returns Promise with blob URL and pathname
  */
 export async function uploadFileToBlob(
   file: File,
@@ -91,31 +103,23 @@ export async function uploadFileToBlob(
   // Validate file format before uploading
   validateFileFormat(file, category);
 
-  // POST the file to our server-side upload route
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("category", category);
+  // Dynamic import — @vercel/blob/client is a client-side module
+  // that must only run in the browser (not during SSR)
+  const { upload } = await import("@vercel/blob/client");
 
-  const res = await fetch("/api/blob/upload", {
-    method: "POST",
-    body: formData,
+  // Use client-side upload — file goes directly from browser to Vercel Blob
+  // The handleUploadUrl tells the SDK where to request a client token
+  // clientPayload carries the category so the server can validate constraints
+  const blob = await upload(file.name, file, {
+    access: "private",
+    handleUploadUrl: "/api/blob/upload",
+    clientPayload: JSON.stringify({ category }),
+    // Use multipart for files > 10MB for better reliability
+    multipart: file.size > 10 * 1024 * 1024,
   });
 
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(
-      (data as { error?: string }).error || `Upload failed (${res.status})`
-    );
-  }
-
-  const result = (await res.json()) as {
-    url: string;
-    pathname: string;
-    downloadUrl?: string;
-  };
-
   return {
-    url: result.url,
-    pathname: result.pathname,
+    url: blob.url,
+    pathname: blob.pathname,
   };
 }
