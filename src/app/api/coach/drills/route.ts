@@ -4,11 +4,12 @@ import { prisma } from "@/lib/db";
 import { generateCoachingDrills } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { drillsSchema } from "@/lib/validation/schemas";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // POST /api/coach/drills
 // Generates personalized coaching drills based on an existing analysis session.
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
@@ -191,3 +192,10 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});

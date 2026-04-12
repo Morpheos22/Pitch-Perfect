@@ -5,6 +5,7 @@ import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/li
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { founderInputSchema } from "@/lib/validation/schemas";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // E5: Pitch Founder API
 // Routes to appropriate AI service based on moduleType
@@ -365,7 +366,7 @@ async function executeAIAnalysis(
 // POST HANDLER
 // ============================================
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
@@ -610,6 +611,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});
 
 // ============================================
 // GET HANDLER

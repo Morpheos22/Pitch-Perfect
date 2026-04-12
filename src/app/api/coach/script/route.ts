@@ -5,11 +5,12 @@ import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
@@ -223,6 +224,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});
 
 export async function PATCH(request: NextRequest) {
   try {

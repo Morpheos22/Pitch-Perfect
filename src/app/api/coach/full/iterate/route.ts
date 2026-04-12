@@ -5,11 +5,12 @@ import { analyzeFullPitchSession } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
@@ -145,6 +146,50 @@ export async function POST(request: NextRequest) {
       previousAnalysis
     );
 
+    // ── Score consistency validation (same as parent route) ──
+    const clampScore = (v: number | null | undefined): number => {
+      if (v == null || !Number.isFinite(v)) return 0;
+      return Math.max(0, Math.min(100, Math.round(v)));
+    };
+
+    analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
+    analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
+    analysis.businessModelViability = clampScore(analysis.businessModelViability);
+    analysis.teamCredibility = clampScore(analysis.teamCredibility);
+    analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
+    analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
+    analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+
+    if (analysis.contentScores) {
+      for (const key of Object.keys(analysis.contentScores) as (keyof typeof analysis.contentScores)[]) {
+        analysis.contentScores[key] = clampScore(analysis.contentScores[key]);
+      }
+    }
+    if (analysis.deliveryScores) {
+      for (const key of Object.keys(analysis.deliveryScores) as (keyof typeof analysis.deliveryScores)[]) {
+        analysis.deliveryScores[key] = clampScore(analysis.deliveryScores[key]);
+      }
+    }
+
+    const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
+    if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
+      console.warn(`[E4-iterate] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
+      analysis.investorReadinessLevel = 'NEEDS_WORK';
+    }
+
+    const subScoreAvg = (
+      analysis.problemSolutionFit +
+      analysis.marketOpportunity +
+      analysis.businessModelViability +
+      analysis.teamCredibility +
+      analysis.tractionMilestones +
+      analysis.deliveryPresence
+    ) / 6;
+    const overallDelta = Math.abs(analysis.overallReadinessScore - subScoreAvg);
+    if (overallDelta > 30) {
+      console.warn(`[E4-iterate] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
+    }
+
     // H8: Atomic version numbering — query DB max instead of trusting client
     const latestVersion = await prisma.fullPitchSession.findFirst({
       where: { parentFullSessionId: parentId, userId: user.id },
@@ -210,3 +255,10 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});

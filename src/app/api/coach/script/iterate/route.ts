@@ -5,11 +5,12 @@ import { analyzePitchScript } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // POST /api/coach/script/iterate
 // Creates a new version of a script analysis, incorporating the previous analysis for iteration context.
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
@@ -178,3 +179,10 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});

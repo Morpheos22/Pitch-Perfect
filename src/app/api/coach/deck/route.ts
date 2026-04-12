@@ -6,11 +6,12 @@ import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
@@ -295,6 +296,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, {
+  limit: 5,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'AI Analysis',
+});
 
 export async function PATCH(request: NextRequest) {
   try {
