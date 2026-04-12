@@ -155,8 +155,21 @@ function capTextLength(text: string): string {
  * This enables the Blob upload flow: client uploads to Blob → server gets URL → extracts text.
  */
 export async function extractTextFromUrl(fileUrl: string, fileName: string): Promise<string> {
-  const { getFileContent } = await import("@/lib/storage");
-  const buffer = await getFileContent(fileUrl);
+  console.log(`[file-parser] extractTextFromUrl: url=${fileUrl.substring(0, 80)}, name=${fileName}`);
+
+  let buffer: Buffer;
+  try {
+    const { getFileContent } = await import("@/lib/storage");
+    buffer = await getFileContent(fileUrl);
+    console.log(`[file-parser] Got ${buffer.length} bytes from URL`);
+  } catch (fetchError: any) {
+    console.error(`[file-parser] Failed to fetch file content from URL:`, fetchError.message);
+    throw new Error(`Failed to download file from storage: ${fetchError.message}`);
+  }
+
+  if (!buffer || buffer.length === 0) {
+    throw new Error(`Downloaded file is empty (0 bytes). The upload may have failed.`);
+  }
 
   // Construct a File object from the buffer for extractFileText
   const ext = fileName.toLowerCase().split(".").pop() || "";

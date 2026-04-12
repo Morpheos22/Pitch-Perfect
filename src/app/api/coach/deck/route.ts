@@ -59,27 +59,21 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Validate file if provided
-    if (file) {
-      const allowedTypes = [
-        "application/pdf",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "text/plain",
-      ];
-      const isAllowedType = allowedTypes.includes(file.type) || 
-        file.name.endsWith(".pdf") || 
-        file.name.endsWith(".pptx") ||
-        file.name.endsWith(".ppt") ||
-        file.name.endsWith(".txt");
-      
-      if (!isAllowedType) {
+    // Validate file type for both direct uploads and blob URLs
+    const allowedExtensions = [".pdf", ".pptx", ".ppt", ".txt"];
+    const fileToValidate = file || (fileName ? { name: fileName } : null);
+    if (fileToValidate) {
+      const ext = fileToValidate.name.toLowerCase().substring(fileToValidate.name.lastIndexOf("."));
+      if (!allowedExtensions.includes(ext)) {
         return NextResponse.json(
-          { error: `Invalid file type (${file.type || 'unknown'}). Supported formats: PDF, PPTX, PPT, TXT.` },
+          { error: `Invalid file type (${ext || 'unknown'}). Supported formats: PDF, PPTX, PPT, TXT.` },
           { status: 400 }
         );
       }
+    }
 
+    // Validate file if provided (direct upload)
+    if (file) {
       // Vercel Hobby body limit guard
       const VERCEL_BODY_LIMIT = 4.5 * 1024 * 1024;
       if (!Number.isFinite(file.size) || file.size > VERCEL_BODY_LIMIT) {
@@ -302,9 +296,12 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error: any) {
-    console.error("Deck analysis error:", error);
+    console.error("[E1] DECK ANALYSIS FAILED — Full error:", error);
     // Provide specific error messages for common failure modes
     const msg = error?.message || String(error);
+    console.error(`[E1] Error message: ${msg}`);
+    console.error(`[E1] Error stack:`, error?.stack?.substring(0, 500));
+
     if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("timeout")) {
       return NextResponse.json(
         { error: "Network error — could not reach AI service. Please try again in a moment." },
@@ -317,8 +314,22 @@ async function handlePost(request: NextRequest) {
         { status: 413 }
       );
     }
+    if (msg.includes("BLOB_READ_WRITE_TOKEN") || msg.includes("Blob not found") || msg.includes("Blob returned")) {
+      return NextResponse.json(
+        { error: "File storage access error — could not retrieve uploaded file. Please try again or contact support." },
+        { status: 502 }
+      );
+    }
+    if (msg.includes("pdf-parse") || msg.includes("PDF") || msg.includes("parse")) {
+      return NextResponse.json(
+        { error: "Could not parse the uploaded file. If the file is image-based or scanned, try uploading a text-based PDF instead." },
+        { status: 400 }
+      );
+    }
+    // Return the actual error detail in development, generic in production
+    const isDev = process.env.NODE_ENV === 'development';
     return NextResponse.json(
-      { error: "Failed to analyze deck. If the file is image-based or scanned, try uploading a text-based PDF instead." },
+      { error: isDev ? `Deck analysis error: ${msg}` : "Failed to analyze deck. If the file is image-based or scanned, try uploading a text-based PDF instead." },
       { status: 500 }
     );
   }

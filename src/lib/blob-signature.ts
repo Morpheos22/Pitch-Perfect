@@ -40,13 +40,27 @@ export function extractBlobPathname(blobUrl: string): string | null {
 export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffer> {
   const { get } = await import("@vercel/blob");
 
+  console.log(`[Blob] fetchPrivateBlob: fetching '${blobUrlOrPathname.substring(0, 80)}'`);
+
   const result = await get(blobUrlOrPathname, {
     access: "private",
   });
 
-  if (!result || !result.stream) {
+  // get() returns a discriminated union on statusCode:
+  //   200 → stream is ReadableStream<Uint8Array>
+  //   304 → stream is null (Not Modified)
+  //   null → blob not found
+  if (!result) {
     throw new Error(`Blob not found: ${blobUrlOrPathname}`);
   }
+
+  // Check for 304 Not Modified (stream is null)
+  if (result.statusCode === 304 || !result.stream) {
+    throw new Error(`Blob returned status ${result.statusCode} with no content stream for: ${blobUrlOrPathname}`);
+  }
+
+  const blobSize = result.blob?.size;
+  console.log(`[Blob] Streaming blob content, reported size: ${blobSize} bytes`);
 
   // Read the stream into a buffer
   const reader = result.stream.getReader();
@@ -67,6 +81,7 @@ export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffe
     offset += chunk.length;
   }
 
+  console.log(`[Blob] Buffered ${buffer.length} bytes from blob`);
   return buffer;
 }
 

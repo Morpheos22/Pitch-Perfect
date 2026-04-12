@@ -520,11 +520,15 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
   ) {
     const { extractBlobPathname, fetchPrivateBlob } = await import('./blob-signature');
     const pathname = extractBlobPathname(fileUrl);
-    if (pathname && process.env.BLOB_READ_WRITE_TOKEN) {
-      // Fetch private blob content server-side using SDK
-      return fetchPrivateBlob(pathname);
+    if (!pathname) {
+      throw new Error(`Could not extract blob pathname from URL: ${fileUrl}`);
     }
-    // Fallback: try direct fetch (may fail for private blobs)
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      throw new Error('BLOB_READ_WRITE_TOKEN is not set — cannot fetch private blob content. Set this env var in Vercel.');
+    }
+    // Fetch private blob content server-side using SDK
+    console.log(`[Storage] Fetching private blob: ${pathname}`);
+    return fetchPrivateBlob(pathname);
   }
 
   // Handle Zoho WorkDrive download URLs

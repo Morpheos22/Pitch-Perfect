@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+import { uploadFileToBlob } from "@/lib/blob-upload";
 
 // Allowed file formats for E2: Script Check
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
@@ -101,48 +102,36 @@ export default function ElevatorScriptNewPage() {
     setSubmitting(true);
     
     try {
-      let response: Response;
+      // ── ALWAYS use blob upload ──
+      // This bypasses Vercel's 4.5MB serverless body limit entirely.
+      // The file goes directly from the browser to Vercel Blob storage.
+      let blobUrl: string;
+      let blobPathname: string;
 
-      // Direct upload for files under 4MB (most reliable — bypasses broken blob token flow)
-      // Blob upload only for larger files
-      const SERVERLESS_LIMIT = 4 * 1024 * 1024;
-      if (file.size <= SERVERLESS_LIMIT) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("sessionName", sessionName);
-        formData.append("targetAudience", "investors");
-        formData.append("targetDuration", "60");
-        response = await fetch("/api/coach/script", {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const blobResult = await uploadFileToBlob(file, "script");
-          const formData = new FormData();
-          formData.append("fileUrl", blobResult.url);
-          formData.append("fileName", file.name);
-          formData.append("sessionName", sessionName);
-          formData.append("targetAudience", "investors");
-          formData.append("targetDuration", "60");
-          response = await fetch("/api/coach/script", {
-            method: "POST",
-            body: formData,
-          });
-        } catch (blobError) {
-          console.warn("[E2] Blob upload failed, trying direct:", blobError);
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("sessionName", sessionName);
-          formData.append("targetAudience", "investors");
-          formData.append("targetDuration", "60");
-          response = await fetch("/api/coach/script", {
-            method: "POST",
-            body: formData,
-          });
-        }
+      try {
+        const blobResult = await uploadFileToBlob(file, "script");
+        blobUrl = blobResult.url;
+        blobPathname = blobResult.pathname;
+        console.log("[E2] Blob upload succeeded:", blobUrl);
+      } catch (blobError: any) {
+        console.error("[E2] Blob upload failed:", blobError);
+        toast.error(blobError?.message || "File upload failed. Please try again.");
+        return;
       }
+
+      // ── Send blob URL to coach API for analysis ──
+      // Only the URL is sent — tiny payload, no body limit concerns
+      const formData = new FormData();
+      formData.append("fileUrl", blobUrl);
+      formData.append("fileName", file.name);
+      formData.append("sessionName", sessionName);
+      formData.append("targetAudience", "investors");
+      formData.append("targetDuration", "60");
+
+      const response = await fetch("/api/coach/script", {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await safeJson(response);
 
@@ -150,9 +139,9 @@ export default function ElevatorScriptNewPage() {
       router.push(`/elevator-script/session/${data.id}`);
       
     } catch (error: any) {
-      console.error("Submit error:", error);
+      console.error("[E2] Upload/analysis error:", error);
       if (error?.status === 413) {
-        toast.error("File is too large for upload. Please use a smaller file (under 50MB).");
+        toast.error("File is too large for upload. Maximum size is 10MB for scripts.");
         return;
       }
       if (error?.status === 403) {
@@ -165,7 +154,13 @@ export default function ElevatorScriptNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error("Failed to analyze script. Please try again.");
+      // Surface the ACTUAL server error message
+      const serverMessage = error?.message || error?.data?.error;
+      if (serverMessage && serverMessage !== "Request failed (500)") {
+        toast.error(serverMessage);
+      } else {
+        toast.error("Failed to analyze script. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
