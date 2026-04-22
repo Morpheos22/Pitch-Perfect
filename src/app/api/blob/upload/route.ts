@@ -13,7 +13,7 @@
 //   5. No serverless body limit is ever hit because the file never passes through our function
 //
 // FLOW:
-//   Client: upload(filename, file, { access: 'private', handleUploadUrl: '/api/blob/upload', clientPayload: '{"category":"deck"}' })
+//   Client: upload(filename, file, { access: 'public', handleUploadUrl: '/api/blob/upload', clientPayload: '{"category":"deck"}' })
 //   → Server: handleUpload() → onBeforeGenerateToken() validates auth + category → returns token options
 //   → Client: uploads directly to Vercel Blob → returns { url, pathname, downloadUrl }
 

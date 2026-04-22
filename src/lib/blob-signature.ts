@@ -1,10 +1,14 @@
 // src/lib/blob-signature.ts
-// Utilities for handling private Vercel Blob access.
+// Utilities for handling Vercel Blob access.
 //
-// When blob access is set to 'private', files cannot be accessed by direct URL.
+// This project uses a PUBLIC Vercel Blob store. Public blobs are accessible
+// by their URL directly. The SDK get() function with access: 'public' can also
+// be used server-side for programmatic access.
+//
 // This module provides:
 //   - extractBlobPathname: Parse blob URLs to get the pathname
-//   - fetchPrivateBlob: Server-side fetch of private blob content via SDK
+//   - fetchBlob: Server-side fetch of blob content via SDK (public access)
+//   - fetchPrivateBlob: Legacy alias for fetchBlob (kept for backward compat)
 //   - generateBlobDownloadUrl: Generate a URL to our proxy route for client access
 
 import { auth } from "@clerk/nextjs/server";
@@ -31,19 +35,20 @@ export function extractBlobPathname(blobUrl: string): string | null {
 }
 
 /**
- * Fetch the content of a private blob server-side using the @vercel/blob SDK.
- * Requires BLOB_READ_WRITE_TOKEN to be set in environment variables.
+ * Fetch the content of a blob server-side using the @vercel/blob SDK.
+ * Uses access: 'public' because the Vercel Blob store for this project is public.
+ * Requires BLOB_READ_WRITE_TOKEN to be set in environment variables for SDK initialization.
  *
  * @param blobUrlOrPathname - Either a full blob URL or a blob pathname
  * @returns Buffer with the file content
  */
-export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffer> {
+export async function fetchBlob(blobUrlOrPathname: string): Promise<Buffer> {
   const { get } = await import("@vercel/blob");
 
-  console.log(`[Blob] fetchPrivateBlob: fetching '${blobUrlOrPathname.substring(0, 80)}'`);
+  console.log(`[Blob] fetchBlob: fetching '${blobUrlOrPathname.substring(0, 80)}'`);
 
   const result = await get(blobUrlOrPathname, {
-    access: "private",
+    access: "public",
   });
 
   // get() returns a discriminated union on statusCode:
@@ -86,6 +91,12 @@ export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffe
 }
 
 /**
+ * Legacy alias — the store is public, not private, but some callers
+ * still reference fetchPrivateBlob. This alias ensures backward compat.
+ */
+export const fetchPrivateBlob = fetchBlob;
+
+/**
  * Check if a URL is a Vercel Blob URL.
  * Handles subdomain format: https://<store-slug>.blob.vercel-storage.com/...
  * and https://<store-slug>.public.blob.vercel-storage.com/...
@@ -119,12 +130,15 @@ export function generateBlobDownloadUrl(blobUrlOrPathname: string): string {
 }
 
 /**
- * Convert a private blob URL to a data URI for AI vision models.
- * The AI gateway cannot fetch private blob URLs directly — it needs
+ * Convert a blob URL to a data URI for AI vision models.
+ * The AI gateway cannot fetch blob URLs directly in some cases — it needs
  * either a public URL or a data URI. This function fetches the blob
- * content server-side (using the SDK with BLOB_READ_WRITE_TOKEN) and
- * converts it to a base64 data URI that can be passed directly to
- * the AI vision endpoint.
+ * content server-side (using fetchBlob with public access) and converts it
+ * to a base64 data URI that can be passed directly to the AI vision endpoint.
+ *
+ * For public blob stores, the URL is already publicly accessible, but converting
+ * to a data URI ensures the AI gateway can always access the content regardless
+ * of network restrictions.
  *
  * @param blobUrlOrPathname - The stored blob URL or pathname
  * @returns A data URI string (e.g. "data:application/pdf;base64,...") or null on failure
@@ -135,8 +149,8 @@ export async function blobUrlToDataUri(blobUrlOrPathname: string): Promise<strin
       ? extractBlobPathname(blobUrlOrPathname) || blobUrlOrPathname
       : blobUrlOrPathname;
 
-    // Fetch the private blob content using the SDK
-    const buffer = await fetchPrivateBlob(pathname);
+    // Fetch the blob content using the SDK (public access)
+    const buffer = await fetchBlob(pathname);
 
     // Determine content type from pathname extension
     const ext = pathname.split('.').pop()?.toLowerCase();
@@ -253,8 +267,8 @@ export async function servePrivateBlob(request: NextRequest): Promise<NextRespon
       );
     }
 
-    // Fetch blob content using SDK
-    const buffer = await fetchPrivateBlob(pathname);
+    // Fetch blob content using SDK (public access — store is public)
+    const buffer = await fetchBlob(pathname);
 
     // Determine content type from pathname extension
     const ext = pathname.split(".").pop()?.toLowerCase();

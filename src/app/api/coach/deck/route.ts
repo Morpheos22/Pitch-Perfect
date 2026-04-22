@@ -148,8 +148,8 @@ async function handlePost(request: NextRequest) {
 
     // Run AI analyses in parallel: content (text) + visual (vision)
     // Visual analysis requires a URL the AI gateway can fetch, or a data URI.
-    // Private blob URLs must be converted to data URIs since the AI gateway
-    // cannot authenticate to fetch private blobs.
+    // Blob URLs are converted to data URIs since the AI gateway may not be
+    // able to fetch external blob URLs directly.
     const ALLOWED_VISUAL_HOSTS = [
       'public.blob.vercel-storage.com',
       'blob.vercel-storage.com',
@@ -166,15 +166,18 @@ async function handlePost(request: NextRequest) {
           if (['pptx', 'ppt'].includes(ext)) {
             console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model');
           } else {
-            // Private blob URLs need conversion to data URI for AI access
-            // Public blob URLs (workdrive, public.blob) can be used directly
-            // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
+            // Blob URLs — the store is public so URLs are directly accessible.
+            // For vision model access, we may still convert to data URI for reliability
+            // since the AI gateway might not be able to fetch external URLs directly.
+            // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.public.blob.vercel-storage.com)
             // so we check hostname suffix, not exact match.
-            const isPrivateBlob = parsedUrl.hostname.endsWith('.blob.vercel-storage.com') &&
-              !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
-            if (isPrivateBlob || parsedUrl.hostname === 'blob.vercel-storage.com') {
-              // Private Vercel Blob — convert to data URI
-              console.warn('[E1] Converting private blob URL to data URI for vision model');
+            const isBlobUrl = parsedUrl.hostname.endsWith('.blob.vercel-storage.com') ||
+              parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com') ||
+              parsedUrl.hostname === 'blob.vercel-storage.com';
+            if (isBlobUrl) {
+              // Convert to data URI for reliable AI vision model access
+              // (the AI gateway may not be able to fetch external blob URLs directly)
+              console.warn('[E1] Converting blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               visualUrl = dataUri || fileUrl; // Fallback to raw URL (may fail, but will degrade gracefully)
             } else {

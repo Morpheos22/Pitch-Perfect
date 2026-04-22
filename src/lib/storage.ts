@@ -431,7 +431,7 @@ export async function uploadFile(
       const { put } = await import('@vercel/blob');
       const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
       const blobResult = await put(key, blob, {
-        access: 'private',
+        access: 'public',  // Store is public — 'private' would fail
         addRandomSuffix: true,
       });
       return {
@@ -513,11 +513,14 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
     throw ssrfError;
   }
 
-  // Handle Vercel Blob URLs (private access via SDK)
-  // CRITICAL: Vercel Blob URLs use subdomain format: https://<store-slug>.blob.vercel-storage.com/...
-  // We must check the hostname suffix, not a URL prefix.
-  // Public blobs:  https://<store-slug>.public.blob.vercel-storage.com/...
-  // Private blobs: https://<store-slug>.blob.vercel-storage.com/...
+  // Handle Vercel Blob URLs (public access — store is public, not private)
+  // CRITICAL: Vercel Blob URLs use subdomain format:
+  //   Public blobs:  https://<store-slug>.public.blob.vercel-storage.com/...
+  //   Private blobs: https://<store-slug>.blob.vercel-storage.com/...
+  //
+  // This project uses a PUBLIC blob store. Public blob URLs are directly
+  // fetchable without authentication — no need for the SDK get() function.
+  // We just fetch() the URL directly like any other HTTP resource.
   let parsedBlobUrl: URL | null = null;
   try {
     parsedBlobUrl = new URL(fileUrl);
@@ -525,21 +528,34 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
 
   const isVercelBlob = parsedBlobUrl && (
     parsedBlobUrl.hostname.endsWith('.blob.vercel-storage.com') ||
+    parsedBlobUrl.hostname.endsWith('.public.blob.vercel-storage.com') ||
     parsedBlobUrl.hostname === 'blob.vercel-storage.com'
   );
 
   if (isVercelBlob) {
-    const { extractBlobPathname, fetchPrivateBlob } = await import('./blob-signature');
-    const pathname = extractBlobPathname(fileUrl);
-    if (!pathname) {
-      throw new Error(`Could not extract blob pathname from URL: ${fileUrl}`);
+    // Public blob URLs can be fetched directly with fetch() — no SDK needed.
+    // The random suffix in the pathname provides adequate security.
+    console.log(`[Storage] Fetching public blob: ${fileUrl.substring(0, 100)}`);
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      // Fallback: try using the SDK with access: 'public' in case the URL expired
+      // or has authentication requirements we don't know about
+      console.warn(`[Storage] Direct fetch failed (${response.status}), trying SDK fallback...`);
+      try {
+        const { fetchBlob } = await import('./blob-signature');
+        const pathname = fileUrl.split('.blob.vercel-storage.com/')[1];
+        if (pathname) {
+          return fetchBlob(pathname);
+        }
+      } catch (sdkErr) {
+        console.error('[Storage] SDK fallback also failed:', sdkErr);
+      }
+      throw new Error(
+        `Failed to fetch blob content: ${response.status} ${response.statusText}`
+      );
     }
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      throw new Error('BLOB_READ_WRITE_TOKEN is not set — cannot fetch private blob content. Set this env var in Vercel.');
-    }
-    // Fetch private blob content server-side using SDK
-    console.log(`[Storage] Fetching private blob: ${pathname}`);
-    return fetchPrivateBlob(pathname);
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   // Handle Zoho WorkDrive download URLs
