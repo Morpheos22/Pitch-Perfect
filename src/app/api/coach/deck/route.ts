@@ -168,7 +168,11 @@ async function handlePost(request: NextRequest) {
           } else {
             // Private blob URLs need conversion to data URI for AI access
             // Public blob URLs (workdrive, public.blob) can be used directly
-            if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+            // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
+            // so we check hostname suffix, not exact match.
+            const isPrivateBlob = parsedUrl.hostname.endsWith('.blob.vercel-storage.com') &&
+              !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
+            if (isPrivateBlob || parsedUrl.hostname === 'blob.vercel-storage.com') {
               // Private Vercel Blob — convert to data URI
               console.warn('[E1] Converting private blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);

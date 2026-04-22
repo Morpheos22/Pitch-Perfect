@@ -15,7 +15,7 @@ import { prisma } from "@/lib/db";
  * Extract the blob pathname from a full Vercel Blob URL.
  * Handles both public and private blob URL formats.
  *
- * @param blobUrl - Full blob URL like "https://blob.vercel-storage.com/deck/1234-file.pdf"
+ * @param blobUrl - Full blob URL like "https://<store-slug>.blob.vercel-storage.com/deck/1234-file.pdf"
  * @returns The pathname portion (e.g. "deck/1234-file.pdf") or null if not parseable
  */
 export function extractBlobPathname(blobUrl: string): string | null {
@@ -87,12 +87,19 @@ export async function fetchPrivateBlob(blobUrlOrPathname: string): Promise<Buffe
 
 /**
  * Check if a URL is a Vercel Blob URL.
+ * Handles subdomain format: https://<store-slug>.blob.vercel-storage.com/...
+ * and https://<store-slug>.public.blob.vercel-storage.com/...
  */
 function isBlobUrl(url: string): boolean {
-  return (
-    url.startsWith("https://blob.vercel-storage.com") ||
-    url.startsWith("https://public.blob.vercel-storage.com")
-  );
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname.endsWith('.blob.vercel-storage.com') ||
+      parsed.hostname === 'blob.vercel-storage.com'
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

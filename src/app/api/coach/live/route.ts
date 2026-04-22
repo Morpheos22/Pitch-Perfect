@@ -131,10 +131,13 @@ async function handlePost(request: NextRequest) {
 
     // Private blob URLs need conversion to data URI for AI gateway access
     // Note: Video data URIs can be large, but the AI gateway cannot fetch private blobs
+    // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
     let aiVideoUrl = analysisVideoUrl;
     try {
       const parsedUrl = new URL(analysisVideoUrl);
-      if (parsedUrl.hostname === 'blob.vercel-storage.com' && !parsedUrl.hostname.startsWith('public.')) {
+      const isPrivateBlob = (parsedUrl.hostname.endsWith('.blob.vercel-storage.com') || parsedUrl.hostname === 'blob.vercel-storage.com') &&
+        !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
+      if (isPrivateBlob) {
         console.warn('[E3] Converting private blob URL to data URI for vision model');
         const dataUri = await blobUrlToDataUri(analysisVideoUrl);
         if (dataUri) {
