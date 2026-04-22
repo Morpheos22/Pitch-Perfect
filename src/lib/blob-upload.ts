@@ -8,11 +8,15 @@
 // function body limit.
 //
 // FLOW:
-//   1. upload(filename, file, { access: 'private', handleUploadUrl, clientPayload })
+//   1. upload(filename, file, { access: 'public', handleUploadUrl, clientPayload })
 //   2. Internally: browser → lightweight JSON request to /api/blob/upload for token
 //   3. Server validates auth + category, returns client token with constraints
 //   4. Browser uploads file directly to Vercel Blob using the token
 //   5. Returns { url, pathname } — the blob URL for the coach API
+//
+// NOTE: The Vercel Blob store for this project is a PUBLIC store.
+// Using access: 'private' would fail with "Cannot use private access on a public store".
+// Public blob URLs are not easily guessable (random suffix), providing adequate security.
 //
 // This supports files of ANY size up to the category limit (50MB deck, 10MB script, 500MB video).
 
@@ -110,8 +114,12 @@ export async function uploadFileToBlob(
   // Use client-side upload — file goes directly from browser to Vercel Blob
   // The handleUploadUrl tells the SDK where to request a client token
   // clientPayload carries the category so the server can validate constraints
+  //
+  // IMPORTANT: access must be "public" because the Vercel Blob store for this
+  // project is a public store. Private access would cause the upload to fail with
+  // "Cannot use private access on a public store".
   const blob = await upload(file.name, file, {
-    access: "private",
+    access: "public",
     handleUploadUrl: "/api/blob/upload",
     clientPayload: JSON.stringify({ category }),
     // Use multipart for files > 10MB for better reliability

@@ -1,6 +1,8 @@
 // GET /api/blob/download?pathname=...
-// Serves private Vercel Blob content to authenticated users.
-// This proxy route ensures only authorized users can access private blobs.
+// Serves Vercel Blob content to authenticated users.
+// This proxy route ensures only authorized users can access blob files,
+// even though the blob store is public (public URLs have random suffixes
+// for security, but this adds an extra auth layer for direct downloads).
 //
 // Flow:
 //   1. Verify Clerk authentication

@@ -167,7 +167,7 @@ async function testVercelBlob(): Promise<TestResult> {
 
     // READ
     const { get } = await import('@vercel/blob');
-    const getResult = await get(blobUrl, { access: 'private' });
+    const getResult = await get(blobUrl, { access: 'public' });
     if (!getResult) {
       steps.push('❌ READ: get() returned null');
       return {

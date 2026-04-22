@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       const { put } = await import('@vercel/blob');
       const blob = new Blob([buffer], { type: videoFile.type });
       const blobResult = await put(generateFileKey(user.id, 'video', videoFile.name), blob, {
-        access: 'private',
+        access: 'public',  // Store is public — 'private' would fail
         addRandomSuffix: true,
       });
       downloadUrl = blobResult.url;
