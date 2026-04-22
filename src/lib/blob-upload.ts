@@ -81,7 +81,7 @@ export function validateFileFormat(file: File, category: "deck" | "script" | "vi
 }
 
 export interface BlobUploadResult {
-  url: string;       // Full blob URL (e.g. https://blob.vercel-storage.com/deck/...)
+  url: string;       // Full blob URL (e.g. https://<store-slug>.blob.vercel-storage.com/deck/...)
   pathname: string;  // Blob pathname for reference
 }
 

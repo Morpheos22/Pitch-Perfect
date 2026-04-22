@@ -514,10 +514,21 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
   }
 
   // Handle Vercel Blob URLs (private access via SDK)
-  if (
-    fileUrl.startsWith('https://blob.vercel-storage.com') ||
-    fileUrl.startsWith('https://public.blob.vercel-storage.com')
-  ) {
+  // CRITICAL: Vercel Blob URLs use subdomain format: https://<store-slug>.blob.vercel-storage.com/...
+  // We must check the hostname suffix, not a URL prefix.
+  // Public blobs:  https://<store-slug>.public.blob.vercel-storage.com/...
+  // Private blobs: https://<store-slug>.blob.vercel-storage.com/...
+  let parsedBlobUrl: URL | null = null;
+  try {
+    parsedBlobUrl = new URL(fileUrl);
+  } catch { /* not a valid URL, will be handled below */ }
+
+  const isVercelBlob = parsedBlobUrl && (
+    parsedBlobUrl.hostname.endsWith('.blob.vercel-storage.com') ||
+    parsedBlobUrl.hostname === 'blob.vercel-storage.com'
+  );
+
+  if (isVercelBlob) {
     const { extractBlobPathname, fetchPrivateBlob } = await import('./blob-signature');
     const pathname = extractBlobPathname(fileUrl);
     if (!pathname) {

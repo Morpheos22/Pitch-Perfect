@@ -237,12 +237,16 @@ export async function GET(request: NextRequest) {
       }
       // For Vercel Blob uploads, generate a proxy URL (private access).
       // For WorkDrive files, generate the WorkDrive download URL.
+      // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
       let downloadUrl: string;
-      if (video.videoUrl && (
-        video.videoUrl.startsWith('https://blob.vercel-storage.com') ||
-        video.videoUrl.startsWith('https://public.blob.vercel-storage.com') ||
-        !video.videoUrl.includes('workdrive.zoho.com')
-      )) {
+      let isBlobVideo = false;
+      try {
+        const parsedVideoUrl = new URL(video.videoUrl || '');
+        isBlobVideo = parsedVideoUrl.hostname.endsWith('.blob.vercel-storage.com') ||
+          parsedVideoUrl.hostname === 'blob.vercel-storage.com';
+      } catch { /* not a valid URL */ }
+
+      if (video.videoUrl && (isBlobVideo || !video.videoUrl.includes('workdrive.zoho.com'))) {
         // Generate proxy URL for private blob access
         try {
           const { generateBlobDownloadUrl } = await import('@/lib/blob-signature');
