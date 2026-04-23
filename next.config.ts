@@ -21,6 +21,29 @@ const nextConfig: NextConfig = {
     "mammoth",
     "jszip",
   ],
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          // Allow connections to Google AI / Gemini API from browser
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://blob.vercel-storage.com https://public.blob.vercel-storage.com",
+              "font-src 'self'",
+              "connect-src 'self' https://blob.vercel-storage.com https://public.blob.vercel-storage.com https://generativelanguage.googleapis.com https://*.aiplatform.googleapis.com https://z.ai https://api.upstash.com",
+              "frame-src 'self' https://challenges.cloudflare.com",
+              "media-src 'self' blob:",
+            ].join('; '),
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

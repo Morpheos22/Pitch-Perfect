@@ -1,23 +1,28 @@
 // src/lib/vertex-ai.ts
-// Vertex AI integration for Pitch Perfect — Strategy 3 fallback
+// Google AI (Gemini) integration for Pitch Perfect — PRIMARY for E2 Script Check
 //
-// This is the third AI strategy in the cascading fallback chain:
-//   Strategy 1: Z.ai SDK (z-ai-web-dev-sdk) — primary
-//   Strategy 2: OpenAI API fallback — secondary
-//   Strategy 3: Vertex AI (@google-cloud/vertexai) — tertiary
+// AI Strategy Chain for E2 Script Check:
+//   Strategy 1: Google AI / Gemini (this module) — PRIMARY for E2
+//   Strategy 2: Z.ai SDK (z-ai-web-dev-sdk) — secondary
+//   Strategy 3: Z.ai direct HTTP fallback — tertiary
 //
 // REQUIRED ENV VARS:
-//   GOOGLE_CLOUD_PROJECT   — Google Cloud project ID
-//   GOOGLE_CLOUD_LOCATION  — Vertex AI region (e.g., us-central1)
-//   GOOGLE_GENAI_API_KEY   — API key for Vertex AI / Generative AI
+//   GOOGLE_GENAI_API_KEY   — API key from Google AI Studio (REQUIRED)
+//   GOOGLE_CLOUD_PROJECT   — Google Cloud project ID (optional, for Vertex AI endpoint)
+//   GOOGLE_CLOUD_LOCATION  — Vertex AI region (optional, default: us-central1)
 //
-// HOW TO GET THE KEYS:
+// HOW TO GET THE API KEY:
+//   1. Go to https://aistudio.google.com/apikey
+//   2. Sign in with your Google account
+//   3. Click "Create API Key" or use an existing one
+//   4. Copy the API key
+//   5. Set GOOGLE_GENAI_API_KEY in Vercel Project Settings → Environment Variables
+//
+// Alternatively, from Google Cloud Console:
 //   1. Go to https://console.cloud.google.com/
-//   2. Enable the Vertex AI API in APIs & Services
-//   3. Create credentials:
-//      Option A: API Key → APIs & Services → Credentials → Create Credentials → API Key
-//      Option B: Service Account → IAM & Admin → Service Accounts → Create → Generate JSON key
-//   4. Set the env vars in Vercel Project Settings → Environment Variables
+//   2. Enable the Generative Language API in APIs & Services
+//   3. APIs & Services → Credentials → Create Credentials → API Key
+//   4. Restrict the key to "Generative Language API"
 
 import type { ScriptAnalysisResult } from './ai-service';
 
@@ -29,23 +34,33 @@ const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || '';
 const GOOGLE_CLOUD_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
 const GOOGLE_GENAI_API_KEY = process.env.GOOGLE_GENAI_API_KEY || '';
 
-/** Check if Vertex AI is configured and ready to use */
+/** Check if Google AI / Gemini is configured and ready to use.
+ *  Only requires GOOGLE_GENAI_API_KEY — the Generative Language API
+ *  endpoint (aistudio.google.com) does not need a project ID.
+ *  GOOGLE_CLOUD_PROJECT is only needed for the Vertex AI endpoint variant.
+ */
 export function isVertexAIConfigured(): boolean {
-  return !!(GOOGLE_CLOUD_PROJECT && GOOGLE_GENAI_API_KEY);
+  return !!GOOGLE_GENAI_API_KEY;
 }
 
 /** Get configuration status for health checks */
 export function getVertexAIConfigStatus(): {
   configured: boolean;
+  provider: string;
   project: string;
   location: string;
   hasApiKey: boolean;
 } {
+  const hasApiKey = !!GOOGLE_GENAI_API_KEY;
+  const hasProject = !!GOOGLE_CLOUD_PROJECT;
+  // Determine which endpoint will be used
+  const provider = hasProject ? 'vertex-ai' : 'google-ai-studio';
   return {
-    configured: isVertexAIConfigured(),
-    project: GOOGLE_CLOUD_PROJECT ? `${GOOGLE_CLOUD_PROJECT.slice(0, 4)}...` : 'NOT SET',
+    configured: hasApiKey,
+    provider,
+    project: hasProject ? `${GOOGLE_CLOUD_PROJECT.slice(0, 4)}...` : 'NOT SET (using AI Studio)',
     location: GOOGLE_CLOUD_LOCATION,
-    hasApiKey: !!GOOGLE_GENAI_API_KEY,
+    hasApiKey,
   };
 }
 
