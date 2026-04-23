@@ -563,18 +563,21 @@ model ModuleAccess {
   e2Access Boolean @default(false)
   e3Access Boolean @default(false)
   e4Access Boolean @default(false)
+  e5Access Boolean @default(false)
 
   // Usage limits
   e1Limit Int?
   e2Limit Int?
   e3Limit Int?
   e4Limit Int?
+  e5Limit Int?
 
   // Current usage
   e1Used Int @default(0)
   e2Used Int @default(0)
   e3Used Int @default(0)
   e4Used Int @default(0)
+  e5Used Int @default(0)
 
   // Expiry
   expiresAt DateTime?
