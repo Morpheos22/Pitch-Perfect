@@ -34,7 +34,12 @@ const MODULE_ACCESS_FIELD: Record<CoachModule, keyof {
   e2: 'e2Access',
   e3: 'e3Access',
   e4: 'e4Access',
-  // E5 is bundled with subscription — no one-time purchase
+  // E5 (Founder) is subscription-only — no one-time purchase available.
+  // Maps to e1Access purely as a placeholder so the type system is satisfied.
+  // The actual E5 access check happens via the subscription path above,
+  // and the one-time ModuleAccess path (Check 3) explicitly skips E5
+  // with `if (module !== 'e5')`. This mapping should NEVER grant E5
+  // access to an E1-only purchaser.
   e5: 'e1Access',
 };
 

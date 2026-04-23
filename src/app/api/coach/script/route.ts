@@ -131,6 +131,10 @@ async function handlePost(request: NextRequest) {
       targetAudience = validatedData.targetAudience;
       targetDuration = validatedData.pitchDuration;
       sessionName = validatedData.sessionName || null;
+      // Set detectedInputType from the declared inputType (consistency with FormData path)
+      if (validatedData.inputType) {
+        detectedInputType = validatedData.inputType.toUpperCase() as "TEXT" | "PDF" | "DOCX";
+      }
     }
 
     if (!script || typeof script !== "string") {

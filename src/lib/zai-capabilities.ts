@@ -11,27 +11,13 @@
 //   - getVideoResult — zero callers
 //   - checkCapabilitiesHealth — zero callers
 
-// NOTE: Z.ai SDK initialization (config writing) is handled centrally in ai-service.ts.
-// This module creates its own SDK instance for capability functions but shares
-// the same config file that ai-service.ts writes.
+// NOTE: Z.ai SDK initialization (config writing + singleton) is handled
+// centrally in ai-service.ts. This module reuses that shared instance
+// instead of creating a second one, eliminating the dual-instance
+// redundancy that previously existed (two SDK instances, two config
+// creation paths, potential for inconsistent state).
 
-// ============================================
-// SHARED SDK INSTANCE
-// ============================================
-
-type ZAIInstance = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>;
-
-let _zai: ZAIInstance | null = null;
-
-async function getZai(): Promise<ZAIInstance> {
-  if (_zai) return _zai;
-  // ai-service.ts handles config creation on first call;
-  // trigger it by importing to ensure .z-ai-config exists
-  await import('./ai-service');
-  const { default: ZAI } = await import('z-ai-web-dev-sdk');
-  _zai = await ZAI.create();
-  return _zai;
-}
+import { getZai } from './ai-service';
 
 // ============================================
 // TTS — Text-to-Speech
