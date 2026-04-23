@@ -104,6 +104,43 @@ export async function POST(request: NextRequest) {
           tokenPayload: clientPayload,
         };
       },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        // ── Upload completion callback ──
+        // Fired when the client-side upload finishes successfully.
+        // This is the server-side confirmation hook.
+        //
+        // IMPORTANT: This callback does NOT work on localhost.
+        // For local development, use ngrok or similar tunneling to test the full flow.
+        // In production (Vercel), this fires reliably.
+        //
+        // Use cases:
+        //   - Log upload completion for audit trail
+        //   - Update database records linking file to user
+        //   - Trigger post-upload processing (e.g., thumbnail generation)
+        //
+        // NOTE: We don't create DB records here because the coach API route
+        // handles that when the user submits the analysis request. The blob
+        // is already stored and accessible via blob.url.
+        try {
+          console.log(
+            `[Blob Upload] Upload completed: pathname=${blob.pathname}, url=${blob.url}`
+          );
+
+          // Parse tokenPayload for audit logging
+          if (tokenPayload) {
+            const parsed = JSON.parse(tokenPayload);
+            console.log(
+              `[Blob Upload] Category: ${parsed.category || 'unknown'}, Upload confirmed at: ${new Date().toISOString()}`
+            );
+          }
+        } catch (error) {
+          // Non-critical: log the error but don't fail the upload
+          // The blob is already stored regardless of this callback's result.
+          console.error('[Blob Upload] onUploadCompleted error (non-critical):', error);
+          // Re-throw to trigger Vercel Blob's retry mechanism (5 retries with 200 status expected)
+          throw new Error('Could not process upload completion callback');
+        }
+      },
     });
 
 

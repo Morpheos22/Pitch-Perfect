@@ -108,14 +108,24 @@ export default function PitchDeckAnalyserNewPage() {
       return;
     }
 
+    // ── Pre-check entitlement BEFORE blob upload to prevent orphaned blobs ──
+    // The server route also checks, but this avoids wasting blob storage if
+    // the user has no access.
+    if (usedCount !== null && limitCount !== null && !isEnterprise && usedCount >= limitCount) {
+      toast.error("Usage limit reached. Please upgrade your plan.");
+      router.push("/pitch-deck-analyser/upgrade");
+      return;
+    }
+
     setUploading(true);
+
+    let blobUrl: string | undefined;
 
     try {
       // ── ALWAYS use blob upload ──
       // This bypasses Vercel's 4.5MB serverless body limit entirely.
       // The file goes directly from the browser to Vercel Blob storage.
       // Only a lightweight token request hits our server.
-      let blobUrl: string;
       let blobPathname: string;
 
       try {
@@ -148,6 +158,17 @@ export default function PitchDeckAnalyserNewPage() {
       router.push(`/pitch-deck-analyser/session/${data.id}`);
     } catch (error: any) {
       console.error("[E1] Upload/analysis error:", error);
+
+      // ── Clean up orphaned blob if analysis was rejected ──
+      // The blob was already uploaded, but if the coach API rejected the request
+      // (e.g., entitlement denied, analysis failure), the blob is orphaned.
+      // Fire-and-forget cleanup — don't await, don't block the error flow.
+      if (blobUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {
+          // Cleanup is best-effort — don't surface cleanup failures to the user
+        });
+      }
+
       if (error?.status === 413) {
         toast.error("File is too large for upload. Maximum size is 50MB.");
         return;
