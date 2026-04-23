@@ -6,6 +6,12 @@
 
 
 import { NextResponse } from 'next/server';
+
+// IMPORTANT: Import polyfills BEFORE any test that loads pdf-parse
+// The DOMMatrix polyfill must be installed at module level, before
+// pdf-parse's browser bundle evaluates its top-level code.
+import '@/lib/polyfills';
+
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -257,7 +263,6 @@ async function testVercelBlob(): Promise<TestResult> {
 // ════════════════════════════════════════════════════════════════
 async function testPdfParse(): Promise<TestResult> {
   const start = Date.now();
-
 
   try {
     const { PDFParse } = await import('pdf-parse');

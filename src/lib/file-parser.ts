@@ -2,6 +2,10 @@
 // Unified file parser for Pitch Perfect
 // Supports: PDF, PPTX, DOCX, TXT
 
+// IMPORTANT: Import polyfills BEFORE any module that uses pdf-parse
+// The DOMMatrix polyfill must be installed before pdf-parse's browser bundle loads
+import './polyfills';
+
 // Dynamic imports for lazy loading
 async function parsePptxText(file: File): Promise<string> {
   const JSZip = (await import('jszip')).default;
@@ -42,34 +46,12 @@ async function parseDocxText(file: File): Promise<string> {
 
 async function parsePdfText(file: File): Promise<string> {
   // pdf-parse v2.4.5 has conditional exports:
-  //   "browser" → web bundle (requires DOMMatrix — fails in Node.js serverless)
+  //   "browser" → web bundle (requires DOMMatrix — polyfilled in polyfills.ts)
   //   "import"/"require" → Node.js bundle (works in server-side)
   //
-  // In Vercel's serverless environment, the dynamic import() can resolve
-  // to the browser bundle, causing "DOMMatrix is not defined" errors.
-  //
-  // FIX: Provide a DOMMatrix polyfill for the browser bundle path,
-  // so it works regardless of which bundle Vercel resolves.
-  // DOMMatrix is only used for matrix calculations that we don't need
-  // for text extraction — providing a minimal stub is safe.
-
-  // Polyfill DOMMatrix if not available (Vercel serverless Node.js)
-  if (typeof (globalThis as any).DOMMatrix === 'undefined') {
-    // Minimal DOMMatrix polyfill — enough for pdf-parse to not crash
-    (globalThis as any).DOMMatrix = class DOMMatrix {
-      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-      is2D = true; isIdentity = true;
-      constructor(_init?: string | number[]) { /* stub */ }
-      multiply(_other?: any) { return this; }
-      inverse() { return this; }
-      translate(_tx: number, _ty: number, _tz?: number) { return this; }
-      scale(_scale: number) { return this; }
-      rotate(_angle: number) { return this; }
-      rotateFromVector(_x: number, _y: number) { return this; }
-      toString() { return 'matrix(1, 0, 0, 1, 0, 0)'; }
-    };
-    console.log('[file-parser] DOMMatrix polyfill installed for pdf-parse');
-  }
+  // The DOMMatrix polyfill is installed via the module-level import of
+  // './polyfills' at the top of this file. This ensures the polyfill
+  // runs before pdf-parse's browser bundle evaluates its top-level code.
 
   let PDFParse: any;
   try {
