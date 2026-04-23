@@ -29,6 +29,7 @@ import {
   MAX_FILE_SIZES,
   type FileCategory,
 } from "@/lib/file-validation";
+import { requireAuth } from "@/lib/with-auth";
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -123,10 +124,8 @@ export async function POST(request: NextRequest) {
 // analysis failure). This prevents storage leaks.
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);

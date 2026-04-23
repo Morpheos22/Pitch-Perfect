@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
+import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
+import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
 
@@ -17,21 +18,8 @@ export const maxDuration = 60;
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -84,15 +72,8 @@ async function handlePost(request: NextRequest) {
       if (ext === 'pdf') detectedInputType = 'PDF';
       else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
       // SSRF prevention: validate file URL host
-      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
-      try {
-        const parsedUrl = new URL(fileUrl);
-        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-        if (!isAllowed) {
-          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
-        }
-      } catch {
-        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+        return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
       }
       try {
         scriptText = await extractTextFromUrl(fileUrl, fileName);

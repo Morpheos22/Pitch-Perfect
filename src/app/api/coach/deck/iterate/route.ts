@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, analyzeDeckVisual } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { ALLOWED_UPLOAD_HOSTS, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
+import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
 
@@ -18,21 +19,8 @@ export const maxDuration = 60;
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -77,15 +65,8 @@ async function handlePost(request: NextRequest) {
 
     if (!analysisContent && fileUrl && fileName) {
       // Blob upload flow — SSRF prevention: validate file URL host
-      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
-      try {
-        const parsedUrl = new URL(fileUrl);
-        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-        if (!isAllowed) {
-          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
-        }
-      } catch {
-        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+        return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
       }
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
@@ -130,17 +111,10 @@ async function handlePost(request: NextRequest) {
       // If no new content provided, fetch parent's file URL and try to extract text
       if (parentDeck.fileUrl) {
         // SSRF prevention: validate parent file URL host
-        const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
-        try {
-          const parsedUrl = new URL(parentDeck.fileUrl);
-          const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-          if (!isAllowed) {
-            console.warn('[Deck Iterate] Parent file URL host not in allowlist, skipping re-extraction:', parsedUrl.hostname);
-          } else {
-            analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
-          }
-        } catch {
-          console.warn('[Deck Iterate] Invalid parent file URL, skipping re-extraction');
+        if (!isHostAllowed(parentDeck.fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+          console.warn('[Deck Iterate] Parent file URL host not in allowlist, skipping re-extraction:', new URL(parentDeck.fileUrl).hostname);
+        } else {
+          analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
         }
       }
 
@@ -190,17 +164,11 @@ async function handlePost(request: NextRequest) {
 
     // Run analyses in parallel: content (text) + visual (vision if file URL available)
     // SSRF protection: only send known-safe storage URLs to the vision model.
-    const ALLOWED_VISUAL_HOSTS = [
-      'public.blob.vercel-storage.com',
-      'blob.vercel-storage.com',
-      'workdrive.zoho.com',
-    ];
     let safeVisualUrl: string | null = null;
     if (fileUrl) {
       try {
         const parsedUrl = new URL(fileUrl);
-        const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-        if (isAllowed) {
+        if (isHostAllowed(fileUrl, ALLOWED_VIDEO_HOSTS)) {
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (!['pptx', 'ppt'].includes(ext)) {
             // Private blob URLs need conversion to data URI for AI access

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession } from "@/lib/ai-service";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
+import { clampScore } from "@/lib/ai-utils";
+import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
 
@@ -17,21 +19,8 @@ export const maxDuration = 120;
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -84,29 +73,11 @@ async function handlePost(request: NextRequest) {
 
 
     // C8: SSRF prevention — validate video URL host (same as parent route)
-    if (!analysisVideoUrl.startsWith('mock://')) {
-      const allowedVideoHosts = [
-        'workdrive.zoho.com', 'zoho.com',
-        'blob.vercel-storage.com',
-        'public.blob.vercel-storage.com',
-      ];
-      try {
-        const parsedUrl = new URL(analysisVideoUrl);
-        const isAllowed = allowedVideoHosts.some(h =>
-          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
-        );
-        if (!isAllowed) {
-          return NextResponse.json(
-            { error: 'Invalid video source. Files must be uploaded through the platform.' },
-            { status: 400 }
-          );
-        }
-      } catch {
-        return NextResponse.json(
-          { error: 'Invalid video URL format.' },
-          { status: 400 }
-        );
-      }
+    if (!analysisVideoUrl.startsWith('mock://') && !isHostAllowed(analysisVideoUrl, ALLOWED_VIDEO_HOSTS)) {
+      return NextResponse.json(
+        { error: 'Invalid video source. Files must be uploaded through the platform.' },
+        { status: 400 }
+      );
     }
 
 
@@ -170,29 +141,27 @@ async function handlePost(request: NextRequest) {
 
 
     // ── Score consistency validation (same as parent route) ──
-    const clampScore = (v: number | null | undefined): number => {
-      if (v == null || !Number.isFinite(v)) return 0;
-      return Math.max(0, Math.min(100, Math.round(v)));
-    };
+    // Uses shared clampScore from ai-utils.ts with defaultVal=0 (E4 prefers 0 for null)
+    const cs = (v: unknown) => clampScore(v, 0, 100, 0);
 
 
-    analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
-    analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
-    analysis.businessModelViability = clampScore(analysis.businessModelViability);
-    analysis.teamCredibility = clampScore(analysis.teamCredibility);
-    analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
-    analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
-    analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+    analysis.problemSolutionFit = cs(analysis.problemSolutionFit);
+    analysis.marketOpportunity = cs(analysis.marketOpportunity);
+    analysis.businessModelViability = cs(analysis.businessModelViability);
+    analysis.teamCredibility = cs(analysis.teamCredibility);
+    analysis.tractionMilestones = cs(analysis.tractionMilestones);
+    analysis.deliveryPresence = cs(analysis.deliveryPresence);
+    analysis.overallReadinessScore = cs(analysis.overallReadinessScore);
 
 
     if (analysis.contentScores) {
       for (const key of Object.keys(analysis.contentScores) as (keyof typeof analysis.contentScores)[]) {
-        analysis.contentScores[key] = clampScore(analysis.contentScores[key]);
+        analysis.contentScores[key] = cs(analysis.contentScores[key]);
       }
     }
     if (analysis.deliveryScores) {
       for (const key of Object.keys(analysis.deliveryScores) as (keyof typeof analysis.deliveryScores)[]) {
-        analysis.deliveryScores[key] = clampScore(analysis.deliveryScores[key]);
+        analysis.deliveryScores[key] = cs(analysis.deliveryScores[key]);
       }
     }
 
