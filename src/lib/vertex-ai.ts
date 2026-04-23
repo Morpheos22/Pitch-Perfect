@@ -6,23 +6,22 @@
 //   Strategy 2: Z.ai SDK (z-ai-web-dev-sdk) — secondary
 //   Strategy 3: Z.ai direct HTTP fallback — tertiary
 //
+// ENDPOINT ROUTING:
+//   If GOOGLE_CLOUD_PROJECT is set → Vertex AI endpoint:
+//     https://{location}-aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/{LOCATION}/publishers/google/models/{MODEL}:generateContent
+//   Otherwise → Google AI Studio endpoint:
+//     https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent
+//
 // REQUIRED ENV VARS:
-//   GOOGLE_GENAI_API_KEY   — API key from Google AI Studio (REQUIRED)
-//   GOOGLE_CLOUD_PROJECT   — Google Cloud project ID (optional, for Vertex AI endpoint)
+//   GOOGLE_GENAI_API_KEY   — API key from Google AI Studio or Google Cloud (REQUIRED)
+//   GOOGLE_CLOUD_PROJECT   — Google Cloud project ID/number (optional, enables Vertex AI endpoint)
 //   GOOGLE_CLOUD_LOCATION  — Vertex AI region (optional, default: us-central1)
 //
-// HOW TO GET THE API KEY:
-//   1. Go to https://aistudio.google.com/apikey
-//   2. Sign in with your Google account
-//   3. Click "Create API Key" or use an existing one
-//   4. Copy the API key
-//   5. Set GOOGLE_GENAI_API_KEY in Vercel Project Settings → Environment Variables
-//
-// Alternatively, from Google Cloud Console:
-//   1. Go to https://console.cloud.google.com/
-//   2. Enable the Generative Language API in APIs & Services
-//   3. APIs & Services → Credentials → Create Credentials → API Key
-//   4. Restrict the key to "Generative Language API"
+// PREREQUISITES:
+//   For AI Studio endpoint: Enable "Generative Language API" on the Google Cloud project
+//     → https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com
+//   For Vertex AI endpoint: Enable billing on the Google Cloud project
+//     → https://console.developers.google.com/billing/enable?project={PROJECT}
 
 import type { ScriptAnalysisResult } from './ai-service';
 
@@ -34,10 +33,13 @@ const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || '';
 const GOOGLE_CLOUD_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
 const GOOGLE_GENAI_API_KEY = process.env.GOOGLE_GENAI_API_KEY || '';
 
+/** Model to use for Gemini — shared between both endpoints */
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 /** Check if Google AI / Gemini is configured and ready to use.
- *  Only requires GOOGLE_GENAI_API_KEY — the Generative Language API
- *  endpoint (aistudio.google.com) does not need a project ID.
- *  GOOGLE_CLOUD_PROJECT is only needed for the Vertex AI endpoint variant.
+ *  Requires GOOGLE_GENAI_API_KEY at minimum.
+ *  If GOOGLE_CLOUD_PROJECT is also set, uses Vertex AI endpoint;
+ *  otherwise falls back to the AI Studio endpoint.
  */
 export function isVertexAIConfigured(): boolean {
   return !!GOOGLE_GENAI_API_KEY;
@@ -53,7 +55,6 @@ export function getVertexAIConfigStatus(): {
 } {
   const hasApiKey = !!GOOGLE_GENAI_API_KEY;
   const hasProject = !!GOOGLE_CLOUD_PROJECT;
-  // Determine which endpoint will be used
   const provider = hasProject ? 'vertex-ai' : 'google-ai-studio';
   return {
     configured: hasApiKey,
@@ -62,6 +63,26 @@ export function getVertexAIConfigStatus(): {
     location: GOOGLE_CLOUD_LOCATION,
     hasApiKey,
   };
+}
+
+// ============================================
+// ENDPOINT BUILDERS
+// ============================================
+
+/**
+ * Build the correct Gemini endpoint URL based on configuration.
+ * - Vertex AI: Uses the aiplatform.googleapis.com endpoint (needs project + billing)
+ * - AI Studio: Uses the generativelanguage.googleapis.com endpoint (needs API enabled)
+ */
+function buildEndpoint(): { url: string; provider: string } {
+  if (GOOGLE_CLOUD_PROJECT) {
+    // Vertex AI endpoint — requires billing enabled on the project
+    const url = `https://${GOOGLE_CLOUD_LOCATION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT}/locations/${GOOGLE_CLOUD_LOCATION}/publishers/google/models/${GEMINI_MODEL}:generateContent`;
+    return { url, provider: `vertex-ai/${GEMINI_MODEL}` };
+  }
+  // AI Studio endpoint — requires Generative Language API enabled
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  return { url, provider: `google-ai-studio/${GEMINI_MODEL}` };
 }
 
 // ============================================
@@ -86,7 +107,8 @@ export async function analyzeWithVertexAI(
     throw new Error('Google AI is not configured. Set GOOGLE_GENAI_API_KEY env var.');
   }
 
-  console.log('[GoogleAI] Starting script analysis (PRIMARY for E2)...');
+  const { url: endpoint, provider } = buildEndpoint();
+  console.log(`[GoogleAI] Starting script analysis via ${provider}...`);
 
   const systemPrompt = `You are an expert pitch coach with 15+ years of experience evaluating elevator pitches. Analyze the script against the 5-Element Elevator Pitch Framework:
 
@@ -134,12 +156,7 @@ Provide your analysis as a JSON object with this EXACT structure:
 }`;
 
   try {
-    // Use the Generative Language API with API key in header (not URL query param)
-    // This prevents the key from appearing in server/proxy access logs.
-    // Using gemini-2.5-flash-preview-05-20 for separate quota pool from gemini-2.0-flash
-    const genAIEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
-
-    const response = await fetch(genAIEndpoint, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -162,20 +179,37 @@ Provide your analysis as a JSON object with this EXACT structure:
 
     if (!response.ok) {
       const body = await response.text().catch(() => 'unknown');
-      throw new Error(`Google AI API returned ${response.status}: ${body.slice(0, 300)}`);
+      const errorDetail = body.slice(0, 300);
+
+      // Parse the error for better logging
+      let errorReason = '';
+      try {
+        const parsed = JSON.parse(body);
+        errorReason = parsed?.error?.details?.[0]?.reason || '';
+      } catch { /* ignore */ }
+
+      if (errorReason === 'API_KEY_SERVICE_BLOCKED') {
+        console.warn('[GoogleAI] API_KEY_SERVICE_BLOCKED — Generative Language API not enabled. Enable at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com');
+      } else if (errorReason === 'BILLING_DISABLED') {
+        console.warn('[GoogleAI] BILLING_DISABLED — Enable billing at the Google Cloud Console.');
+      } else if (response.status === 429) {
+        console.warn('[GoogleAI] RESOURCE_EXHAUSTED — Quota exceeded. Consider enabling billing or using a different project.');
+      }
+
+      throw new Error(`Google AI (${provider}) returned ${response.status}: ${errorDetail}`);
     }
 
     const data = await response.json();
     const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
-      throw new Error('Vertex AI returned empty response — no content in candidates[0].content.parts[0].text');
+      throw new Error('Google AI returned empty response — no content in candidates[0].content.parts[0].text');
     }
 
     // Parse the JSON from the response
     const jsonStr = extractJsonFromContent(content);
     if (!jsonStr) {
-      throw new Error('Could not extract JSON from Vertex AI response');
+      throw new Error('Could not extract JSON from Google AI response');
     }
 
     const parsed = JSON.parse(jsonStr);
@@ -193,14 +227,14 @@ Provide your analysis as a JSON object with this EXACT structure:
       improvements: validateImprovements(parsed.improvements),
       rewrittenScript: parsed.rewrittenScript || '',
       alternativeHooks: validateStringArray(parsed.alternativeHooks),
-      modelUsed: 'google-ai/gemini-2.5-flash-preview-05-20',
+      modelUsed: provider,
       tokensUsed: data?.usageMetadata?.totalTokenCount,
     };
 
-    console.log(`[GoogleAI] Analysis complete: overall=${result.overallScore}, hook=${result.hookScore}`);
+    console.log(`[GoogleAI] Analysis complete via ${provider}: overall=${result.overallScore}, hook=${result.hookScore}`);
     return result;
   } catch (error: any) {
-    console.error('[GoogleAI] Analysis failed:', error?.message || error);
+    console.error(`[GoogleAI] Analysis failed (${provider}):`, error?.message || error);
     throw error;
   }
 }
