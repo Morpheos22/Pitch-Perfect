@@ -40,9 +40,14 @@ const GEMINI_MODEL = 'gemini-2.0-flash';
  *  Requires GOOGLE_GENAI_API_KEY at minimum.
  *  If GOOGLE_CLOUD_PROJECT is also set, uses Vertex AI endpoint;
  *  otherwise falls back to the AI Studio endpoint.
+ *
+ *  NOTE: This only checks if the API key is SET, not if it's accessible
+ *  from the current region. A 400 "User location is not supported" error
+ *  will be thrown at runtime with a clear message if region-blocked.
+ *  The Z.ai gateway (primary) will be used as fallback automatically.
  */
 export function isVertexAIConfigured(): boolean {
-  return !!GOOGLE_GENAI_API_KEY;
+  return !!GOOGLE_GENAI_API_KEY && GOOGLE_GENAI_API_KEY !== 'placeholder';
 }
 
 /** Get configuration status for health checks */
@@ -52,8 +57,9 @@ export function getVertexAIConfigStatus(): {
   project: string;
   location: string;
   hasApiKey: boolean;
+  regionNote?: string;
 } {
-  const hasApiKey = !!GOOGLE_GENAI_API_KEY;
+  const hasApiKey = !!GOOGLE_GENAI_API_KEY && GOOGLE_GENAI_API_KEY !== 'placeholder';
   const hasProject = !!GOOGLE_CLOUD_PROJECT;
   const provider = hasProject ? 'vertex-ai' : 'google-ai-studio';
   return {
@@ -62,6 +68,9 @@ export function getVertexAIConfigStatus(): {
     project: hasProject ? `${GOOGLE_CLOUD_PROJECT.slice(0, 4)}...` : 'NOT SET (using AI Studio)',
     location: GOOGLE_CLOUD_LOCATION,
     hasApiKey,
+    // Note: Google AI API may be region-blocked (400 "User location is not supported").
+    // This is detected at runtime, not at config time. The Z.ai gateway (primary) handles
+    // the fallback automatically. Region block only affects local dev in certain regions.
   };
 }
 
@@ -181,14 +190,25 @@ Provide your analysis as a JSON object with this EXACT structure:
       const body = await response.text().catch(() => 'unknown');
       const errorDetail = body.slice(0, 300);
 
-      // Parse the error for better logging
+      // Parse the error for better logging and classification
       let errorReason = '';
+      let errorMessage = '';
+      let isRegionBlocked = false;
       try {
         const parsed = JSON.parse(body);
         errorReason = parsed?.error?.details?.[0]?.reason || '';
+        errorMessage = parsed?.error?.message || '';
+        // Google AI returns 400 with "User location is not supported for the API use"
+        // when the caller's region doesn't have API access (e.g. some African/Asian regions)
+        isRegionBlocked = errorMessage.includes('User location is not supported');
       } catch { /* ignore */ }
 
-      if (errorReason === 'API_KEY_SERVICE_BLOCKED') {
+      if (isRegionBlocked) {
+        console.warn('[GoogleAI] REGION_BLOCKED — Google AI API is not available in this region. ' +
+          'The Z.ai gateway (primary) will be used instead. ' +
+          'Vertex AI fallback will work from Vercel deployment regions (US/EU).');
+        throw new Error(`Google AI region-blocked: API not available from this location. Z.ai gateway (primary) will be used instead.`);
+      } else if (errorReason === 'API_KEY_SERVICE_BLOCKED') {
         console.warn('[GoogleAI] API_KEY_SERVICE_BLOCKED — Generative Language API not enabled. Enable at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com');
       } else if (errorReason === 'BILLING_DISABLED') {
         console.warn('[GoogleAI] BILLING_DISABLED — Enable billing at the Google Cloud Console.');
