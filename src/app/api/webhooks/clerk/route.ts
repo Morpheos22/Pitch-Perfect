@@ -126,9 +126,14 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
 
 
   // Developer emails for full access (configurable via env var)
-  const DEVELOPER_EMAILS = (process.env.DEVELOPER_EMAILS || 'helloautomagikal@gmail.com,morphylee22@gmail.com')
-    .split(',')
-    .map((e) => e.trim().toLowerCase());
+  // In production, DEVELOPER_EMAILS env var is REQUIRED — no hardcoded fallback.
+  // In development, a fallback is allowed for convenience.
+  const devEmailsRaw = process.env.DEVELOPER_EMAILS;
+  const DEVELOPER_EMAILS = (devEmailsRaw && devEmailsRaw.trim())
+    ? devEmailsRaw.split(',').map((e) => e.trim().toLowerCase())
+    : (process.env.NODE_ENV === 'production'
+        ? [] // No fallback in production
+        : ['helloautomagikal@gmail.com', 'morphylee22@gmail.com']); // Dev fallback
   const isDeveloper = DEVELOPER_EMAILS.includes(email.toLowerCase());
 
 
