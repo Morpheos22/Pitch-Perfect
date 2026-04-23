@@ -7,6 +7,7 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -35,7 +36,7 @@ async function handlePost(request: NextRequest) {
     let targetDuration: number | undefined;
     let sessionName: string | null = null;
     let scriptFileUrl: string | null = null;
-    let detectedInputType: "TEXT" | "DOCX" = "TEXT";
+    let detectedInputType: "TEXT" | "PDF" | "DOCX" = "TEXT";
 
 
     const contentType = request.headers.get("content-type") || "";
@@ -64,10 +65,19 @@ async function handlePost(request: NextRequest) {
 
       // NEW: Blob upload flow — extract text from URL
       if (fileUrl && blobFileName) {
+        // ── SSRF protection: validate the URL host ──
+        if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+          console.error("[E2] Rejected fileUrl — host not in allowlist:", fileUrl);
+          return NextResponse.json(
+            { error: "File URL not allowed. Please upload files through the app." },
+            { status: 400 }
+          );
+        }
         scriptFileUrl = fileUrl;
         // Detect input type from file extension
         const ext = blobFileName.toLowerCase().split('.').pop();
-        if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        if (ext === 'pdf') detectedInputType = 'PDF';
+        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
         console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName, inputType: detectedInputType });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
@@ -82,7 +92,8 @@ async function handlePost(request: NextRequest) {
       } else if (file) {
         // Detect input type from uploaded file extension
         const ext = file.name.toLowerCase().split('.').pop();
-        if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        if (ext === 'pdf') detectedInputType = 'PDF';
+        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
         console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
 
 
@@ -132,7 +143,7 @@ async function handlePost(request: NextRequest) {
       sessionName = validatedData.sessionName || null;
       // Set detectedInputType from the declared inputType (consistency with FormData path)
       if (validatedData.inputType) {
-        detectedInputType = validatedData.inputType.toUpperCase() as "TEXT" | "DOCX";
+        detectedInputType = validatedData.inputType.toUpperCase() as "TEXT" | "PDF" | "DOCX";
       }
     }
 

@@ -1,198 +1,195 @@
 // POST /api/blob/upload
-// Server-side route for Vercel Blob client-side upload token generation.
+// Server-side route for Vercel Blob client-side uploads.
 //
-// WHY THIS EXISTS:
-//   Vercel's serverless functions have a 4.5MB request body limit on Hobby,
-//   50MB on Pro. To support files of ANY size, we use @vercel/blob's
-//   client-side upload pattern:
+// This route is REQUIRED by @vercel/blob/client upload() function.
+// When the browser calls upload(), it first POSTs here to get a signed
+// client token, then uploads the file directly from the browser to Vercel Blob.
 //
-//   1. Browser calls upload() from @vercel/blob/client with handleUploadUrl pointing here
-//   2. This route receives a lightweight JSON request (no file!) to generate a client token
-//   3. The client token contains constraints (max size, allowed types, addRandomSuffix)
-//   4. Browser uploads the file DIRECTLY to Vercel Blob using the token
-//   5. No serverless body limit is ever hit because the file never passes through our function
+// FLOW:
+//   1. Browser calls upload(filename, file, { handleUploadUrl: "/api/blob/upload" })
+//   2. SDK POSTs here with { type: "blob.generate-client-token", payload: { ... } }
+//   3. We validate auth + constraints, then call handleUpload() to generate a token
+//   4. SDK receives token, uploads file directly from browser to Vercel Blob
+//   5. Returns { url, pathname } to the calling page
 //
 // DELETE /api/blob/upload?url=...
-//   Cleans up an orphaned blob when the downstream analysis fails (e.g., entitlement denied).
-//   This prevents storage leaks from the "upload first, check entitlement later" flow.
+// Cleans up orphaned blobs when an analysis request fails after upload.
+// This prevents orphaned files from accumulating in Vercel Blob storage.
 //
-// File validation constants are imported from lib/file-validation.ts — the single source of truth.
+// SECURITY:
+//   - Requires Clerk authentication
+//   - Validates file type/size constraints via handleUpload options
+//   - Client payload carries the category for constraint enforcement
 
-
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { handleUpload } from "@vercel/blob/client";
-import { del } from "@vercel/blob";
+import { NextRequest, NextResponse } from 'next/server';
+import { handleUpload } from '@vercel/blob/client';
+import { del } from '@vercel/blob';
+import { requireAuth } from '@/lib/with-auth';
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZES,
   type FileCategory,
-} from "@/lib/file-validation";
-import { requireAuth } from "@/lib/with-auth";
+} from '@/lib/file-validation';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
-
-// Valid categories
-const VALID_CATEGORIES: FileCategory[] = ["deck", "script", "video"];
-
-
+/**
+ * POST /api/blob/upload
+ * Generate a client token for browser-side Vercel Blob uploads.
+ *
+ * The @vercel/blob/client upload() function calls this endpoint
+ * automatically to get a signed upload token before uploading
+ * the file directly from the browser.
+ */
 export async function POST(request: NextRequest) {
+  // ── Authentication ──
+  const { error: authError } = await requireAuth();
+  if (authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // ── Parse request body to get clientPayload ──
+  let body;
   try {
-    // Parse the request body — handleUpload expects the raw body from the client
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
+  // ── Parse client payload to determine category ──
+  let category: FileCategory = 'script'; // default
+  const clientPayload = body?.clientPayload || body?.payload?.clientPayload || null;
+  if (clientPayload) {
+    try {
+      const parsed = JSON.parse(clientPayload);
+      if (parsed.category && ['deck', 'script', 'video'].includes(parsed.category)) {
+        category = parsed.category as FileCategory;
+      }
+    } catch {
+      // If we can't parse the payload, use default category
+    }
+  }
 
-    const response = await handleUpload({
-      body,
+  // ── Build constraints from file-validation.ts (single source of truth) ──
+  const allowedExtensions = ALLOWED_EXTENSIONS[category];
+  const allowedContentTypes = ALLOWED_MIME_TYPES[category];
+  const maximumSizeInBytes = MAX_FILE_SIZES[category];
+
+  // ── Generate client token via handleUpload ──
+  try {
+    const result = await handleUpload({
       request,
+      body,
       onBeforeGenerateToken: async (
         pathname: string,
-        clientPayload: string | null,
-        multipart: boolean,
+        _clientPayload: string | null,
+        _multipart: boolean,
       ) => {
-        // ── 1. Auth check ──
-        const { userId: clerkId } = await auth();
-        if (!clerkId) {
-          throw new Error("Unauthorized — you must be signed in to upload files");
-        }
-
-
-        // ── 2. Parse client payload to get category ──
-        let category: FileCategory = "deck"; // default
-        if (clientPayload) {
-          try {
-            const parsed = JSON.parse(clientPayload);
-            if (parsed.category && VALID_CATEGORIES.includes(parsed.category)) {
-              category = parsed.category;
-            }
-          } catch {
-            // Invalid JSON — use default category
-          }
-        }
-
-
-        // ── 3. Validate file extension against category ──
-        const ext = pathname.toLowerCase().split(".").pop() || "";
-        const allowed = ALLOWED_EXTENSIONS[category] || [];
-        if (!allowed.includes(`.${ext}`)) {
+        // Validate file extension from the pathname
+        const ext = '.' + pathname.split('.').pop()?.toLowerCase();
+        if (!allowedExtensions.includes(ext)) {
           throw new Error(
-            `Invalid file type ".${ext}" for category "${category}". Allowed: ${allowed.join(", ")}`
+            `Invalid file type. Allowed: ${allowedExtensions.join(', ')}`
           );
         }
 
-
-        // ── 4. Return token options with constraints ──
-        // These constraints are enforced by Vercel Blob when the client uploads.
-        //
-        // IMPORTANT: Include 'application/octet-stream' as a fallback MIME type
-        // because browsers frequently report .doc files and other binary formats
-        // with this generic MIME type instead of the specific one (e.g., they
-        // send 'application/octet-stream' instead of 'application/msword').
-        // The file extension is already validated above, so MIME enforcement is
-        // secondary — the extension check is the primary gate.
-        const mimeTypes = [...(ALLOWED_MIME_TYPES[category] || [])];
-        if (!mimeTypes.includes('application/octet-stream')) {
-          mimeTypes.push('application/octet-stream');
-        }
+        // Return token constraints — these are enforced by Vercel Blob at upload time
         return {
-          allowedContentTypes: mimeTypes,
-          maximumSizeInBytes: MAX_FILE_SIZES[category],
+          allowedContentTypes,
+          maximumSizeInBytes,
           addRandomSuffix: true,
-          tokenPayload: clientPayload,
         };
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // ── Upload completion callback ──
-        // Fired when the client-side upload finishes successfully.
-        // This is the server-side confirmation hook.
-        //
-        // IMPORTANT: This callback does NOT work on localhost.
-        // For local development, use ngrok or similar tunneling to test the full flow.
-        // In production (Vercel), this fires reliably.
-        //
-        // Use cases:
-        //   - Log upload completion for audit trail
-        //   - Update database records linking file to user
-        //   - Trigger post-upload processing (e.g., thumbnail generation)
-        //
-        // NOTE: We don't create DB records here because the coach API route
-        // handles that when the user submits the analysis request. The blob
-        // is already stored and accessible via blob.url.
-        try {
-          console.log(
-            `[Blob Upload] Upload completed: pathname=${blob.pathname}, url=${blob.url}`
-          );
-
-          // Parse tokenPayload for audit logging
-          if (tokenPayload) {
-            const parsed = JSON.parse(tokenPayload);
-            console.log(
-              `[Blob Upload] Category: ${parsed.category || 'unknown'}, Upload confirmed at: ${new Date().toISOString()}`
-            );
-          }
-        } catch (error) {
-          // Non-critical: log the error but don't fail the upload
-          // The blob is already stored regardless of this callback's result.
-          console.error('[Blob Upload] onUploadCompleted error (non-critical):', error);
-          // Re-throw to trigger Vercel Blob's retry mechanism (5 retries with 200 status expected)
-          throw new Error('Could not process upload completion callback');
-        }
-      },
+      token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
+    // handleUpload() returns a special response object for the @vercel/blob SDK.
+    // We must wrap it in a NextResponse for Next.js route handler compatibility.
+    return new NextResponse(JSON.stringify(result), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error: any) {
+    const msg = error?.message || String(error);
+    console.error('[BlobUpload] Token generation failed:', msg);
 
-    return NextResponse.json(response);
-  } catch (error) {
-    console.error("[Blob Upload] Token generation failed:", error);
-    const message =
-      error instanceof Error ? error.message : "Upload token generation failed";
-    const status = message.includes("Unauthorized") ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    // Return user-friendly errors
+    if (msg.includes('Invalid file type')) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+
+    return NextResponse.json(
+      { error: 'File upload failed. Please try again.' },
+      { status: 500 }
+    );
   }
 }
 
-
-// DELETE /api/blob/upload?url=<blobUrl>
-// Cleans up an orphaned blob — called by the frontend when the coach API
-// rejects the request after a successful blob upload (e.g., entitlement denied,
-// analysis failure). This prevents storage leaks.
+/**
+ * DELETE /api/blob/upload?url=...
+ * Delete an orphaned blob file.
+ *
+ * Called by the client when an analysis request fails AFTER a successful
+ * blob upload. Without this, every failed analysis leaves a permanently
+ * orphaned blob in Vercel Blob storage, costing money.
+ */
 export async function DELETE(request: NextRequest) {
+  // ── Authentication ──
+  const { error: authError } = await requireAuth();
+  if (authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const blobUrl = searchParams.get('url');
+
+  if (!blobUrl) {
+    return NextResponse.json(
+      { error: 'Blob URL is required' },
+      { status: 400 }
+    );
+  }
+
+  // ── Security: only allow deleting blobs from our own store ──
+  const allowedHosts = [
+    'blob.vercel-storage.com',
+    '.blob.vercel-storage.com',
+    '.public.blob.vercel-storage.com',
+  ];
+  let blobHost: string;
   try {
-    const { error: authError } = await requireAuth();
-    if (authError) return authError;
+    blobHost = new URL(blobUrl).hostname;
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+  }
 
-
-    const { searchParams } = new URL(request.url);
-    const blobUrl = searchParams.get("url");
-
-
-    if (!blobUrl) {
-      return NextResponse.json({ error: "Blob URL is required" }, { status: 400 });
+  const isAllowedHost = allowedHosts.some(host => {
+    if (host.startsWith('.')) {
+      return blobHost.endsWith(host) || blobHost === host.slice(1);
     }
+    return blobHost === host;
+  });
 
+  if (!isAllowedHost) {
+    return NextResponse.json(
+      { error: 'Can only delete blobs from our own store' },
+      { status: 403 }
+    );
+  }
 
-    // Validate that the URL is actually a Vercel Blob URL (prevent SSRF)
-    try {
-      const parsed = new URL(blobUrl);
-      if (!parsed.hostname.endsWith(".blob.vercel-storage.com")) {
-        return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
-      }
-    } catch {
-      return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
-    }
-
-
-    await del(blobUrl);
-    console.log(`[Blob Cleanup] Deleted orphaned blob: ${blobUrl.substring(0, 100)}`);
-
-
+  try {
+    await del(blobUrl, {
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    console.log('[BlobUpload] Deleted orphan blob:', blobUrl.slice(0, 80));
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("[Blob Cleanup] Failed to delete orphaned blob:", error);
-    // Non-critical failure — don't surface to user, just log
-    return NextResponse.json({ error: "Blob cleanup failed" }, { status: 500 });
+  } catch (error: any) {
+    // Don't fail hard on delete errors — it's a cleanup operation
+    console.warn('[BlobUpload] Failed to delete blob:', error?.message);
+    return NextResponse.json(
+      { error: 'Failed to delete blob' },
+      { status: 500 }
+    );
   }
 }
