@@ -12,50 +12,22 @@
 //   4. Browser uploads the file DIRECTLY to Vercel Blob using the token
 //   5. No serverless body limit is ever hit because the file never passes through our function
 //
-// FLOW:
-//   Client: upload(filename, file, { access: 'public', handleUploadUrl: '/api/blob/upload', clientPayload: '{"category":"deck"}' })
-//   → Server: handleUpload() → onBeforeGenerateToken() validates auth + category → returns token options
-//   → Client: uploads directly to Vercel Blob → returns { url, pathname, downloadUrl }
+// File validation constants are imported from lib/file-validation.ts — the single source of truth.
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { handleUpload } from "@vercel/blob/client";
+import {
+  ALLOWED_EXTENSIONS,
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZES,
+  type FileCategory,
+} from "@/lib/file-validation";
 
 export const maxDuration = 60;
 
-// Maximum file sizes per category — single source of truth.
-// Client blob-upload.ts must use the same limits.
-const MAX_FILE_SIZES: Record<string, number> = {
-  deck: 50 * 1024 * 1024, // 50MB
-  script: 10 * 1024 * 1024, // 10MB
-  video: 500 * 1024 * 1024, // 500MB
-};
-
-// Allowed MIME types per category — enforced in the client token.
-// The client token constrains what content types Vercel Blob will accept.
-const ALLOWED_CONTENT_TYPES: Record<string, string[]> = {
-  deck: [
-    "application/pdf",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ],
-  script: [
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/msword",
-    "text/plain",
-  ],
-  video: [
-    "video/mp4",
-    "video/webm",
-    "video/quicktime",
-    "video/x-msvideo",
-  ],
-};
-
 // Valid categories
-const VALID_CATEGORIES = ["deck", "script", "video"] as const;
-type Category = (typeof VALID_CATEGORIES)[number];
+const VALID_CATEGORIES: FileCategory[] = ["deck", "script", "video"];
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,7 +49,7 @@ export async function POST(request: NextRequest) {
         }
 
         // ── 2. Parse client payload to get category ──
-        let category: Category = "deck"; // default
+        let category: FileCategory = "deck"; // default
         if (clientPayload) {
           try {
             const parsed = JSON.parse(clientPayload);
@@ -91,11 +63,6 @@ export async function POST(request: NextRequest) {
 
         // ── 3. Validate file extension against category ──
         const ext = pathname.toLowerCase().split(".").pop() || "";
-        const ALLOWED_EXTENSIONS: Record<string, string[]> = {
-          deck: [".pdf", ".pptx", ".ppt"],
-          script: [".pdf", ".docx", ".doc", ".txt"],
-          video: [".mp4", ".webm", ".mov", ".avi"],
-        };
         const allowed = ALLOWED_EXTENSIONS[category] || [];
         if (!allowed.includes(`.${ext}`)) {
           throw new Error(
@@ -106,7 +73,7 @@ export async function POST(request: NextRequest) {
         // ── 4. Return token options with constraints ──
         // These constraints are enforced by Vercel Blob when the client uploads.
         return {
-          allowedContentTypes: ALLOWED_CONTENT_TYPES[category] || [],
+          allowedContentTypes: ALLOWED_MIME_TYPES[category] || [],
           maximumSizeInBytes: MAX_FILE_SIZES[category],
           addRandomSuffix: true,
           tokenPayload: clientPayload,

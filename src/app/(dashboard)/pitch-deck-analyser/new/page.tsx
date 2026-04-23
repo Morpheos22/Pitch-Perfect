@@ -9,16 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
-import { uploadFileToBlob, validateFileFormat } from "@/lib/blob-upload";
+import { uploadFileToBlob } from "@/lib/blob-upload";
+import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES, validateFileFormat } from "@/lib/file-validation";
 
-// Allowed file formats for E1: Pitch Deck Analyser
-const ALLOWED_EXTENSIONS = [".pdf", ".pptx", ".ppt"];
-const ALLOWED_MIME_TYPES = [
-  "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+// Deck-specific constants derived from the single source of truth
+const DECK_EXTENSIONS = ALLOWED_EXTENSIONS.deck;
+const DECK_MIME_TYPES = ALLOWED_MIME_TYPES.deck;
+const DECK_MAX_SIZE = MAX_FILE_SIZES.deck; // 50MB
 
 const PLAN_LIMITS: Record<string, { e1: number }> = {
   FREE: { e1: 1 },
@@ -85,15 +82,15 @@ export default function PitchDeckAnalyserNewPage() {
     if (selectedFile) {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!DECK_EXTENSIONS.includes(ext)) {
         toast.error(`Unsupported file format. Only PDF, PPTX, and PPT files are accepted.`);
         return;
       }
-      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!DECK_MIME_TYPES.includes(selectedFile.type) && !DECK_EXTENSIONS.includes(ext)) {
         toast.error(`Invalid file type. Only PDF, PPTX, and PPT files are accepted.`);
         return;
       }
-      if (selectedFile.size > MAX_FILE_SIZE) {
+      if (selectedFile.size > DECK_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 50MB.`);
         return;
       }

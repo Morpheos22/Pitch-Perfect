@@ -10,16 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
+import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES } from "@/lib/file-validation";
 
-// Allowed file formats for E3 Script: PDF, DOCX, DOC, TXT
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
-const ALLOWED_MIME_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
-];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// Script-specific constants derived from the single source of truth
+const SCRIPT_EXTENSIONS = ALLOWED_EXTENSIONS.script;
+const SCRIPT_MIME_TYPES = ALLOWED_MIME_TYPES.script;
+const SCRIPT_MAX_SIZE = MAX_FILE_SIZES.script; // 10MB
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -67,15 +63,15 @@ export default function ElevatorPitchLiveScriptNewPage() {
     if (selectedFile) {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!SCRIPT_EXTENSIONS.includes(ext)) {
         toast.error(`Unsupported file format. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!SCRIPT_MIME_TYPES.includes(selectedFile.type) && !SCRIPT_EXTENSIONS.includes(ext)) {
         toast.error(`Invalid file type. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      if (selectedFile.size > MAX_FILE_SIZE) {
+      if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);
         return;
       }

@@ -1,4 +1,9 @@
 import crypto from 'node:crypto';
+import {
+  validateFileTypeByCategory,
+  validateFileSizeByCategory,
+  type FileCategory,
+} from '@/lib/file-validation';
 
 // Storage Utilities for Pitch Perfect × Automagikal
 // Multi-backend: Zoho WorkDrive (primary) → Vercel Blob (fallback) → Mock (dev)
@@ -7,6 +12,8 @@ import crypto from 'node:crypto';
 //   1. Zoho WorkDrive — if ZOHO_WORKDRIVE_* env vars are configured
 //   2. Vercel Blob       — if BLOB_READ_WRITE_TOKEN is set (auto on Vercel)
 //   3. Mock (in-memory)  — development only, not persistent
+//
+// File validation constants are imported from lib/file-validation.ts — the single source of truth.
 
 // ============================================
 // ZOHO WORKDRIVE CONFIGURATION
@@ -132,123 +139,13 @@ export function generateFileKey(
 // FILE VALIDATION
 // ============================================
 
-/** Allowed file extensions by category */
-const DECK_EXTENSIONS = ['.pdf', '.ppt', '.pptx', '.html', '.docx', '.doc', '.txt'];
-const SCRIPT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.html'];
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi'];
+// File validation is now imported from lib/file-validation.ts.
+// The old duplicate constants (DECK_EXTENSIONS, SCRIPT_EXTENSIONS, etc.)
+// have been removed. Use validateFileTypeByCategory() and
+// validateFileSizeByCategory() from file-validation.ts instead.
 
-/** Allowed MIME types by category */
-const ALLOWED_DECK_TYPES = [
-  'application/pdf',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'text/html',
-  'text/plain',
-];
-const ALLOWED_SCRIPT_TYPES = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'text/html',
-  'text/plain',
-];
-const ALLOWED_VIDEO_TYPES = [
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
-  'video/x-msvideo',
-];
-
-/** File size limits in bytes */
-const FILE_SIZE_LIMITS = {
-  deck: 50 * 1024 * 1024,   // 50MB
-  script: 10 * 1024 * 1024,  // 10MB
-  video: 500 * 1024 * 1024,  // 500MB
-};
-
-/**
- * Validate file extension against a list of allowed types.
- * @param fileName - The file name to check
- * @param allowedTypes - Array of allowed file extensions (e.g. ['.pdf', '.pptx'])
- * @returns Object with valid flag and optional error message
- */
-function validateFileType(
-  fileName: string,
-  allowedTypes: string[]
-): { valid: boolean; error?: string } {
-  const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-  if (!allowedTypes.includes(ext)) {
-    return {
-      valid: false,
-      error: `Invalid file type (.${ext}). Allowed types: ${allowedTypes.join(', ')}`,
-    };
-  }
-  return { valid: true };
-}
-
-/**
- * Convenience: validate file type by category (deck, script, video).
- * Checks both extension and MIME type.
- */
-export function validateFileTypeByCategory(
-  fileName: string,
-  mimeType: string,
-  type: 'deck' | 'script' | 'video'
-): { valid: boolean; error?: string } {
-  const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-
-  switch (type) {
-    case 'deck':
-      if (!ALLOWED_DECK_TYPES.includes(mimeType) || !DECK_EXTENSIONS.includes(ext)) {
-        return { valid: false, error: 'Invalid file type. Please upload a PDF or PowerPoint file.' };
-      }
-      break;
-    case 'script':
-      if (!ALLOWED_SCRIPT_TYPES.includes(mimeType) || !SCRIPT_EXTENSIONS.includes(ext)) {
-        return { valid: false, error: 'Invalid file type. Please upload a PDF, Word, or text file.' };
-      }
-      break;
-    case 'video':
-      if (!ALLOWED_VIDEO_TYPES.includes(mimeType) || !VIDEO_EXTENSIONS.includes(ext)) {
-        return { valid: false, error: 'Invalid file type. Please upload an MP4, WebM, MOV, or AVI file.' };
-      }
-      break;
-  }
-
-  return { valid: true };
-}
-
-/**
- * Validate file size against a maximum.
- * @param fileSize - Size of the file in bytes
- * @param maxSizeBytes - Maximum allowed size in bytes
- * @returns Object with valid flag and optional error message
- */
-function validateFileSize(
-  fileSize: number,
-  maxSizeBytes: number
-): { valid: boolean; error?: string } {
-  if (fileSize > maxSizeBytes) {
-    const limitMB = maxSizeBytes / (1024 * 1024);
-    return {
-      valid: false,
-      error: `File size exceeds ${limitMB}MB limit.`,
-    };
-  }
-  return { valid: true };
-}
-
-/**
- * Convenience: validate file size by category.
- */
-export function validateFileSizeByCategory(
-  size: number,
-  type: 'deck' | 'script' | 'video'
-): { valid: boolean; error?: string } {
-  return validateFileSize(size, FILE_SIZE_LIMITS[type]);
-}
+// validateFileTypeByCategory and validateFileSizeByCategory are now imported
+// from lib/file-validation.ts. The local duplicates have been removed.
 
 // ============================================
 // UPLOAD RESULT TYPE
@@ -381,7 +278,7 @@ async function deleteWorkDriveFile(fileId: string): Promise<void> {
 export async function uploadFile(
   file: File | Buffer,
   userId: string,
-  type: 'deck' | 'script' | 'video',
+  type: FileCategory,
   originalName: string,
   mimeType: string
 ): Promise<UploadResult> {
@@ -398,13 +295,12 @@ export async function uploadFile(
     fileSize = file.length;
   }
 
-  // Validate file type
+  // Validate file type and size using single source of truth
   const typeValidation = validateFileTypeByCategory(originalName, mimeType, type);
   if (!typeValidation.valid) {
     throw new Error(typeValidation.error);
   }
 
-  // Validate file size
   const sizeValidation = validateFileSizeByCategory(fileSize, type);
   if (!sizeValidation.valid) {
     throw new Error(sizeValidation.error);
