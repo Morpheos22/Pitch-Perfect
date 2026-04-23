@@ -68,10 +68,22 @@ let _resolvedConfig: {
 } | null = null;
 
 function getResolvedConfig() {
-  // Always re-resolve to pick up env var changes at runtime.
-  // The previous implementation cached forever, which meant .env updates
-  // or .z-ai-config changes required a full process restart.
-  _resolvedConfig = null;
+  // ── Cache: reuse if env vars haven't changed since last resolution ──
+  // Previous implementation either cached forever (stale credentials) or
+  // re-read .z-ai-config from disk on every call (disk thrashing).
+  // Now we cache but invalidate when env vars change, avoiding redundant
+  // file reads while still picking up runtime credential rotations.
+  const currentEnvSnapshot = [
+    process.env.ZAI_BASE_URL || '',
+    process.env.ZAI_API_KEY || '',
+    process.env.ZAI_TOKEN || '',
+    process.env.ZAI_USER_ID || '',
+    process.env.ZAI_CHAT_ID || '',
+  ].join('|');
+
+  if (_resolvedConfig && (_resolvedConfig as any)._envSnapshot === currentEnvSnapshot) {
+    return _resolvedConfig;
+  }
 
   // Try reading from .z-ai-config file first (for SDK compatibility)
   let fileConfig: Record<string, string | undefined> = {};
@@ -100,7 +112,8 @@ function getResolvedConfig() {
     userId: process.env.ZAI_USER_ID || fileConfig.userId || '',
     chatId: process.env.ZAI_CHAT_ID || fileConfig.chatId || '',
     source: configSource,
-  };
+    _envSnapshot: currentEnvSnapshot,
+  } as any;
 
   return _resolvedConfig;
 }
@@ -534,8 +547,14 @@ export async function executeWithFallback(
   const config = MODULE_MODEL_MAP[moduleKey];
   const lastError: Error[] = [];
 
+  // Deduplicate model names — all text models currently resolve to glm-4-plus
+  // and all vision models to glm-4.6v. Retrying the same model name is
+  // wasteful since it hits the identical server endpoint. Only try each unique
+  // model name once per strategy.
+  const uniqueModels = [...new Set(config.models)];
+
   // ── STRATEGY 1: Try SDK with model fallback chain ──
-  for (const model of config.models) {
+  for (const model of uniqueModels) {
     try {
       const zai = await getZai();
       const request = buildRequest(model);
@@ -569,10 +588,12 @@ export async function executeWithFallback(
   }
 
   // ── STRATEGY 2: Direct HTTP fallback to gateway (bypass SDK) ──
+  // Only reached if the SDK failed entirely (auth, init, network).
+  // Since all unique models already failed via SDK, try each once via HTTP.
   const fallbackConfig = getResolvedConfig();
   console.warn(`[ZAI] All SDK models failed for ${moduleKey}. Trying direct HTTP fallback to ${fallbackConfig.baseUrl}...`);
 
-  for (const model of config.models) {
+  for (const model of uniqueModels) {
     try {
       const request = buildRequest(model);
 

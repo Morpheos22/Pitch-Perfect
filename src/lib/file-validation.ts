@@ -14,7 +14,7 @@ export type FileCategory = 'deck' | 'script' | 'video';
 /** Allowed extensions per category — the ONLY list in the codebase */
 export const ALLOWED_EXTENSIONS: Record<FileCategory, string[]> = {
   deck: ['.pdf', '.pptx', '.ppt'],
-  script: ['.pdf', '.docx', '.doc', '.txt'],
+  script: ['.pdf', '.docx', '.doc', '.txt', '.md'],
   video: ['.mp4', '.webm', '.mov', '.avi'],
 };
 
@@ -30,6 +30,7 @@ export const ALLOWED_MIME_TYPES: Record<FileCategory, string[]> = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/msword',
     'text/plain',
+    'text/markdown',
   ],
   video: [
     'video/mp4',
