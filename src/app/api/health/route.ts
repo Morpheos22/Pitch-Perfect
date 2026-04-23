@@ -3,10 +3,12 @@ import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
 import { isAdminEmail } from '@/lib/dev-auth';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const full = searchParams.get('full') === 'true';
+
 
   // Minimal public health check
   if (!full) {
@@ -18,14 +20,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
+
   // Protect full health check — require internal access
   const fullToken = request.headers.get('x-health-token');
   if (fullToken !== process.env.HEALTH_CHECK_SECRET) {
     return NextResponse.json({ status: 'ok', message: 'Full check requires authentication' });
   }
 
+
   // Full health check — includes diagnostic details
   const startTime = Date.now();
+
 
   interface FullHealthResponse {
     status: string;
@@ -38,6 +43,7 @@ export async function GET(request: NextRequest) {
     timestamp: string;
   }
 
+
   const checks: FullHealthResponse = {
     status: 'checking',
     database: { status: 'checking' },
@@ -48,6 +54,7 @@ export async function GET(request: NextRequest) {
     timestamp: new Date().toISOString(),
   };
 
+
   // Database check
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -56,11 +63,13 @@ export async function GET(request: NextRequest) {
     checks.database = { status: 'unhealthy' };
   }
 
+
   // Storage check
   checks.storage = {
     status: isStorageConfigured() ? 'ok' : 'degraded',
     backend: getStorageBackend(),
   };
+
 
   // AI config check — use resolved config (env vars + file)
   const configStatus = getZaiConfigStatus();
@@ -70,6 +79,7 @@ export async function GET(request: NextRequest) {
     configSource: configStatus.configSource,
     baseUrl: configStatus.baseUrl,
   };
+
 
   // AI health check — test actual gateway connectivity (text + vision)
   try {
@@ -95,12 +105,15 @@ export async function GET(request: NextRequest) {
     };
   }
 
+
   // Entitlement check — verify dev emails are recognized
   checks.entitlement = {
     devEmailsConfigured: isAdminEmail('helloautomagikal@gmail.com'),
   };
 
+
   const allHealthy = checks.database.status === 'ok' && checks.ai.status === 'ok';
+
 
   const warnings: string[] = [];
   if (!configStatus.hasApiKey && !configStatus.hasToken) warnings.push('AI API key/token not configured');
@@ -111,10 +124,12 @@ export async function GET(request: NextRequest) {
   if (checks.ai.visionStatus === 'unhealthy') warnings.push('Vision model endpoint unhealthy — E1/E3/E4 video analysis will fail');
   if (checks.ai.visionStatus === 'degraded') warnings.push('Vision model endpoint degraded — E1/E3/E4 may return poor results');
 
+
   // Vercel Blob check — verify BLOB_READ_WRITE_TOKEN is set for private blob reads
   const blobTokenSet = !!process.env.BLOB_READ_WRITE_TOKEN;
   if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — private blob uploads will fail to be read back');
   (checks.storage as any).blobTokenConfigured = blobTokenSet;
+
 
   checks.status = allHealthy ? 'healthy' : 'degraded';
   if (checks.database.status === 'unhealthy' || checks.ai.status === 'unhealthy') {
@@ -122,6 +137,7 @@ export async function GET(request: NextRequest) {
   }
   checks.warnings = warnings.length > 0 ? warnings : undefined;
   checks.responseTime = `${Date.now() - startTime}ms`;
+
 
   return NextResponse.json(checks);
 }

@@ -2,6 +2,7 @@
 // POST /api/payment/create-session
 // Creates a checkout session with the appropriate payment gateway
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { 
@@ -13,6 +14,7 @@ import {
 import { prisma } from '@/lib/db';
 import { syncUserToCRM } from '@/lib/zoho-crm';
 import { createSessionSchema } from '@/lib/validation/schemas';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +23,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
 
     const body = await request.json();
     const parsed = createSessionSchema.safeParse(body);
@@ -34,31 +37,38 @@ export async function POST(request: NextRequest) {
     const productId = validatedData.plan;
     const country = (body as Record<string, unknown>).country as string | undefined;
 
+
     // Validate country code format (ISO 3166-1 alpha-2)
     if (country && !/^[A-Z]{2}$/i.test(country)) {
       return NextResponse.json({ error: 'Invalid country code' }, { status: 400 });
     }
+
 
     // Validate product
     if (!productId || !PRODUCTS[productId]) {
       return NextResponse.json({ error: 'Invalid product' }, { status: 400 });
     }
 
+
     // Get user from database
     const user = await prisma.user.findUnique({
       where: { clerkId: userId },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+
     // Determine user's country (from request or stored profile)
     const userCountry = country || user.country || 'US';
+
 
     // Determine payment gateway based on country
     const gateway = determinePaymentGateway(userCountry);
     const { amount, currency } = getPriceForCountry(productId, userCountry);
+
 
     // Sync user to CRM (ensures lead exists)
     await syncUserToCRM({
@@ -68,6 +78,7 @@ export async function POST(request: NextRequest) {
       country: userCountry,
       clerkId: userId,
     });
+
 
     // Create checkout session
     const session = await createCheckoutSession(
@@ -86,6 +97,7 @@ export async function POST(request: NextRequest) {
       }
     );
 
+
     // Create pending transaction record
     await prisma.transaction.create({
       data: {
@@ -99,6 +111,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+
     return NextResponse.json({
       success: true,
       checkoutUrl: session.checkoutUrl,
@@ -107,6 +120,7 @@ export async function POST(request: NextRequest) {
       currency,
       expiresAt: session.expiresAt,
     });
+
 
   } catch (error) {
     console.error('Payment session error:', error);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createOrUpdateLead } from "@/lib/zoho-crm";
 import { contactSchema } from '@/lib/validation/schemas';
+export const dynamic = 'force-dynamic';
 
 // Zoho Forms configuration
 const ZOHO_FORMS_CONFIG = {
@@ -9,9 +10,11 @@ const ZOHO_FORMS_CONFIG = {
   accessToken: process.env.ZOHO_FORMS_ACCESS_TOKEN || "",
 };
 
+
 // ============================================
 // VALIDATION
 // ============================================
+
 
 interface ContactFormData {
   name: string;
@@ -21,6 +24,7 @@ interface ContactFormData {
   message: string;
 }
 
+
 function validateInput(body: unknown): {
   valid: boolean;
   data?: ContactFormData;
@@ -28,17 +32,21 @@ function validateInput(body: unknown): {
 } {
   const errors: string[] = [];
 
+
   if (!body || typeof body !== "object") {
     return { valid: false, errors: ["Invalid request body"] };
   }
 
+
   const data = body as Record<string, unknown>;
+
 
   // Name is required
   const name = typeof data.name === "string" ? data.name.trim() : "";
   if (!name || name.length < 2) {
     errors.push("Name is required and must be at least 2 characters");
   }
+
 
   // Email is required and must be valid
   const email = typeof data.email === "string" ? data.email.trim() : "";
@@ -48,6 +56,7 @@ function validateInput(body: unknown): {
   } else if (!emailRegex.test(email)) {
     errors.push("Please provide a valid email address");
   }
+
 
   // Message is required with minimum length
   const message = typeof data.message === "string" ? data.message.trim() : "";
@@ -59,13 +68,16 @@ function validateInput(body: unknown): {
     errors.push("Message must be under 5000 characters");
   }
 
+
   // Optional fields
   const company = typeof data.company === "string" ? data.company.trim() : "";
   const subject = typeof data.subject === "string" ? data.subject.trim() : "";
 
+
   if (errors.length > 0) {
     return { valid: false, errors };
   }
+
 
   return {
     valid: true,
@@ -73,18 +85,22 @@ function validateInput(body: unknown): {
   };
 }
 
+
 // ============================================
 // ZOHO FORMS SUBMISSION
 // ============================================
 
+
 async function submitToZohoForms(data: ContactFormData): Promise<{ success: boolean; recordId?: string; error?: string }> {
   const token = ZOHO_FORMS_CONFIG.accessToken;
+
 
   if (!token) {
     // If no Zoho Forms token is configured, skip but don't fail
     console.warn("Zoho Forms access token not configured. Skipping form submission.");
     return { success: true };
   }
+
 
   try {
     const formFields: Record<string, string> = {
@@ -93,8 +109,10 @@ async function submitToZohoForms(data: ContactFormData): Promise<{ success: bool
       Message: data.message,
     };
 
+
     if (data.company) formFields.Company = data.company;
     if (data.subject) formFields.Subject = data.subject;
+
 
     const response = await fetch(
       `${ZOHO_FORMS_CONFIG.apiDomain}/api/json/${ZOHO_FORMS_CONFIG.formLinkName}/formRecords`,
@@ -108,11 +126,13 @@ async function submitToZohoForms(data: ContactFormData): Promise<{ success: bool
       }
     );
 
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Zoho Forms submission failed:", response.status, errorText);
       return { success: false, error: `Zoho Forms error: ${response.status}` };
     }
+
 
     const result = await response.json();
     return {
@@ -126,9 +146,11 @@ async function submitToZohoForms(data: ContactFormData): Promise<{ success: bool
   }
 }
 
+
 // ============================================
 // ZOHO CRM LEAD SYNC
 // ============================================
+
 
 async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean; leadId?: string; error?: string }> {
   try {
@@ -142,6 +164,7 @@ async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean;
       description: `Subject: ${data.subject || "General Inquiry"}\n\n${data.message}`,
     });
 
+
     return {
       success: true,
       leadId: result.id,
@@ -153,11 +176,13 @@ async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean;
   }
 }
 
+
 // ============================================
 // API ROUTE HANDLER
 // ============================================
 // TODO: Add rate limiting (e.g., 5 submissions per 15 minutes per IP)
 // Consider using a rate-limiting middleware or service like Upstash Ratelimit
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -176,11 +201,14 @@ export async function POST(request: NextRequest) {
       company: (body as Record<string, unknown>).company as string | undefined,
     };
 
+
     // Submit to Zoho Forms
     const formsResult = await submitToZohoForms(formData);
 
+
     // Sync to Zoho CRM as a Lead
     const crmResult = await syncToZohoCRM(formData) as { success: boolean; leadId?: string; isNew?: boolean };
+
 
     return NextResponse.json({
       success: true,
@@ -189,12 +217,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Contact form error:", error);
 
+
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: "Invalid request body. Please send JSON." },
         { status: 400 }
       );
     }
+
 
     return NextResponse.json(
       {

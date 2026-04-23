@@ -3,11 +3,13 @@
 // Returns user subscription plan, usage stats, and Zoho contact ID for debugging.
 // This route is BLOCKED in production (returns 403).
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth';
 import { devImpersonateSchema } from '@/lib/validation/schemas';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   // ── Guard: development mode only ──
@@ -18,16 +20,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+
   // ── Guard: must be authenticated ──
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+
   // ── Guard: only admin emails ──
   const client = await clerkClient();
   const clerkUser = await client.users.getUser(clerkId);
   const requesterEmail = clerkUser.emailAddresses[0]?.emailAddress;
+
 
   if (!requesterEmail || !isAdminEmail(requesterEmail)) {
     return NextResponse.json(
@@ -35,6 +40,7 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+
 
   try {
     const body = await request.json();
@@ -48,6 +54,7 @@ export async function POST(request: NextRequest) {
     const validatedData = parsed.data;
     const { email } = validatedData;
 
+
     // Look up user by email
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -57,12 +64,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
+
     if (!user) {
       return NextResponse.json(
         { error: `No user found with email "${email}".` },
         { status: 404 },
       );
     }
+
 
     return NextResponse.json({
       id: user.id,

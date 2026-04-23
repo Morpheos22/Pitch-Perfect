@@ -6,11 +6,14 @@ import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { founderInputSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
+
 // E5: Pitch Founder API
 // Routes to appropriate AI service based on moduleType
+
 
 const E5_MODULE_KEYS: Record<string, ModuleModelKey> = {
   FOUNDER_READINESS: "E5_FOUNDER_READINESS",
@@ -21,13 +24,16 @@ const E5_MODULE_KEYS: Record<string, ModuleModelKey> = {
   PATHWAY_NARRATION: "E5_PATHWAY_NARRATION",
 };
 
+
 // ============================================
 // PROMPT BUILDERS per module
 // ============================================
 
+
 function buildReadinessPrompt(input: Record<string, unknown>) {
   return {
     system: `You are a senior startup advisor who has helped hundreds of African founders prepare for investor pitches. Evaluate the founder's readiness across 6 dimensions and recommend Path A (Grit to Gear) or Path B (AfriFlow Direct).
+
 
 SCORING DIMENSIONS (0-100 each):
 1. Deck Quality: Is the pitch deck professional, complete, and compelling?
@@ -37,12 +43,15 @@ SCORING DIMENSIONS (0-100 each):
 5. Traction Evidence: Is there proof of product-market fit or customer interest?
 6. Financial Understanding: Does the founder understand unit economics and fundraising?
 
+
 PATHWAY CRITERIA:
 - Path A (Grit to Gear): Score 0-65 overall — needs structured support, mentorship, cohort learning
 - Path B (AfriFlow Direct): Score 66-100 overall — investor-ready, can go directly to VCs
 
+
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Evaluate this founder's investor readiness:
+
 
 Startup Name: ${input.startupName || "Not provided"}
 Industry/Sector: ${input.sector || "Not provided"}
@@ -51,21 +60,27 @@ Founded: ${input.foundedDate || "Not provided"}
 Team Size: ${input.teamSize || "Not provided"}
 Country: ${input.country || "Not provided"}
 
+
 Has Pitch Deck: ${input.hasDeck ? "Yes" : "No"}
 Deck Score (if available): ${input.deckScore || "Not yet analyzed"}
 
+
 Has Practiced Pitch: ${input.hasPracticed ? "Yes" : "No"}
 Pitch Confidence (self-rated 1-10): ${input.pitchConfidence || "Not rated"}
+
 
 Monthly Revenue: ${input.monthlyRevenue || "Pre-revenue"}
 Active Users: ${input.activeUsers || "N/A"}
 Key Partnerships: ${input.partnerships || "None yet"}
 
+
 Prior Fundraising: ${input.priorFundraising || "None"}
 Target Raise: ${input.targetRaise || "Not specified"}
 
+
 Describe your biggest strength: ${input.biggestStrength || "Not provided"}
 Biggest challenge: ${input.biggestChallenge || "Not provided"}
+
 
 Provide your assessment as a JSON object:
 {
@@ -88,11 +103,14 @@ Provide your assessment as a JSON object:
   };
 }
 
+
 function buildPathwayPrompt(input: Record<string, unknown>) {
   return {
     system: `You are a pathway advisor for the Automagikal Network, specializing in African startup ecosystems. Compare the two pathways and recommend the best fit for this founder.
 
+
 TWO PATHWAYS:
+
 
 Path A: Grit to Gear
 - Discounted cohort program at Small Axe
@@ -104,6 +122,7 @@ Path A: Grit to Gear
 - Cost: Discounted (subsidized by Automagikal)
 - Best for: Early-stage founders needing structured support
 
+
 Path B: AfriFlow Direct
 - Full price access to investor network
 - Deck review and polish before VC introductions
@@ -112,13 +131,16 @@ Path B: AfriFlow Direct
 - Higher cost but faster route
 - Best for: Fundraising-ready founders with strong decks
 
+
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Recommend the best pathway for this founder:
+
 
 Startup: ${input.startupName || "Not provided"}
 Sector: ${input.sector || "Not provided"}
 Stage: ${input.stage || "Pre-seed"}
 Country: ${input.country || "Not provided"}
+
 
 Readiness Scores (if available):
 - Overall: ${input.overallScore || "Not assessed"}
@@ -126,10 +148,12 @@ Readiness Scores (if available):
 - Pitch Confidence: ${input.pitchConfidence || "Not assessed"}
 - Traction: ${input.tractionScore || "Not assessed"}
 
+
 Goals: ${input.goals || "Raise funding, grow network"}
 Timeline: ${input.timeline || "Flexible"}
 Budget for program: ${input.budget || "Limited"}
 Previous startup experience: ${input.previousExperience || "First-time founder"}
+
 
 Provide your recommendation as JSON:
 {
@@ -154,14 +178,18 @@ Provide your recommendation as JSON:
   };
 }
 
+
 function buildInvestorResearchPrompt(input: Record<string, unknown>) {
   return {
     system: `You are an investor research analyst specializing in the African startup ecosystem. Based on the search results provided, identify the most relevant investors for this startup and provide actionable outreach guidance.
 
+
 Note: Web search results will be provided separately. Use them to ground your analysis in real, current data.
+
 
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Research investors for this startup:
+
 
 Startup: ${input.startupName || "Not provided"}
 Sector: ${input.sector || "Technology"}
@@ -170,8 +198,10 @@ Country: ${input.country || "South Africa"}
 Target Raise: ${input.targetRaise || "Not specified"}
 Traction: ${input.traction || "Early stage"}
 
+
 Web search results for relevant investors:
 ${input.searchResults || "No search results available. Provide general guidance based on the startup profile."}
+
 
 Provide your analysis as JSON:
 {
@@ -198,9 +228,11 @@ Provide your analysis as JSON:
   };
 }
 
+
 function buildCohortMatchingPrompt(input: Record<string, unknown>) {
   return {
     system: `You are a cohort placement advisor for Small Axe, an African startup accelerator. Assess founder fit for upcoming cohorts and recommend the best match.
+
 
 SMALL AXE COHORT TYPES:
 - Discovery: For idea-stage founders (0-3 months)
@@ -208,8 +240,10 @@ SMALL AXE COHORT TYPES:
 - Growth: For revenue-generating startups (3 months)
 - Scale: For post-revenue scaling (6 months)
 
+
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Match this founder with the best Small Axe cohort:
+
 
 Startup: ${input.startupName || "Not provided"}
 Sector: ${input.sector || "Technology"}
@@ -217,16 +251,20 @@ Stage: ${input.stage || "Idea"}
 Team Size: ${input.teamSize || "1"}
 Country: ${input.country || "Not provided"}
 
+
 Has MVP: ${input.hasMVP ? "Yes" : "No"}
 Monthly Revenue: ${input.monthlyRevenue || "Pre-revenue"}
 Users: ${input.activeUsers || "0"}
 Prior Accelerator: ${input.priorAccelerator || "None"}
 
+
 Key skills needed: ${input.skillsNeeded || "Business strategy, fundraising"}
 Learning goals: ${input.learningGoals || "Not specified"}
 
+
 Preferred cohort format: ${input.cohortFormat || "Flexible"}
 Available time commitment: ${input.timeCommitment || "Part-time"}
+
 
 Provide your matching as JSON:
 {
@@ -252,12 +290,15 @@ Provide your matching as JSON:
   };
 }
 
+
 function buildNetworkProfilePrompt(input: Record<string, unknown>) {
   return {
     system: `You are a personal branding expert for African tech founders. Create a compelling investor-facing network profile that highlights the founder's unique value proposition and makes them stand out in the Automagikal Network.
 
+
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Build an investor network profile for this founder:
+
 
 Name: ${input.firstName || ""} ${input.lastName || ""}
 Startup: ${input.startupName || "Not provided"}
@@ -265,18 +306,23 @@ Sector: ${input.sector || "Technology"}
 Role: ${input.role || "Founder/CEO"}
 Country: ${input.country || "Not provided"}
 
+
 Brief Bio: ${input.bio || "Not provided"}
 Key Achievement: ${input.keyAchievement || "Not provided"}
 Unique Value Prop: ${input.uniqueValueProp || "Not provided"}
+
 
 Prior Experience: ${input.priorExperience || "Not provided"}
 Education: ${input.education || "Not provided"}
 Skills: ${input.skills || "Not provided"}
 
+
 Current Metrics: ${input.metrics || "Pre-revenue"}
 Traction Highlights: ${input.tractionHighlights || "Not yet available"}
 
+
 Social Links: LinkedIn ${input.linkedin || "N/A"}, Twitter ${input.twitter || "N/A"}
+
 
 Create the profile as JSON:
 {
@@ -297,19 +343,24 @@ Create the profile as JSON:
   };
 }
 
+
 function buildNarrationPrompt(input: Record<string, unknown>) {
   return {
     system: `You are a warm, encouraging mentor explaining the founder's pathway in the Pitch Perfect × Automagikal program. Write a clear, conversational narration that explains their recommended path, what to expect, and next steps. This will be converted to speech via TTS.
 
+
 IMPORTANT: Write as if speaking directly to the founder. Use first person ("you", "your"). Keep sentences short and natural for speech synthesis. Avoid complex punctuation or abbreviations that might trip up text-to-speech.
+
 
 The narration should be 200-400 words (about 2-3 minutes when spoken).`,
     user: `Write a TTS narration for this founder's pathway:
+
 
 Founder Name: ${input.firstName || "Founder"}
 Startup: ${input.startupName || "their startup"}
 Recommended Pathway: ${input.recommendedPathway || "Not yet determined"}
 Pathway Confidence: ${input.pathwayConfidence || "N/A"}
+
 
 Key Assessment Results:
 - Overall Score: ${input.overallScore || "N/A"}/100
@@ -317,17 +368,21 @@ Key Assessment Results:
 - Improvements Needed: ${input.improvements || "To be determined"}
 - Next Steps: ${input.nextSteps || "To be determined"}
 
+
 Pathway Details:
 Path A - Grit to Gear: ${input.pathADetails || "Cohort → Education → Mentorship → Certification → AfriFlow → Network"}
 Path B - AfriFlow Direct: ${input.pathBDetails || "Full price → Deck before VCs → Immediate access → Network"}
+
 
 Write ONLY the narration text (no JSON, no markdown). Just the speech text to be narrated.`,
   };
 }
 
+
 // ============================================
 // AI EXECUTION HELPER — uses shared fallback chain
 // ============================================
+
 
 async function executeAIAnalysis(
   moduleKey: ModuleModelKey,
@@ -344,8 +399,10 @@ async function executeAIAnalysis(
     temperature: MODULE_MODEL_MAP[moduleKey].temperature,
   }));
 
+
   const content = response.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from AI');
+
 
   if (parseAsJson) {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -357,6 +414,7 @@ async function executeAIAnalysis(
     };
   }
 
+
   return {
     result: content,
     modelUsed,
@@ -364,9 +422,11 @@ async function executeAIAnalysis(
   };
 }
 
+
 // ============================================
 // POST HANDLER
 // ============================================
+
 
 async function handlePost(request: NextRequest) {
   try {
@@ -374,6 +434,7 @@ async function handlePost(request: NextRequest) {
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
@@ -383,11 +444,13 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e5');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const body = await request.json();
     const parsed = founderInputSchema.safeParse(body);
@@ -399,6 +462,7 @@ async function handlePost(request: NextRequest) {
     }
     const validatedData = parsed.data;
     const { moduleType, input } = validatedData;
+
 
     // Input validation
     if (typeof input !== 'object' || input === null) {
@@ -412,6 +476,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid module type' }, { status: 400 });
     }
 
+
     const moduleKey = E5_MODULE_KEYS[moduleType];
     if (!moduleKey) {
       return NextResponse.json(
@@ -419,6 +484,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Create session record
     const session = await prisma.founderSession.create({
@@ -430,6 +496,7 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     try {
       let analysisResult: any;
       let modelUsed: string | undefined;
@@ -437,6 +504,7 @@ async function handlePost(request: NextRequest) {
       let overallScore: number | undefined;
       let recommendedPathway: string | undefined;
       let audioBase64: string | undefined;
+
 
       switch (moduleType) {
         case "FOUNDER_READINESS": {
@@ -454,6 +522,7 @@ async function handlePost(request: NextRequest) {
           break;
         }
 
+
         case "PATHWAY_RECOMMENDATION": {
           const prompts = buildPathwayPrompt(input);
           const { result, modelUsed: mu, tokensUsed: tu } = await executeAIAnalysis(
@@ -467,6 +536,7 @@ async function handlePost(request: NextRequest) {
           recommendedPathway = result.recommendedPathway;
           break;
         }
+
 
         case "INVESTOR_RESEARCH": {
           // Run web search first
@@ -487,6 +557,7 @@ async function handlePost(request: NextRequest) {
             console.warn("[E5] Web search failed:", searchErr);
           }
 
+
           const prompts = buildInvestorResearchPrompt({
             ...input,
             searchResults: searchResultsText,
@@ -502,6 +573,7 @@ async function handlePost(request: NextRequest) {
           break;
         }
 
+
         case "COHORT_MATCHING": {
           const prompts = buildCohortMatchingPrompt(input);
           const { result, modelUsed: mu, tokensUsed: tu } = await executeAIAnalysis(
@@ -514,6 +586,7 @@ async function handlePost(request: NextRequest) {
           tokensUsed = tu;
           break;
         }
+
 
         case "NETWORK_PROFILE": {
           const prompts = buildNetworkProfilePrompt(input);
@@ -528,6 +601,7 @@ async function handlePost(request: NextRequest) {
           break;
         }
 
+
         case "PATHWAY_NARRATION": {
           const prompts = buildNarrationPrompt(input);
           const { result, modelUsed: mu, tokensUsed: tu } = await executeAIAnalysis(
@@ -536,6 +610,7 @@ async function handlePost(request: NextRequest) {
             prompts.user,
             false // Don't parse as JSON — we need raw text for TTS
           );
+
 
           // Generate TTS audio
           try {
@@ -550,11 +625,13 @@ async function handlePost(request: NextRequest) {
             // Continue without audio — text narration is still valuable
           }
 
+
           analysisResult = { narrationText: result };
           modelUsed = mu;
           tokensUsed = tu;
           break;
         }
+
 
         default: {
           return NextResponse.json(
@@ -563,6 +640,7 @@ async function handlePost(request: NextRequest) {
           );
         }
       }
+
 
       // Update session with results
       await prisma.founderSession.update({
@@ -578,6 +656,7 @@ async function handlePost(request: NextRequest) {
           analyzedAt: new Date(),
         },
       });
+
 
       return NextResponse.json({
         success: true,
@@ -597,6 +676,7 @@ async function handlePost(request: NextRequest) {
         data: { status: "FAILED" },
       });
 
+
       console.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
       const msg = (aiError as any)?.message || String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
@@ -614,6 +694,7 @@ async function handlePost(request: NextRequest) {
   }
 }
 
+
 export const POST = withRateLimit(handlePost, {
   limit: 5,
   windowMs: 60_000,
@@ -621,9 +702,11 @@ export const POST = withRateLimit(handlePost, {
   name: 'AI Analysis',
 });
 
+
 // ============================================
 // GET HANDLER
 // ============================================
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -631,6 +714,7 @@ export async function GET(request: NextRequest) {
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
@@ -640,9 +724,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("id");
     const moduleType = searchParams.get("moduleType");
+
 
     // Single session lookup
     if (sessionId) {
@@ -650,9 +736,11 @@ export async function GET(request: NextRequest) {
         where: { id: sessionId, userId: user.id },
       });
 
+
       if (!session) {
         return NextResponse.json({ error: "Session not found" }, { status: 404 });
       }
+
 
       return NextResponse.json({
         id: session.id,
@@ -670,11 +758,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // List sessions with optional filter
     const where: Record<string, unknown> = { userId: user.id };
     if (moduleType) {
       where.moduleType = moduleType;
     }
+
 
     const sessions = await prisma.founderSession.findMany({
       where,
@@ -691,6 +781,7 @@ export async function GET(request: NextRequest) {
         analyzedAt: true,
       },
     });
+
 
     // Group by module type for progress tracking
     const moduleTypes = Object.keys(E5_MODULE_KEYS);
@@ -709,6 +800,7 @@ export async function GET(request: NextRequest) {
       },
       [] as { moduleType: string; completedAt?: string; overallScore?: number | null; recommendedPathway?: string | null }[]
     );
+
 
     return NextResponse.json({
       success: true,

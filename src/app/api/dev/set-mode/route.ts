@@ -5,11 +5,13 @@
 //   - Client mode: onboardingCompleted = false → resets onboarding state, goes to /onboarding
 // This route is BLOCKED in production (returns 403).
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { DEV_MODE, isAdminEmail } from '@/lib/dev-auth';
 import { devSetModeSchema } from '@/lib/validation/schemas';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   // ── Guard: development mode only ──
@@ -20,16 +22,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+
   // ── Guard: must be authenticated ──
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+
   // ── Guard: only admin email ──
   const client = await clerkClient();
   const clerkUser = await client.users.getUser(clerkId);
   const email = clerkUser.emailAddresses[0]?.emailAddress;
+
 
   if (!email || !isAdminEmail(email)) {
     return NextResponse.json(
@@ -37,6 +42,7 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+
 
   // ── Parse request body ──
   try {
@@ -51,7 +57,9 @@ export async function POST(request: NextRequest) {
     const validatedData = parsed.data;
     const mode = validatedData.mode;
 
+
     const onboardingCompleted = mode !== 'FREE';
+
 
     // ── Update Clerk public metadata ──
     await client.users.updateUser(clerkId, {
@@ -59,6 +67,7 @@ export async function POST(request: NextRequest) {
         onboardingCompleted,
       },
     });
+
 
     // ── Update Prisma DB ──
     if (!onboardingCompleted) {
@@ -80,6 +89,7 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
 
     return NextResponse.json({
       success: true,

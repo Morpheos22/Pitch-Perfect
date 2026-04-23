@@ -3,6 +3,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { isAdminEmail } from "@/lib/dev-auth";
 import { syncUserToCRM } from "@/lib/zoho-crm";
+export const dynamic = 'force-dynamic';
 
 // Sync Clerk user with database
 // SECURITY: Uses auth() to get authenticated user - NEVER trust client input for userId
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest) {
     // SECURITY: Get authenticated user from session, not from request body
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json(
         { error: "Unauthorized" },
@@ -18,9 +20,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     // Get user details from Clerk (trusted source)
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(clerkId);
+
 
     // SECURITY: Use the first VERIFIED email, not just the first in the list
     const verifiedEmail = clerkUser.emailAddresses.find(
@@ -34,9 +38,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     const firstName = clerkUser.firstName;
     const lastName = clerkUser.lastName;
     const avatarUrl = clerkUser.imageUrl;
+
 
     // Upsert user using trusted clerkId from session
     const user = await prisma.user.upsert({
@@ -58,6 +64,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+
     // Sync to Zoho CRM (fire-and-forget — non-blocking)
     syncUserToCRM({
       email,
@@ -69,11 +76,13 @@ export async function POST(request: NextRequest) {
       console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
 
+
     // Ensure subscription + usage records exist in a single transaction
     await prisma.$transaction(async (tx) => {
       const existingSubscription = await tx.subscription.findUnique({
         where: { userId: user.id },
       });
+
 
       if (!existingSubscription) {
         await tx.subscription.create({
@@ -81,9 +90,11 @@ export async function POST(request: NextRequest) {
         });
       }
 
+
       const existingUsage = await tx.usage.findUnique({
         where: { userId: user.id },
       });
+
 
       if (!existingUsage) {
         await tx.usage.create({
@@ -91,6 +102,7 @@ export async function POST(request: NextRequest) {
         });
       }
     });
+
 
     // ── Developer/Admin override: Auto-upgrade to ENTERPRISE ──
     // Developer emails (configured via DEVELOPER_EMAILS env var) always get
@@ -103,6 +115,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+
     return NextResponse.json({ success: true, user });
   } catch (error) {
     console.error("User sync error:", error);
@@ -113,10 +126,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
+
 // GET endpoint to fetch current user data
 export async function GET() {
   try {
     const { userId: clerkId } = await auth();
+
 
     if (!clerkId) {
       return NextResponse.json(
@@ -124,6 +139,7 @@ export async function GET() {
         { status: 401 }
       );
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
@@ -152,12 +168,14 @@ export async function GET() {
       },
     });
 
+
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },
         { status: 404 }
       );
     }
+
 
     // ── Developer/Admin override: Ensure ENTERPRISE plan is returned ──
     // The POST handler auto-upgrades the DB record, but this GET handler
@@ -182,6 +200,7 @@ export async function GET() {
         },
       });
     }
+
 
     return NextResponse.json({ success: true, user });
   } catch (error) {

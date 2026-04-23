@@ -2,6 +2,7 @@
 // Storage fallback: Zoho WorkDrive → Vercel Blob → 503 error
 // Bypasses Vercel's 4.5MB body size limit
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma as db } from '@/lib/db';
@@ -18,8 +19,10 @@ import {
   validateFileSizeByCategory,
 } from '@/lib/file-validation';
 import { requireModuleAccess } from '@/lib/entitlement';
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
+
 
 // SSRF protection: check if a URL resolves to a private/reserved IP range
 function isPrivateUrl(url: string): boolean {
@@ -44,11 +47,13 @@ function isPrivateUrl(url: string): boolean {
   }
 }
 
+
 // POST: Upload video to WorkDrive
 export async function POST(request: NextRequest) {
   try {
     // SECURITY: Get authenticated user from session
     const { userId: clerkId } = await auth();
+
 
     if (!clerkId) {
       return NextResponse.json(
@@ -57,11 +62,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     // Get internal user ID
     const user = await db.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
+
 
     if (!user) {
       return NextResponse.json(
@@ -69,6 +76,7 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
 
     // ── Entitlement check ──
     const searchParams = new URL(request.url).searchParams;
@@ -79,9 +87,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
 
+
     const formData = await request.formData();
     const videoFile = formData.get('video') as File | null;
     const type = (formData.get('type') as string) || 'live';
+
 
     if (!videoFile) {
       return NextResponse.json(
@@ -89,6 +99,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Validate file type
     const typeValidation = validateFileTypeByCategory(videoFile.name, videoFile.type, 'video');
@@ -99,6 +110,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     // Validate file size
     const sizeValidation = validateFileSizeByCategory(videoFile.size, 'video');
     if (!sizeValidation.valid) {
@@ -108,14 +120,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     // Determine video type for storage path
     const videoType = type === 'full' ? 'full' : 'live';
+
 
     const arrayBuffer = await videoFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+
     let downloadUrl: string;
     let fileId: string;
+
 
     // ── STRATEGY 1: Zoho WorkDrive ──
     if (isWorkDriveConfigured()) {
@@ -150,7 +166,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     const key = generateFileKey(user.id, 'video', videoFile.name);
+
 
     // Create a pending video record in database
     const video = await db.pitchVideo.create({
@@ -165,6 +183,7 @@ export async function POST(request: NextRequest) {
         type: videoType.toUpperCase(),
       },
     });
+
 
     return NextResponse.json({
       videoId: video.id,
@@ -182,10 +201,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
+
 // GET: Get download URL for a video
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
+
 
     if (!clerkId) {
       return NextResponse.json(
@@ -194,10 +215,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+
     const user = await db.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
+
 
     if (!user) {
       return NextResponse.json(
@@ -206,9 +229,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('videoId');
     const fileId = searchParams.get('fileId');
+
 
     if (!videoId && !fileId) {
       return NextResponse.json(
@@ -216,6 +241,7 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // If fileId provided, verify user owns the file before returning URL
     if (fileId) {
@@ -248,6 +274,7 @@ export async function GET(request: NextRequest) {
           parsedVideoUrl.hostname === 'blob.vercel-storage.com';
       } catch { /* not a valid URL */ }
 
+
       if (video.videoUrl && (isBlobVideo || !video.videoUrl.includes('workdrive.zoho.com'))) {
         // Generate proxy URL for private blob access
         try {
@@ -269,12 +296,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ downloadUrl });
     }
 
+
     // If videoId provided, look up the file from database
     if (videoId) {
       const video = await db.pitchVideo.findFirst({
         where: { id: videoId, userId: user.id },
         select: { videoUrl: true },
       });
+
 
       if (!video) {
         return NextResponse.json(
@@ -283,6 +312,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
+
       // SSRF protection on the resolved URL
       if (isPrivateUrl(video.videoUrl)) {
         return NextResponse.json(
@@ -290,6 +320,7 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
       }
+
 
       // Generate proxy URL for private blob access
       let downloadUrl: string;
@@ -300,10 +331,12 @@ export async function GET(request: NextRequest) {
         downloadUrl = video.videoUrl;
       }
 
+
       return NextResponse.json({
         downloadUrl,
       });
     }
+
 
     return NextResponse.json(
       { error: 'Invalid request' },
@@ -318,10 +351,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
+
 // PATCH: Confirm upload completion and update video record
 export async function PATCH(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
+
 
     if (!clerkId) {
       return NextResponse.json(
@@ -330,10 +365,12 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+
     const user = await db.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
+
 
     if (!user) {
       return NextResponse.json(
@@ -341,6 +378,7 @@ export async function PATCH(request: NextRequest) {
         { status: 404 }
       );
     }
+
 
     const body = await request.json();
     const parsed = videoNotesSchema.safeParse(body);
@@ -354,12 +392,14 @@ export async function PATCH(request: NextRequest) {
     const videoId = validatedData.id;
     const duration = (body as Record<string, unknown>).duration as number | undefined;
 
+
     if (!videoId) {
       return NextResponse.json(
         { error: 'videoId is required' },
         { status: 400 }
       );
     }
+
 
     // Update video record
     const video = await db.pitchVideo.updateMany({
@@ -370,12 +410,14 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
+
     if (video.count === 0) {
       return NextResponse.json(
         { error: 'Video not found or not owned by user' },
         { status: 404 }
       );
     }
+
 
     return NextResponse.json({
       success: true,

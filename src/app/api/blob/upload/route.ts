@@ -18,6 +18,7 @@
 //
 // File validation constants are imported from lib/file-validation.ts — the single source of truth.
 
+
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { handleUpload } from "@vercel/blob/client";
@@ -29,15 +30,19 @@ import {
   type FileCategory,
 } from "@/lib/file-validation";
 
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
 
 // Valid categories
 const VALID_CATEGORIES: FileCategory[] = ["deck", "script", "video"];
+
 
 export async function POST(request: NextRequest) {
   try {
     // Parse the request body — handleUpload expects the raw body from the client
     const body = await request.json();
+
 
     const response = await handleUpload({
       body,
@@ -53,6 +58,7 @@ export async function POST(request: NextRequest) {
           throw new Error("Unauthorized — you must be signed in to upload files");
         }
 
+
         // ── 2. Parse client payload to get category ──
         let category: FileCategory = "deck"; // default
         if (clientPayload) {
@@ -66,6 +72,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
+
         // ── 3. Validate file extension against category ──
         const ext = pathname.toLowerCase().split(".").pop() || "";
         const allowed = ALLOWED_EXTENSIONS[category] || [];
@@ -74,6 +81,7 @@ export async function POST(request: NextRequest) {
             `Invalid file type ".${ext}" for category "${category}". Allowed: ${allowed.join(", ")}`
           );
         }
+
 
         // ── 4. Return token options with constraints ──
         // These constraints are enforced by Vercel Blob when the client uploads.
@@ -86,6 +94,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+
     return NextResponse.json(response);
   } catch (error) {
     console.error("[Blob Upload] Token generation failed:", error);
@@ -95,6 +104,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status });
   }
 }
+
 
 // DELETE /api/blob/upload?url=<blobUrl>
 // Cleans up an orphaned blob — called by the frontend when the coach API
@@ -107,12 +117,15 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const blobUrl = searchParams.get("url");
+
 
     if (!blobUrl) {
       return NextResponse.json({ error: "Blob URL is required" }, { status: 400 });
     }
+
 
     // Validate that the URL is actually a Vercel Blob URL (prevent SSRF)
     try {
@@ -124,8 +137,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
     }
 
+
     await del(blobUrl);
     console.log(`[Blob Cleanup] Deleted orphaned blob: ${blobUrl.substring(0, 100)}`);
+
 
     return NextResponse.json({ success: true });
   } catch (error) {
