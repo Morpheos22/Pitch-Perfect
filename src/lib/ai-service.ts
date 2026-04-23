@@ -39,7 +39,7 @@
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
-import { extractJsonFromContent, clampScore, validateStringArray, repairJson, parseJsonResponse } from './ai-utils';
+import { extractJsonFromContent, clampScore, validateStringArray, repairJson, parseJsonResponse, validateSchema } from './ai-utils';
 
 // ============================================
 // DIRECT HTTP FALLBACK CONFIGURATION
@@ -55,9 +55,10 @@ import { extractJsonFromContent, clampScore, validateStringArray, repairJson, pa
 // GATEWAY CREDENTIAL RESOLUTION
 // ═══════════════════════════════════════════════════════════════════════
 // Priority: env vars > .z-ai-config file > hardcoded defaults
-// The default gateway is https://z.ai/model-api (the live Z.ai platform).
+// The default gateway is the internal Z.ai API proxy (http://172.25.136.193:8080/v1 in dev).
+// In production on Vercel, ZAI_BASE_URL should point to the live Z.ai platform API.
 
-const DEFAULT_GATEWAY_URL = 'https://z.ai/model-api';
+const DEFAULT_GATEWAY_URL = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
 
 type ResolvedConfig = {
   baseUrl: string;
@@ -907,24 +908,46 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   if (!content) throw new Error('No response from AI');
 
   const parsed = parseJsonResponse<Record<string, unknown>>(content);
+
+  // Schema validation: catch malformed AI responses before they reach scoring
+  const validated = validateSchema<Record<string, unknown>>(parsed, {
+    problemClarityScore: { type: 'number', default: 50 },
+    solutionClarityScore: { type: 'number', default: 50 },
+    marketOpportunityScore: { type: 'number', default: 50 },
+    businessModelScore: { type: 'number', default: 50 },
+    teamCredibilityScore: { type: 'number', default: 50 },
+    tractionScore: { type: 'number', default: 50 },
+    financialsScore: { type: 'number', default: 50 },
+    askClarityScore: { type: 'number', default: 50 },
+    overallScore: { type: 'number', default: 50 },
+    designConsistencyScore: { type: 'number', required: false, default: 50 },
+    readabilityScore: { type: 'number', required: false, default: 50 },
+    visualHierarchyScore: { type: 'number', required: false, default: 50 },
+    colorSchemeScore: { type: 'number', required: false, default: 50 },
+    typographyScore: { type: 'number', required: false, default: 50 },
+    strengths: { type: 'string[]', default: [] },
+    weaknesses: { type: 'string[]', default: [] },
+    recommendations: { type: 'string[]', default: [] },
+  }, 'E1_DECK_CONTENT');
+
   const result: DeckAnalysisResult = {
-    problemClarityScore: clampScore(parsed.problemClarityScore),
-    solutionClarityScore: clampScore(parsed.solutionClarityScore),
-    marketOpportunityScore: clampScore(parsed.marketOpportunityScore),
-    businessModelScore: clampScore(parsed.businessModelScore),
-    teamCredibilityScore: clampScore(parsed.teamCredibilityScore),
-    tractionScore: clampScore(parsed.tractionScore),
-    financialsScore: clampScore(parsed.financialsScore),
-    askClarityScore: clampScore(parsed.askClarityScore),
-    overallScore: clampScore(parsed.overallScore),
-    designConsistencyScore: clampScore(parsed.designConsistencyScore),
-    readabilityScore: clampScore(parsed.readabilityScore),
-    visualHierarchyScore: clampScore(parsed.visualHierarchyScore),
-    colorSchemeScore: clampScore(parsed.colorSchemeScore),
-    typographyScore: clampScore(parsed.typographyScore),
-    strengths: validateStringArray(parsed.strengths),
-    weaknesses: validateStringArray(parsed.weaknesses),
-    recommendations: validateStringArray(parsed.recommendations),
+    problemClarityScore: clampScore(validated.problemClarityScore),
+    solutionClarityScore: clampScore(validated.solutionClarityScore),
+    marketOpportunityScore: clampScore(validated.marketOpportunityScore),
+    businessModelScore: clampScore(validated.businessModelScore),
+    teamCredibilityScore: clampScore(validated.teamCredibilityScore),
+    tractionScore: clampScore(validated.tractionScore),
+    financialsScore: clampScore(validated.financialsScore),
+    askClarityScore: clampScore(validated.askClarityScore),
+    overallScore: clampScore(validated.overallScore),
+    designConsistencyScore: clampScore(validated.designConsistencyScore),
+    readabilityScore: clampScore(validated.readabilityScore),
+    visualHierarchyScore: clampScore(validated.visualHierarchyScore),
+    colorSchemeScore: clampScore(validated.colorSchemeScore),
+    typographyScore: clampScore(validated.typographyScore),
+    strengths: validateStringArray(validated.strengths),
+    weaknesses: validateStringArray(validated.weaknesses),
+    recommendations: validateStringArray(validated.recommendations),
     tokensUsed: response.usage?.totalTokens,
     modelUsed,
   };
@@ -1192,15 +1215,29 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   if (!content) throw new Error('No response from AI');
 
   const parsed = parseJsonResponse<Record<string, unknown>>(content);
-  const improvements = (parsed.improvements && typeof parsed.improvements === 'object' && !Array.isArray(parsed.improvements))
-    ? parsed.improvements as Record<string, unknown> : {};
+
+  // Schema validation: catch malformed AI responses for E2
+  const validated = validateSchema<Record<string, unknown>>(parsed, {
+    hookScore: { type: 'number', default: 50 },
+    problemScore: { type: 'number', default: 50 },
+    solutionScore: { type: 'number', default: 50 },
+    credibilityScore: { type: 'number', default: 50 },
+    ctaScore: { type: 'number', default: 50 },
+    overallScore: { type: 'number', default: 50 },
+    improvements: { type: 'object', default: {} },
+    rewrittenScript: { type: 'string', default: '' },
+    alternativeHooks: { type: 'string[]', default: [] },
+  }, 'E2_SCRIPT_ANALYSIS');
+
+  const improvements = (validated.improvements && typeof validated.improvements === 'object' && !Array.isArray(validated.improvements))
+    ? validated.improvements as Record<string, unknown> : {};
   const result: ScriptAnalysisResult = {
-    hookScore: clampScore(parsed.hookScore),
-    problemScore: clampScore(parsed.problemScore),
-    solutionScore: clampScore(parsed.solutionScore),
-    credibilityScore: clampScore(parsed.credibilityScore),
-    ctaScore: clampScore(parsed.ctaScore),
-    overallScore: clampScore(parsed.overallScore),
+    hookScore: clampScore(validated.hookScore),
+    problemScore: clampScore(validated.problemScore),
+    solutionScore: clampScore(validated.solutionScore),
+    credibilityScore: clampScore(validated.credibilityScore),
+    ctaScore: clampScore(validated.ctaScore),
+    overallScore: clampScore(validated.overallScore),
     wordCount: 0,
     estimatedDuration: 0,
     improvements: {
@@ -1210,8 +1247,8 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
       credibility: validateStringArray(improvements.credibility),
       cta: validateStringArray(improvements.cta),
     },
-    rewrittenScript: typeof parsed.rewrittenScript === 'string' ? parsed.rewrittenScript : '',
-    alternativeHooks: validateStringArray(parsed.alternativeHooks),
+    rewrittenScript: typeof validated.rewrittenScript === 'string' ? validated.rewrittenScript : '',
+    alternativeHooks: validateStringArray(validated.alternativeHooks),
     tokensUsed: response.usage?.totalTokens,
     modelUsed,
   };

@@ -221,3 +221,115 @@ export function validateStringArray(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   return [];
 }
+
+// ============================================
+// SCHEMA VALIDATION — Validate parsed AI response
+// ============================================
+
+/**
+ * Field type descriptors for schema validation.
+ */
+export type FieldType = 'number' | 'string' | 'string[]' | 'object';
+
+/**
+ * Schema definition for validating AI response structures.
+ * Each key maps to an expected field type and whether it's required.
+ */
+export type SchemaDefinition = Record<string, {
+  type: FieldType;
+  required?: boolean;   // default: true
+  default?: unknown;    // default value if missing/non-numeric
+}>;
+
+/**
+ * Validate a parsed AI response against an expected schema.
+ *
+ * This catches malformed AI responses where:
+ * - Required fields are missing
+ * - Score fields contain strings instead of numbers
+ * - Array fields contain single values instead of arrays
+ * - Nested objects are missing or wrong type
+ *
+ * Returns the validated object with defaults applied for missing fields.
+ * Logs warnings for any mismatches but does NOT throw — the pipeline
+ * should continue with best-effort data rather than crashing.
+ *
+ * @param parsed - The parsed JSON object from AI response
+ * @param schema - Expected schema definition
+ * @param label - Module label for logging (e.g. "E2_SCRIPT_ANALYSIS")
+ * @returns Validated object with defaults applied
+ */
+export function validateSchema<T extends Record<string, unknown>>(
+  parsed: Record<string, unknown>,
+  schema: SchemaDefinition,
+  label: string
+): T {
+  const result: Record<string, unknown> = { ...parsed };
+  const warnings: string[] = [];
+
+  for (const [field, spec] of Object.entries(schema)) {
+    const value = result[field];
+    const isRequired = spec.required !== false;
+
+    if (value === undefined || value === null) {
+      if (isRequired || spec.default !== undefined) {
+        if (spec.default !== undefined) {
+          warnings.push(`Field "${field}" is ${value === null ? 'null' : 'missing'}${isRequired ? ' (required)' : ' (optional)'}, using default: ${JSON.stringify(spec.default)}`);
+          result[field] = spec.default;
+        } else if (isRequired) {
+          warnings.push(`Missing required field "${field}" with no default available`);
+        }
+      }
+      continue;
+    }
+
+    // Type check
+    switch (spec.type) {
+      case 'number':
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          const defaultVal = spec.default ?? 50;
+          warnings.push(`Field "${field}" expected number, got ${typeof value}: ${JSON.stringify(value)}. Defaulting to ${defaultVal}`);
+          result[field] = defaultVal;
+        }
+        break;
+
+      case 'string':
+        if (typeof value !== 'string') {
+          const defaultVal = spec.default ?? '';
+          warnings.push(`Field "${field}" expected string, got ${typeof value}. Defaulting to "${defaultVal}"`);
+          result[field] = defaultVal;
+        }
+        break;
+
+      case 'string[]':
+        if (!Array.isArray(value)) {
+          if (typeof value === 'string') {
+            // AI sometimes returns a single string instead of array
+            result[field] = [value];
+          } else {
+            const defaultVal = spec.default ?? [];
+            warnings.push(`Field "${field}" expected string[], got ${typeof value}. Defaulting to ${JSON.stringify(defaultVal)}`);
+            result[field] = defaultVal;
+          }
+        } else {
+          // Filter non-string entries
+          result[field] = value.filter((v: unknown) => typeof v === 'string');
+        }
+        break;
+
+      case 'object':
+        if (typeof value !== 'object' || Array.isArray(value) || value === null) {
+          const defaultVal = spec.default ?? {};
+          warnings.push(`Field "${field}" expected object, got ${typeof value}. Defaulting to ${JSON.stringify(defaultVal)}`);
+          result[field] = defaultVal;
+        }
+        break;
+    }
+  }
+
+  if (warnings.length > 0) {
+    console.warn(`[SchemaValidation:${label}] ${warnings.length} issue(s):\n  ${warnings.join('\n  ')}`);
+  }
+
+  return result as T;
+}

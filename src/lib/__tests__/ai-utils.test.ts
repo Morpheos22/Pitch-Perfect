@@ -5,6 +5,7 @@ import {
   validateStringArray,
   repairJson,
   parseJsonResponse,
+  validateSchema,
 } from '@/lib/ai-utils';
 
 // ============================================
@@ -153,5 +154,98 @@ describe('parseJsonResponse', () => {
   it('throws when no JSON is present', () => {
     const input = 'No JSON here at all!';
     expect(() => parseJsonResponse(input)).toThrow();
+  });
+});
+
+// ============================================
+// validateSchema
+// ============================================
+describe('validateSchema', () => {
+  const e1Schema = {
+    problemClarityScore: { type: 'number' as const, default: 50 },
+    solutionClarityScore: { type: 'number' as const, default: 50 },
+    overallScore: { type: 'number' as const, default: 50 },
+    strengths: { type: 'string[]' as const, default: [] },
+    weaknesses: { type: 'string[]' as const, default: [] },
+    recommendations: { type: 'string[]' as const, default: [] },
+    notes: { type: 'string' as const, required: false, default: '' },
+  };
+
+  it('passes through valid data unchanged', () => {
+    const input = {
+      problemClarityScore: 80,
+      solutionClarityScore: 75,
+      overallScore: 78,
+      strengths: ['Clear problem'],
+      weaknesses: ['Needs more data'],
+      recommendations: ['Add market size'],
+      notes: 'Good start',
+    };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.problemClarityScore).toBe(80);
+    expect(result.strengths).toEqual(['Clear problem']);
+    expect(result.notes).toBe('Good start');
+  });
+
+  it('fills missing required number fields with defaults', () => {
+    const input = { strengths: [], weaknesses: [], recommendations: [] };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.problemClarityScore).toBe(50);
+    expect(result.overallScore).toBe(50);
+  });
+
+  it('fixes string values in number fields', () => {
+    const input = {
+      problemClarityScore: 'high',
+      solutionClarityScore: 75,
+      overallScore: NaN,
+      strengths: [],
+      weaknesses: [],
+      recommendations: [],
+    };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.problemClarityScore).toBe(50); // default for non-number
+    expect(result.overallScore).toBe(50); // default for NaN
+    expect(result.solutionClarityScore).toBe(75); // valid number unchanged
+  });
+
+  it('wraps single string into string[] field', () => {
+    const input = {
+      problemClarityScore: 80,
+      solutionClarityScore: 80,
+      overallScore: 80,
+      strengths: 'Just one strength',
+      weaknesses: [],
+      recommendations: [],
+    };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.strengths).toEqual(['Just one strength']);
+  });
+
+  it('filters non-string entries from string[] fields', () => {
+    const input = {
+      problemClarityScore: 80,
+      solutionClarityScore: 80,
+      overallScore: 80,
+      strengths: ['valid', 42, null, 'also-valid'],
+      weaknesses: [],
+      recommendations: [],
+    };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.strengths).toEqual(['valid', 'also-valid']);
+  });
+
+  it('handles null and undefined input for optional fields', () => {
+    const input = {
+      problemClarityScore: 80,
+      solutionClarityScore: 80,
+      overallScore: 80,
+      strengths: [],
+      weaknesses: [],
+      recommendations: [],
+      notes: null,
+    };
+    const result = validateSchema(input, e1Schema, 'TEST');
+    expect(result.notes).toBe(''); // default for optional null field
   });
 });
