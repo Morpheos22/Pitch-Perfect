@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
       );
     }
     const validatedData = parsed.data;
-    const productId = validatedData.plan;
-    const country = (body as Record<string, unknown>).country as string | undefined;
+    const productId = validatedData.productId;
+    const country = validatedData.country;
 
 
     // Validate country code format (ISO 3166-1 alpha-2)
@@ -52,10 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
 
-    // Validate product
-    if (!productId || !PRODUCTS[productId]) {
-      return NextResponse.json({ error: 'Invalid product' }, { status: 400 });
-    }
+    // Product ID is already validated by the schema enum — no need for PRODUCTS lookup
 
 
     // Determine user's country (from request or stored profile)
