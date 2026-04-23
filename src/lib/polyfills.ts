@@ -22,4 +22,19 @@ if (typeof globalThis !== 'undefined' && typeof (globalThis as any).DOMMatrix ==
   };
 }
 
+// pdfjs-dist worker configuration for Vercel serverless.
+// The default worker path (/var/task/node_modules/pdfjs-dist/...) doesn't exist
+// in the Vercel serverless bundle. Setting workerSrc to empty string forces
+// main-thread ("fake worker") mode, which works without a separate worker file.
+// This must run BEFORE pdf-parse imports pdfjs-dist.
+try {
+  const pdfjs = require('pdfjs-dist/legacy/build/pdf.mjs');
+  if (pdfjs.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = '';
+  }
+} catch {
+  // Non-fatal: if pdfjs-dist isn't available yet, the import in file-parser.ts
+  // will handle it. This is a proactive configuration attempt.
+}
+
 export {};

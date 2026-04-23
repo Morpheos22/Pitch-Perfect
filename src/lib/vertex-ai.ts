@@ -36,6 +36,9 @@ const GOOGLE_GENAI_API_KEY = process.env.GOOGLE_GENAI_API_KEY || '';
 /** Model to use for Gemini — shared between both endpoints */
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
+/** Track whether Vertex AI billing failed so we can auto-fallback to AI Studio */
+let vertexBillingDisabled = false;
+
 /** Check if Google AI / Gemini is configured and ready to use.
  *  Requires GOOGLE_GENAI_API_KEY at minimum.
  *  If GOOGLE_CLOUD_PROJECT is also set, uses Vertex AI endpoint;
@@ -116,7 +119,19 @@ export async function analyzeWithVertexAI(
     throw new Error('Google AI is not configured. Set GOOGLE_GENAI_API_KEY env var.');
   }
 
-  const { url: endpoint, provider } = buildEndpoint();
+  // ── Auto-fallback: if Vertex AI billing was previously denied, skip straight to AI Studio ──
+  if (vertexBillingDisabled && GOOGLE_CLOUD_PROJECT) {
+    console.log('[GoogleAI] Skipping Vertex AI (billing disabled), using AI Studio endpoint directly...');
+  }
+
+  const { url: endpoint, provider } = (() => {
+    if (vertexBillingDisabled && GOOGLE_CLOUD_PROJECT) {
+      // Build AI Studio endpoint instead of Vertex AI
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+      return { url, provider: `google-ai-studio/${GEMINI_MODEL} (auto-fallback)` };
+    }
+    return buildEndpoint();
+  })();
   console.log(`[GoogleAI] Starting script analysis via ${provider}...`);
 
   const systemPrompt = `You are an expert pitch coach with 15+ years of experience evaluating elevator pitches. Analyze the script against the 5-Element Elevator Pitch Framework:
@@ -210,8 +225,40 @@ Provide your analysis as a JSON object with this EXACT structure:
         throw new Error(`Google AI region-blocked: API not available from this location. Z.ai gateway (primary) will be used instead.`);
       } else if (errorReason === 'API_KEY_SERVICE_BLOCKED') {
         console.warn('[GoogleAI] API_KEY_SERVICE_BLOCKED — Generative Language API not enabled. Enable at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com');
-      } else if (errorReason === 'BILLING_DISABLED') {
-        console.warn('[GoogleAI] BILLING_DISABLED — Enable billing at the Google Cloud Console.');
+      } else if (errorReason === 'BILLING_DISABLED' || (response.status === 403 && body.includes('billing'))) {
+        // ── Auto-fallback: mark Vertex AI as billing-disabled and retry with AI Studio ──
+        vertexBillingDisabled = true;
+        console.warn('[GoogleAI] BILLING_DISABLED on Vertex AI. Auto-falling back to AI Studio endpoint for future requests.');
+        // If we were using Vertex AI, retry once with AI Studio endpoint
+        if (GOOGLE_CLOUD_PROJECT && !endpoint.includes('generativelanguage.googleapis.com')) {
+          console.log('[GoogleAI] Retrying with AI Studio endpoint...');
+          try {
+            const studioUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+            const studioResponse = await fetch(studioUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': GOOGLE_GENAI_API_KEY,
+              },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+                generationConfig: { temperature: 0.4, maxOutputTokens: 4096 },
+              }),
+              signal: AbortSignal.timeout(60_000),
+            });
+            if (studioResponse.ok) {
+              const studioData = await studioResponse.json();
+              const studioContent = studioData?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (studioContent) {
+                console.log('[GoogleAI] AI Studio fallback succeeded!');
+                return parseGeminiResponse(studioContent, studioData, `google-ai-studio/${GEMINI_MODEL} (billing-fallback)`, script, targetAudience, targetDuration);
+              }
+            }
+            console.warn('[GoogleAI] AI Studio fallback also failed.');
+          } catch (retryErr: any) {
+            console.warn('[GoogleAI] AI Studio fallback error:', retryErr?.message);
+          }
+        }
       } else if (response.status === 429) {
         console.warn('[GoogleAI] RESOURCE_EXHAUSTED — Quota exceeded. Consider enabling billing or using a different project.');
       }
@@ -226,33 +273,7 @@ Provide your analysis as a JSON object with this EXACT structure:
       throw new Error('Google AI returned empty response — no content in candidates[0].content.parts[0].text');
     }
 
-    // Parse the JSON from the response
-    const jsonStr = extractJsonFromContent(content);
-    if (!jsonStr) {
-      throw new Error('Could not extract JSON from Google AI response');
-    }
-
-    const parsed = JSON.parse(jsonStr);
-
-    // Build result matching ScriptAnalysisResult interface
-    const result: ScriptAnalysisResult = {
-      hookScore: clampScore(parsed.hookScore),
-      problemScore: clampScore(parsed.problemScore),
-      solutionScore: clampScore(parsed.solutionScore),
-      credibilityScore: clampScore(parsed.credibilityScore),
-      ctaScore: clampScore(parsed.ctaScore),
-      overallScore: clampScore(parsed.overallScore),
-      wordCount: script.split(/\s+/).filter(Boolean).length,
-      estimatedDuration: parsed.estimatedDuration || Math.round(script.split(/\s+/).length * 0.4),
-      improvements: validateImprovements(parsed.improvements),
-      rewrittenScript: parsed.rewrittenScript || '',
-      alternativeHooks: validateStringArray(parsed.alternativeHooks),
-      modelUsed: provider,
-      tokensUsed: data?.usageMetadata?.totalTokenCount,
-    };
-
-    console.log(`[GoogleAI] Analysis complete via ${provider}: overall=${result.overallScore}, hook=${result.hookScore}`);
-    return result;
+    return parseGeminiResponse(content, data, provider, script, targetAudience, targetDuration);
   } catch (error: any) {
     console.error(`[GoogleAI] Analysis failed (${provider}):`, error?.message || error);
     throw error;
@@ -263,6 +284,59 @@ Provide your analysis as a JSON object with this EXACT structure:
 // HELPER FUNCTIONS
 // ============================================
 // clampScore, validateStringArray, extractJsonFromContent are now imported from ./ai-utils
+
+/**
+ * Parse a successful Gemini API response into a ScriptAnalysisResult.
+ * Extracted into a helper so both the main path and the billing-fallback
+ * retry can share the same parsing logic.
+ */
+function parseGeminiResponse(
+  content: string,
+  data: any,
+  provider: string,
+  script: string,
+  targetAudience?: string,
+  targetDuration?: number,
+): ScriptAnalysisResult {
+  // Parse the JSON from the response
+  const jsonStr = extractJsonFromContent(content);
+  if (!jsonStr) {
+    throw new Error('Could not extract JSON from Google AI response');
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    // Try repair (unescaped newlines, trailing commas)
+    const { repairJson } = require('./ai-utils');
+    try {
+      parsed = JSON.parse(repairJson(jsonStr));
+    } catch {
+      throw new Error('Could not parse JSON from Google AI response (even after repair)');
+    }
+  }
+
+  // Build result matching ScriptAnalysisResult interface
+  const result: ScriptAnalysisResult = {
+    hookScore: clampScore(parsed.hookScore),
+    problemScore: clampScore(parsed.problemScore),
+    solutionScore: clampScore(parsed.solutionScore),
+    credibilityScore: clampScore(parsed.credibilityScore),
+    ctaScore: clampScore(parsed.ctaScore),
+    overallScore: clampScore(parsed.overallScore),
+    wordCount: script.split(/\s+/).filter(Boolean).length,
+    estimatedDuration: parsed.estimatedDuration || Math.round(script.split(/\s+/).length * 0.4),
+    improvements: validateImprovements(parsed.improvements),
+    rewrittenScript: parsed.rewrittenScript || '',
+    alternativeHooks: validateStringArray(parsed.alternativeHooks),
+    modelUsed: provider,
+    tokensUsed: data?.usageMetadata?.totalTokenCount,
+  };
+
+  console.log(`[GoogleAI] Analysis complete via ${provider}: overall=${result.overallScore}, hook=${result.hookScore}`);
+  return result;
+}
 
 type Improvements = { hook: string[]; problem: string[]; solution: string[]; credibility: string[]; cta: string[] };
 

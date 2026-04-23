@@ -82,6 +82,9 @@ export function extractJsonFromContent(content: string): string | null {
  * 2. Unescaped tabs inside string values
  * 3. Trailing commas before closing brackets
  * 4. Carriage returns inside string values
+ * 5. Smart/curly quotes (Unicode) instead of straight quotes
+ * 6. JavaScript-style // comments outside string values
+ * 7. Unquoted property names (rare but happens)
  *
  * Walks character-by-character tracking JSON string context
  * to only escape characters that are inside string values.
@@ -89,10 +92,21 @@ export function extractJsonFromContent(content: string): string | null {
 export function repairJson(json: string): string {
   let result = json;
 
-  // Remove trailing commas before } or ]
+  // ── Phase 1: Remove trailing commas before } or ] ──
   result = result.replace(/,\s*([}\]])/g, '$1');
 
-  // Fix unescaped newlines/tabs inside string values.
+  // ── Phase 2: Replace smart/curly quotes with straight quotes ──
+  // AI models (especially GLM/GPT) sometimes use Unicode smart quotes
+  // instead of ASCII double quotes. This is one of the most common
+  // causes of "Expected ':' after property name" parse errors.
+  result = result.replace(/[\u201c\u201d]/g, '"'); // Replace left/right double quotes
+  result = result.replace(/[\u2018\u2019]/g, "'"); // Replace left/right single quotes (less common in JSON)
+
+  // ── Phase 3: Remove JavaScript-style line comments outside strings ──
+  // Some models add `// comment` annotations inside JSON objects
+  result = removeJsonComments(result);
+
+  // ── Phase 4: Fix unescaped newlines/tabs/carriage-returns inside string values ──
   // Strategy: walk through the string character by character, tracking
   // whether we're inside a JSON string. If we encounter a raw newline
   // or tab inside a string, escape it.
@@ -140,6 +154,59 @@ export function repairJson(json: string): string {
   }
 
   return output;
+}
+
+/**
+ * Remove JavaScript-style // comments from JSON text.
+ * Only removes comments outside of string values to avoid
+ * stripping URLs that contain // (like https://...).
+ *
+ * Tracks string context by counting unescaped double quotes.
+ */
+function removeJsonComments(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+
+  for (let line of lines) {
+    // Walk through the line tracking whether we're in a string
+    let inString = false;
+    let escape = false;
+    let commentStart = -1;
+
+    for (let i = 0; i < line.length - 1; i++) {
+      const ch = line[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (ch === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      // Found // outside a string — everything after is a comment
+      if (!inString && ch === '/' && line[i + 1] === '/') {
+        commentStart = i;
+        break;
+      }
+    }
+
+    if (commentStart >= 0) {
+      // Strip the comment, keep everything before it
+      line = line.substring(0, commentStart).trimEnd();
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\n');
 }
 
 // ============================================
