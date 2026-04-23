@@ -173,19 +173,10 @@ export async function extractTextFromUrl(fileUrl: string, fileName: string): Pro
 
   // Construct a File object from the buffer for extractFileText
   const ext = fileName.toLowerCase().split(".").pop() || "";
-  const mimeTypes: Record<string, string> = {
-    pdf: "application/pdf",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ppt: "application/vnd.ms-powerpoint",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    doc: "application/msword",
-    txt: "text/plain",
-    md: "text/markdown",
-    text: "text/plain",
-  };
+  const { EXTENSION_TO_MIME } = await import("@/lib/file-validation");
 
   const file = new File([new Uint8Array(buffer)], fileName, {
-    type: mimeTypes[ext] || "application/octet-stream",
+    type: EXTENSION_TO_MIME[ext] || "application/octet-stream",
   });
 
   return extractFileText(file);

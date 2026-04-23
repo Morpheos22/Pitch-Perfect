@@ -10,11 +10,13 @@ import {
   isWorkDriveConfigured,
   uploadToWorkDrive,
   getWorkDriveFileUrl,
-  validateFileTypeByCategory,
-  validateFileSizeByCategory,
   generateFileKey,
   isVercelBlobConfigured,
 } from '@/lib/storage';
+import {
+  validateFileTypeByCategory,
+  validateFileSizeByCategory,
+} from '@/lib/file-validation';
 import { requireModuleAccess } from '@/lib/entitlement';
 
 export const maxDuration = 120;

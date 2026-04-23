@@ -10,16 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
+import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES } from "@/lib/file-validation";
 
-// Allowed file formats for E2: Script Check
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
-const ALLOWED_MIME_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
-];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (Blob upload bypasses 4.5MB serverless limit)
+// Script-specific constants derived from the single source of truth
+const SCRIPT_EXTENSIONS = ALLOWED_EXTENSIONS.script;
+const SCRIPT_MIME_TYPES = ALLOWED_MIME_TYPES.script;
+const SCRIPT_MAX_SIZE = MAX_FILE_SIZES.script; // 10MB
 
 const PLAN_LIMITS: Record<string, { e2: number }> = {
   FREE: { e2: 1 },
@@ -73,16 +69,16 @@ export default function ElevatorScriptNewPage() {
     if (selectedFile) {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!SCRIPT_EXTENSIONS.includes(ext)) {
         toast.error(`Unsupported file format. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      if (!ALLOWED_MIME_TYPES.includes(selectedFile.type) && !ALLOWED_EXTENSIONS.includes(ext)) {
+      if (!SCRIPT_MIME_TYPES.includes(selectedFile.type) && !SCRIPT_EXTENSIONS.includes(ext)) {
         toast.error(`Invalid file type. Only PDF, DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      if (selectedFile.size > MAX_FILE_SIZE) {
-        toast.error(`File is too large. Maximum size is 50MB.`);
+      if (selectedFile.size > SCRIPT_MAX_SIZE) {
+        toast.error(`File is too large. Maximum size is 10MB.`);
         return;
       }
       setFile(selectedFile);
@@ -99,8 +95,17 @@ export default function ElevatorScriptNewPage() {
       return;
     }
 
+    // ── Pre-check entitlement BEFORE blob upload to prevent orphaned blobs ──
+    // The server route also checks, but this avoids wasting blob storage if
+    // the user has no access.
+    if (usedCount !== null && limitCount !== null && !isEnterprise && usedCount >= limitCount) {
+      toast.error("Usage limit reached. Please upgrade your plan.");
+      router.push("/elevator-script/upgrade");
+      return;
+    }
+
     setSubmitting(true);
-    
+
     try {
       // ── ALWAYS use blob upload ──
       // This bypasses Vercel's 4.5MB serverless body limit entirely.
@@ -271,7 +276,7 @@ export default function ElevatorScriptNewPage() {
                 <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium">Drag your script here, or click to browse</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  PDF, DOCX, DOC, or TXT — up to 50MB
+                  PDF, DOCX, DOC, or TXT — up to 10MB
                 </p>
               </label>
             </div>

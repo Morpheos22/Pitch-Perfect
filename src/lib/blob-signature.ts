@@ -14,6 +14,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { EXTENSION_TO_MIME } from "@/lib/file-validation";
 
 /**
  * Extract the blob pathname from a full Vercel Blob URL.
@@ -152,22 +153,9 @@ export async function blobUrlToDataUri(blobUrlOrPathname: string): Promise<strin
     // Fetch the blob content using the SDK (public access)
     const buffer = await fetchBlob(pathname);
 
-    // Determine content type from pathname extension
-    const ext = pathname.split('.').pop()?.toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      pdf: 'application/pdf',
-      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      ppt: 'application/vnd.ms-powerpoint',
-      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
-    };
-    const contentType = mimeTypes[ext || ''] || 'application/octet-stream';
+    // Determine content type from pathname extension (single source of truth)
+    const ext = pathname.split('.').pop()?.toLowerCase() || '';
+    const contentType = EXTENSION_TO_MIME[ext] || 'application/octet-stream';
 
     // Convert to base64 data URI
     const base64 = buffer.toString('base64');
@@ -270,23 +258,9 @@ export async function servePrivateBlob(request: NextRequest): Promise<NextRespon
     // Fetch blob content using SDK (public access — store is public)
     const buffer = await fetchBlob(pathname);
 
-    // Determine content type from pathname extension
-    const ext = pathname.split(".").pop()?.toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      pdf: "application/pdf",
-      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      ppt: "application/vnd.ms-powerpoint",
-      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      doc: "application/msword",
-      txt: "text/plain",
-      mp4: "video/mp4",
-      webm: "video/webm",
-      png: "image/png",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-    };
-
-    const contentType = mimeTypes[ext || ""] || "application/octet-stream";
+    // Determine content type from pathname extension (single source of truth)
+    const ext = pathname.split(".").pop()?.toLowerCase() || "";
+    const contentType = EXTENSION_TO_MIME[ext] || "application/octet-stream";
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
