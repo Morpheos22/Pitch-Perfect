@@ -1,11 +1,13 @@
 // E2 Pipeline Diagnostic Endpoint
 // Tests each step of the Elevator Pitch Script analysis pipeline independently.
-// No authentication required — for development/debugging only.
+// Requires authentication + admin access (dev emails only).
 //
 // GET /api/coach/diagnostic
 
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/with-auth';
+import { isAdminEmail } from '@/lib/dev-auth';
 
 // IMPORTANT: Import polyfills BEFORE any test that loads pdf-parse
 // The DOMMatrix polyfill must be installed at module level, before
@@ -85,7 +87,15 @@ async function testZaiGateway(): Promise<TestResult> {
   const start = Date.now();
 
 
-  const baseUrl = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
+  const baseUrl = process.env.ZAI_BASE_URL;
+  if (!baseUrl) {
+    return {
+      test: '2. Z.ai Gateway Connectivity',
+      status: 'SKIP',
+      durationMs: Date.now() - start,
+      detail: 'ZAI_BASE_URL not set — cannot test gateway. Set ZAI_BASE_URL env var to your Z.ai gateway URL.',
+    };
+  }
   const token = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY || '';
   const apiKey = process.env.ZAI_API_KEY || '';
   const userId = process.env.ZAI_USER_ID || '';
@@ -652,7 +662,27 @@ async function testE2Pipeline(): Promise<TestResult> {
 // ════════════════════════════════════════════════════════════════
 
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // ── Security: require auth + admin/dev access ──
+  // This endpoint exposes env vars, API key prefixes, DB info,
+  // and costs AI credits. Only accessible to dev/admin accounts.
+  const { user, error: authError } = await requireAuth({
+    select: { id: true, clerkId: true, email: true },
+  });
+  if (authError) {
+    return authError;
+  }
+
+  // Gate to admin/dev emails only — prevents any authenticated user
+  // from probing infrastructure or consuming AI credits
+  const userEmail = (user as any).email || '';
+  if (!isAdminEmail(userEmail)) {
+    return NextResponse.json(
+      { error: 'Forbidden — diagnostic endpoint requires admin access' },
+      { status: 403 }
+    );
+  }
+
   const results: TestResult[] = [];
   const pipelineStart = Date.now();
 
