@@ -32,21 +32,22 @@ async function handlePost(request: NextRequest) {
     const validatedData = parsed.data;
     const sessionId = validatedData.sessionId;
     // Map schema e-code to friendly module name used by business logic
-    const eCodeToModule: Record<string, 'deck' | 'script' | 'live' | 'full'> = {
+    const eCodeToModule: Record<string, 'deck' | 'script' | 'live' | 'full' | 'founder'> = {
       e1: 'deck',
       e2: 'script',
       e3: 'live',
       e4: 'full',
-      e5: 'full',
+      e5: 'founder',
     };
     const moduleType = eCodeToModule[validatedData.moduleType];
 
 
-    const moduleEntitlementMap: Record<string, 'e1' | 'e2' | 'e3' | 'e4'> = {
+    const moduleEntitlementMap: Record<string, 'e1' | 'e2' | 'e3' | 'e4' | 'e5'> = {
       deck: 'e1',
       script: 'e2',
       live: 'e3',
       full: 'e4',
+      founder: 'e5',
     };
     const entitlementModule = moduleEntitlementMap[moduleType] || 'e1';
     const entitlement = await requireModuleAccess(user.id, entitlementModule);
@@ -63,10 +64,10 @@ async function handlePost(request: NextRequest) {
     }
 
 
-    const validModules = ["deck", "script", "full", "live"] as const;
+    const validModules = ["deck", "script", "full", "live", "founder"] as const;
     if (!validModules.includes(moduleType)) {
       return NextResponse.json(
-        { error: "Invalid module. Must be 'deck', 'script', 'full', or 'live'" },
+        { error: "Invalid module. Must be 'deck', 'script', 'full', 'live', or 'founder'" },
         { status: 400 }
       );
     }
@@ -184,6 +185,28 @@ async function handlePost(request: NextRequest) {
       if (video.wordsPerMinute) {
         strengths.push(`Speaking rate: ${video.wordsPerMinute} WPM`);
       }
+    } else if (moduleType === "founder") {
+      const founder = await prisma.founderSession.findFirst({
+        where: { id: sessionId, userId: user.id },
+      });
+
+      if (!founder) {
+        return NextResponse.json({ error: "Founder session not found" }, { status: 404 });
+      }
+
+      scores = {
+        overallScore: founder.overallScore ?? 0,
+      };
+      // Extract strengths/weaknesses from resultData JSON
+      const resultData = typeof founder.resultData === "object" && founder.resultData !== null
+        ? founder.resultData as Record<string, unknown>
+        : {};
+      weaknesses = Array.isArray(resultData.weaknesses)
+        ? (resultData.weaknesses as string[]).slice(0, 5)
+        : [];
+      strengths = Array.isArray(resultData.strengths)
+        ? (resultData.strengths as string[]).slice(0, 5)
+        : [];
     }
 
 

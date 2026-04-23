@@ -1733,7 +1733,7 @@ export interface CoachingDrill {
 }
 
 export async function generateCoachingDrills(
-  moduleType: 'deck' | 'script' | 'live' | 'full',
+  moduleType: 'deck' | 'script' | 'live' | 'full' | 'founder',
   scores: Record<string, number>,
   weaknesses: string[],
   strengths: string[],
@@ -1743,6 +1743,7 @@ export async function generateCoachingDrills(
     script: 'elevator pitch script',
     live: 'live elevator pitch',
     full: 'full investor pitch session',
+    founder: 'founder readiness',
   };
 
   const systemPrompt = `You are a pitch coach who designs targeted, actionable exercises for startup founders. You create drills that are specific, time-boxed, and produce measurable improvement.

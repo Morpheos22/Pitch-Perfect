@@ -159,6 +159,57 @@ async function testZaiGateway(): Promise<TestResult> {
 
 
 // ════════════════════════════════════════════════════════════════
+// TEST 2b: Z.ai SDK Initialization
+// ════════════════════════════════════════════════════════════════
+// Tests the getZai() async path (refactored in Batch 1):
+//   - Config file writing to CWD + /tmp
+//   - SDK initialization (ZAI.create())
+//   - Null return on failure (instead of throw)
+async function testZaiSdkInit(): Promise<TestResult> {
+  const start = Date.now();
+
+  try {
+    const { getZai } = await import('@/lib/ai-service');
+    const zai = await getZai();
+
+    if (!zai) {
+      return {
+        test: '2b. Z.ai SDK Initialization',
+        status: 'FAIL',
+        durationMs: Date.now() - start,
+        detail: 'getZai() returned null — SDK failed to initialize. Check ZAI_API_KEY and .z-ai-config file writing permissions.',
+        error: 'SDK initialization returned null — the direct HTTP fallback will be used instead',
+      };
+    }
+
+    // Quick SDK liveness check
+    const resp = await zai.chat.completions.create({
+      model: 'glm-4-plus',
+      messages: [{ role: 'user', content: 'Say "sdk_ok"' }],
+      temperature: 0.1,
+      max_tokens: 10,
+    });
+
+    const content = resp.choices?.[0]?.message?.content || '';
+    return {
+      test: '2b. Z.ai SDK Initialization',
+      status: resp.ok || content ? 'PASS' : 'WARN',
+      durationMs: Date.now() - start,
+      detail: `SDK initialized successfully. Text model response: "${content.slice(0, 80)}"`,
+    };
+  } catch (err: any) {
+    return {
+      test: '2b. Z.ai SDK Initialization',
+      status: 'FAIL',
+      durationMs: Date.now() - start,
+      detail: 'SDK initialization or test call failed',
+      error: err?.message || String(err),
+    };
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
 // TEST 3: Vercel Blob Write/Read/Delete
 // ════════════════════════════════════════════════════════════════
 async function testVercelBlob(): Promise<TestResult> {
@@ -609,6 +660,7 @@ export async function GET() {
   // Run all tests sequentially (some share state/connections)
   results.push(await testEnvironment());
   results.push(await testZaiGateway());
+  results.push(await testZaiSdkInit());
   results.push(await testVercelBlob());
   results.push(await testPdfParse());
   results.push(await testDatabase());

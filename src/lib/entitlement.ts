@@ -29,18 +29,13 @@ const MODULE_ACCESS_FIELD: Record<CoachModule, keyof {
   e2Access: boolean;
   e3Access: boolean;
   e4Access: boolean;
+  e5Access: boolean;
 }> = {
   e1: 'e1Access',
   e2: 'e2Access',
   e3: 'e3Access',
   e4: 'e4Access',
-  // E5 (Founder) is subscription-only — no one-time purchase available.
-  // Maps to e1Access purely as a placeholder so the type system is satisfied.
-  // The actual E5 access check happens via the subscription path above,
-  // and the one-time ModuleAccess path (Check 3) explicitly skips E5
-  // with `if (module !== 'e5')`. This mapping should NEVER grant E5
-  // access to an E1-only purchaser.
-  e5: 'e1Access',
+  e5: 'e5Access',
 };
 
 /** Map of coach module to ModuleAccess limit field name */
@@ -49,12 +44,13 @@ const MODULE_LIMIT_FIELD: Record<CoachModule, keyof {
   e2Limit: number | null;
   e3Limit: number | null;
   e4Limit: number | null;
-} | null> = {
+  e5Limit: number | null;
+}> = {
   e1: 'e1Limit',
   e2: 'e2Limit',
   e3: 'e3Limit',
   e4: 'e4Limit',
-  e5: null,
+  e5: 'e5Limit',
 };
 
 /** Map of coach module to ModuleAccess usage field name */
@@ -63,12 +59,13 @@ const MODULE_USED_FIELD: Record<CoachModule, keyof {
   e2Used: number;
   e3Used: number;
   e4Used: number;
-} | null> = {
+  e5Used: number;
+}> = {
   e1: 'e1Used',
   e2: 'e2Used',
   e3: 'e3Used',
   e4: 'e4Used',
-  e5: null,
+  e5: 'e5Used',
 };
 
 /** Map of coach module to Usage model count field */
@@ -158,7 +155,9 @@ export async function requireModuleAccess(
     // Check module-specific usage limits for paid plans — ATOMIC increment
     // Uses updateMany with a WHERE guard to prevent race conditions.
     // This is the SINGLE canonical counter for paid plan usage.
-    if (module !== 'e5') {
+    // E5 now has its own plan limits (STARTER:3, PROFESSIONAL:10, ENTERPRISE:999)
+    // and is tracked via e5FounderSessions in the Usage model.
+    {
       const usageField = MODULE_USAGE_FIELD[module];
 
       // ── Ensure Usage record exists ──
@@ -212,9 +211,9 @@ export async function requireModuleAccess(
       }
 
       const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
-        STARTER: { e1: 5, e2: 10, e3: 3, e4: 0 },
-        PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3 },
-        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
+        STARTER: { e1: 5, e2: 10, e3: 3, e4: 0, e5: 3 },
+        PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3, e5: 10 },
+        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999, e5: 999 },
       };
       const moduleLimit = PLAN_MODULE_LIMITS[sub.plan]?.[module];
       if (moduleLimit !== undefined) {
@@ -274,11 +273,11 @@ export async function requireModuleAccess(
   }
 
   // ── Check 3: One-time ModuleAccess grant ──
-  // Only applicable to E1–E4 (E5 is subscription-only)
-  if (module !== 'e5') {
+  // Applicable to all modules E1–E5 (E5 now supports one-time purchases via e5Access)
+  {
     const accessField = MODULE_ACCESS_FIELD[module];
-    const limitField = MODULE_LIMIT_FIELD[module]!;
-    const usedField = MODULE_USED_FIELD[module]!;
+    const limitField = MODULE_LIMIT_FIELD[module];
+    const usedField = MODULE_USED_FIELD[module];
 
     // Find the most recent unexpired ModuleAccess for this user AND this specific module.
     // Use OR to include both: (a) no expiry set (one-time purchases, expiresAt: null)
@@ -300,7 +299,7 @@ export async function requireModuleAccess(
     });
 
     if (moduleAccess) {
-      const limit = moduleAccess[limitField];
+      const limit = limitField ? moduleAccess[limitField] : null;
 
       if (limit !== null && limit !== undefined) {
         // Atomic check-and-increment: only increment if used < limit
@@ -308,9 +307,9 @@ export async function requireModuleAccess(
         const moduleResult = await prisma.moduleAccess.updateMany({
           where: {
             id: moduleAccess.id,
-            [usedField]: { lt: limit },
+            [usedField!]: { lt: limit },
           },
-          data: { [usedField]: { increment: 1 } },
+          data: { [usedField!]: { increment: 1 } },
         });
 
         if (moduleResult.count === 0) {
@@ -324,7 +323,7 @@ export async function requireModuleAccess(
         // No limit — just increment
         await prisma.moduleAccess.update({
           where: { id: moduleAccess.id },
-          data: { [usedField]: { increment: 1 } },
+          data: { [usedField!]: { increment: 1 } },
         });
       }
 
