@@ -44,7 +44,10 @@ async function handlePost(request: NextRequest) {
     }
     const validatedData = parsed.data;
     const parentId = validatedData.id;
-    const { script, fileUrl, fileName } = body;
+    // Use validated fields instead of raw body — prevents injection of unvalidated fileUrl/fileName
+    const script = validatedData.script;
+    const fileUrl = validatedData.fileUrl;
+    const fileName = validatedData.fileName;
 
     if (!parentId) {
       return NextResponse.json({ error: "Parent script ID is required" }, { status: 400 });
@@ -141,6 +144,7 @@ async function handlePost(request: NextRequest) {
         fileName: fileName || parentScript.fileName || "iteration",
         inputType: detectedInputType,
         inputText: scriptText,
+        inputFileUrl: fileUrl || parentScript.inputFileUrl, // Preserve blob URL for ownership verification
         targetAudience: parentScript.targetAudience || "investor",
         pitchDuration: parentScript.pitchDuration || 60,
         status: "COMPLETED",

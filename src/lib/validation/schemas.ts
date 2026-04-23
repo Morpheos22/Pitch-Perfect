@@ -38,6 +38,10 @@ export const scriptIterateSchema = z.object({
   notes: z.string().max(2000).optional(),
   feedback: z.string().max(5000).optional(),
   focusElement: z.string().max(200).optional(),
+  // New file upload fields (Blob URL flow)
+  script: z.string().max(50000).optional(),      // Revised script text
+  fileUrl: z.string().url().max(2000).optional(), // Blob URL for uploaded file
+  fileName: z.string().max(500).optional(),        // Original file name
 });
 
 // ── E3: Live Pitch ──
