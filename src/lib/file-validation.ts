@@ -122,7 +122,8 @@ export function validateFileTypeByCategory(
   const allowedExts = ALLOWED_EXTENSIONS[category];
   const allowedMimes = ALLOWED_MIME_TYPES[category];
 
-  if (!allowedMimes.includes(mimeType) || !allowedExts.includes(ext)) {
+  // Extension MUST be in the allowed list — this is the primary check.
+  if (!allowedExts.includes(ext)) {
     const categoryLabels: Record<FileCategory, string> = {
       deck: 'PDF or PowerPoint',
       script: 'PDF, Word, or text',
@@ -132,6 +133,18 @@ export function validateFileTypeByCategory(
       valid: false,
       error: `Invalid file type. Please upload a ${categoryLabels[category]} file.`,
     };
+  }
+
+  // MIME check: warn but don't block if MIME is unexpected.
+  // Browsers and upload proxies sometimes report application/octet-stream
+  // or other generic MIME types even for valid files. Since the extension
+  // was already validated above, blocking on MIME alone would reject
+  // legitimate uploads. This aligns with the client-side validateFileFormat()
+  // which also treats MIME mismatches as warnings, not blockers.
+  if (mimeType && mimeType !== 'application/octet-stream' && !allowedMimes.includes(mimeType)) {
+    console.warn(
+      `[FileValidation] MIME type "${mimeType}" not in allowed list for category "${category}", but extension "${ext}" is valid. Proceeding.`
+    );
   }
 
   return { valid: true };

@@ -237,11 +237,16 @@ export default function ElevatorScriptSessionPage() {
     setIterating(true);
     try {
       const body: { id: string; script?: string } = { id: params.id as string };
-      // Include current script text for re-analysis
-      if (data?.analysis?.rewrittenScript) {
-        body.script = data.analysis.rewrittenScript;
-      } else if (data?.script) {
+      // Prefer the user's original script text for iteration. The "Iterate &
+      // Improve" button should re-analyze the original input so the user can
+      // see how their own writing improves over iterations. The AI-rewritten
+      // version is a suggestion, not the user's own work.
+      if (data?.script) {
         body.script = data.script;
+      } else if (data?.analysis?.rewrittenScript) {
+        // Fallback: if original text isn't available (e.g. legacy sessions),
+        // use the AI-rewritten version so iteration still works.
+        body.script = data.analysis.rewrittenScript;
       }
       const res = await fetch("/api/coach/script/iterate", {
         method: "POST",
@@ -458,6 +463,22 @@ export default function ElevatorScriptSessionPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Original Script */}
+        {data.script && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                Your Original Script
+              </CardTitle>
+              <CardDescription>The script you submitted for analysis</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="whitespace-pre-wrap text-sm">{data.script}</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Rewritten Script */}
         <Card className="border-secondary/30 bg-secondary/5">
