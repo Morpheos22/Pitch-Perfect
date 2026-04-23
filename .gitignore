@@ -68,3 +68,4 @@ server.log
 /agent-ctx/
 /EXECUTION_PLAN.md
 /db/*.db
+ngrok

@@ -85,7 +85,7 @@ async function testZaiGateway(): Promise<TestResult> {
   const start = Date.now();
 
 
-  const baseUrl = process.env.ZAI_BASE_URL || 'https://z.ai/model-api';
+  const baseUrl = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
   const token = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY || '';
   const apiKey = process.env.ZAI_API_KEY || '';
   const userId = process.env.ZAI_USER_ID || '';

@@ -1,6 +1,6 @@
 /**
  * AI Service Timing Measurement Script
- * Measures the execution time of the E2 Script Analysis pipeline.
+ * Measures the execution time of E1 and E2 analysis pipelines.
  * 
  * Usage: npx tsx scripts/measure-ai-time.ts
  */
@@ -11,7 +11,7 @@ async function main() {
   console.log('=== AI Service Timing Measurement ===\n');
   console.log('Initializing Z.ai SDK...');
 
-  const { getZai } = await import('../src/lib/ai-service');
+  const { getZai, analyzePitchDeck, analyzePitchScript } = await import('../src/lib/ai-service');
 
   const sdkStart = Date.now();
   const zai = await getZai();
@@ -51,7 +51,7 @@ async function main() {
     const httpStart = Date.now();
     try {
       const config = {
-        baseUrl: process.env.ZAI_BASE_URL || 'https://z.ai/model-api',
+        baseUrl: process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1',
         apiKey: process.env.ZAI_API_KEY || '',
         token: process.env.ZAI_TOKEN || process.env.ZAI_API_KEY || '',
       };
@@ -81,13 +81,57 @@ async function main() {
       const httpTime = Date.now() - httpStart;
       console.log(`HTTP Gateway FAILED after ${httpTime}ms: ${err?.message}`);
     }
+
+    // Test 3: Full E2 Pipeline (analyzePitchScript)
+    console.log('\n--- Test 3: Full E2 Pipeline (analyzePitchScript) ---');
+    const pipelineScript = `Hi, I'm Sarah, CEO of TechFlow. We help small businesses automate their accounting. Our AI-powered platform reduces bookkeeping time by 80%, saving founders an average of 15 hours per week. We charge $49 per month and already have 500 paying customers generating $25K MRR. We're raising $2M to expand into new markets and build out our enterprise features.`;
+    
+    const pipelineStart = Date.now();
+    try {
+      const result = await analyzePitchScript(pipelineScript);
+      const pipelineTime = Date.now() - pipelineStart;
+      console.log(`Full E2 pipeline: ${pipelineTime}ms`);
+      console.log(`  Overall: ${result.overallScore}, Hook: ${result.hookScore}, CTA: ${result.ctaScore}`);
+      console.log(`  Model: ${result.modelUsed}`);
+      console.log(`  Rewritten: ${(result.rewrittenScript || '').length} chars`);
+    } catch (err: any) {
+      const pipelineTime = Date.now() - pipelineStart;
+      console.log(`Full E2 pipeline FAILED after ${pipelineTime}ms: ${err?.message}`);
+    }
+
+    // Test 4: Full E1 Pipeline (analyzePitchDeck)
+    console.log('\n--- Test 4: Full E1 Pipeline (analyzePitchDeck) ---');
+    const pipelineDeck = `
+SLIDE 1: TechFlow — AI-Powered Accounting
+SLIDE 2: Problem: Small businesses spend 20% of time on bookkeeping
+SLIDE 3: Solution: AI platform automates 80% of accounting tasks
+SLIDE 4: Market: $12B TAM, 30M SMBs, 15% CAGR
+SLIDE 5: Business Model: $49/mo, $99/mo, $199/mo tiers
+SLIDE 6: Traction: 500 customers, $25K MRR, 95% retention
+SLIDE 7: Team: Ex-Intuit CEO, Ex-Stripe CTO
+SLIDE 8: Financials: Year 3 $4.8M ARR projected
+SLIDE 9: Ask: $2M seed for market expansion
+`;
+    
+    const deckStart = Date.now();
+    try {
+      const result = await analyzePitchDeck(pipelineDeck);
+      const deckTime = Date.now() - deckStart;
+      console.log(`Full E1 pipeline: ${deckTime}ms`);
+      console.log(`  Overall: ${result.overallScore}, Market: ${result.marketOpportunityScore}, Traction: ${result.tractionScore}`);
+      console.log(`  Model: ${result.modelUsed}`);
+      console.log(`  Strengths: ${result.strengths?.length}, Weaknesses: ${result.weaknesses?.length}, Recs: ${result.recommendations?.length}`);
+    } catch (err: any) {
+      const deckTime = Date.now() - deckStart;
+      console.log(`Full E1 pipeline FAILED after ${deckTime}ms: ${err?.message}`);
+    }
   } else {
     console.log('\nSDK not available — testing direct HTTP gateway only...');
     const httpStart = Date.now();
     try {
       const apiKey = process.env.ZAI_API_KEY || '';
       const token = process.env.ZAI_TOKEN || apiKey;
-      const baseUrl = process.env.ZAI_BASE_URL || 'https://z.ai/model-api';
+      const baseUrl = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Z-AI-From': 'Z',
