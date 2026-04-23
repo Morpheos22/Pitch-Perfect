@@ -23,6 +23,7 @@
 //     → https://console.developers.google.com/billing/enable?project={PROJECT}
 
 import type { ScriptAnalysisResult } from './ai-service';
+import { clampScore, validateStringArray, extractJsonFromContent } from './ai-utils';
 
 // ============================================
 // CONFIGURATION
@@ -241,18 +242,7 @@ Provide your analysis as a JSON object with this EXACT structure:
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
-function clampScore(value: unknown, min = 0, max = 100): number {
-  const num = typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-  if (num === undefined) return 50;
-  return Math.round(Math.min(max, Math.max(min, num)));
-}
-
-function validateStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter(v => typeof v === 'string');
-  if (typeof value === 'string') return [value];
-  return [];
-}
+// clampScore, validateStringArray, extractJsonFromContent are now imported from ./ai-utils
 
 type Improvements = { hook: string[]; problem: string[]; solution: string[]; credibility: string[]; cta: string[] };
 
@@ -268,34 +258,3 @@ function validateImprovements(value: unknown): Improvements {
   return defaults;
 }
 
-function extractJsonFromContent(content: string): string | null {
-  // Try to extract from markdown code block first
-  const codeBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    const jsonStr = codeBlockMatch[1].trim();
-    if (jsonStr.startsWith('{') || jsonStr.startsWith('[')) {
-      return jsonStr;
-    }
-  }
-
-  // Balanced brace matching
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-    if (escape) { escape = false; continue; }
-    if (char === '\\') { escape = true; continue; }
-    if (char === '"' && !escape) { inString = !inString; continue; }
-    if (inString) continue;
-    if (char === '{') { if (depth === 0) start = i; depth++; }
-    else if (char === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) return content.substring(start, i + 1);
-    }
-  }
-
-  return null;
-}

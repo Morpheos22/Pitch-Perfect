@@ -39,6 +39,7 @@
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
+import { extractJsonFromContent, clampScore, validateStringArray } from './ai-utils';
 
 // ============================================
 // DIRECT HTTP FALLBACK CONFIGURATION
@@ -676,56 +677,7 @@ export async function executeWithFallback(
 // ============================================
 // HELPER: Parse JSON from AI response
 // ============================================
-
-function extractJsonFromContent(content: string): string | null {
-  // Try to extract from markdown code block first
-  const codeBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    const jsonStr = codeBlockMatch[1].trim();
-    if (jsonStr.startsWith('{') || jsonStr.startsWith('[')) {
-      return jsonStr;
-    }
-  }
-
-  // Balanced brace matching
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-
-    if (escape) {
-      escape = false;
-      continue;
-    }
-
-    if (char === '\\') {
-      escape = true;
-      continue;
-    }
-
-    if (char === '"' && !escape) {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) continue;
-
-    if (char === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        return content.substring(start, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
+// extractJsonFromContent is now imported from ./ai-utils
 
 function parseJsonResponse<T>(content: string): T {
   const jsonStr = extractJsonFromContent(content);
@@ -816,22 +768,7 @@ function repairJson(json: string): string {
 // ============================================
 // HELPER: Validate and clamp AI response values
 // ============================================
-
-function clampScore(value: unknown, min = 0, max = 100): number {
-  const num = typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-  if (num === undefined) {
-    // Non-numeric AI response — log warning instead of silently defaulting to 50
-    console.warn(`[ScoreValidation] Non-numeric score value received: ${JSON.stringify(value)}. Defaulting to 50.`);
-    return 50;
-  }
-  return Math.round(Math.min(max, Math.max(min, num)));
-}
-
-function validateStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter(v => typeof v === 'string');
-  if (typeof value === 'string') return [value];
-  return [];
-}
+// clampScore and validateStringArray are now imported from ./ai-utils
 
 // ============================================
 // SCORING WEIGHTS & QUALITY FRAMEWORK
