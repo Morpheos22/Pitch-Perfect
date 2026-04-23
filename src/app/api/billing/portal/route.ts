@@ -4,28 +4,21 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { requireAuth } from '@/lib/with-auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = await auth();
-
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-
-    // Get user with subscription details
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      include: { subscription: true },
+    // Custom select includes subscription relation — cast to access typed fields
+    const authResult = await requireAuth({
+      select: { id: true, clerkId: true, subscription: true },
     });
+    if (authResult.error) return authResult.error;
+    const user = authResult.user as Record<string, any>;
 
 
-    if (!user || !user.subscription) {
+    if (!user.subscription) {
       return NextResponse.json({ error: 'No subscription found' }, { status: 404 });
     }
 

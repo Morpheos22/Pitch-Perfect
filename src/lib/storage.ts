@@ -317,8 +317,16 @@ async function deleteWorkDriveFile(fileId: string): Promise<void> {
 // ============================================
 
 /**
- * Upload a file using Zoho WorkDrive (if configured) or local mock storage.
- * This is the primary upload function used throughout the application.
+ * Upload a file using the server-side storage fallback chain.
+ *
+ * PRIORITY:
+ *   1. Vercel Blob put() — PRIMARY (fast, reliable, auto-configured on Vercel)
+ *   2. Zoho WorkDrive   — SECONDARY (requires external OAuth credentials)
+ *   3. Mock (in-memory)  — DEV ONLY (not persistent across restarts)
+ *
+ * NOTE: For user-facing uploads, prefer the client-side upload path
+ * (blob-upload.ts) which bypasses serverless body size limits entirely.
+ * This server-side function is for server-to-server transfers and fallbacks.
  *
  * @param file - File to upload (File or Buffer)
  * @param userId - User ID for organizing files
@@ -405,7 +413,7 @@ export async function uploadFile(
   }
 
   // ── STRATEGY 3: Mock storage (development only, NOT persistent) ──
-  console.warn('[Storage] No real storage configured (WorkDrive or Vercel Blob). Using mock storage. Files will NOT persist across server restarts.');
+  console.warn('[Storage] No real storage configured (Vercel Blob or WorkDrive). Using mock storage. Files will NOT persist across server restarts.');
   mockStorage.set(key, {
     buffer,
     metadata: { originalName, mimeType, fileSize },

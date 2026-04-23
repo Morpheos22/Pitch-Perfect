@@ -4,7 +4,6 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { prisma as db } from '@/lib/db';
 import { videoNotesSchema } from '@/lib/validation/schemas';
 import {
@@ -19,6 +18,7 @@ import {
   validateFileSizeByCategory,
 } from '@/lib/file-validation';
 import { requireModuleAccess } from '@/lib/entitlement';
+import { requireAuth } from '@/lib/with-auth';
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
@@ -51,31 +51,8 @@ function isPrivateUrl(url: string): boolean {
 // POST: Upload video to WorkDrive
 export async function POST(request: NextRequest) {
   try {
-    // SECURITY: Get authenticated user from session
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-
-    // Get internal user ID
-    const user = await db.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -212,29 +189,8 @@ export async function POST(request: NextRequest) {
 // GET: Get download URL for a video
 export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-
-    const user = await db.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);
@@ -362,29 +318,8 @@ export async function GET(request: NextRequest) {
 // PATCH: Confirm upload completion and update video record
 export async function PATCH(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-
-    const user = await db.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const body = await request.json();

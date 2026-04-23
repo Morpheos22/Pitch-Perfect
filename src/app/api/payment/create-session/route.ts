@@ -4,7 +4,6 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { 
   createCheckoutSession, 
   determinePaymentGateway, 
@@ -14,15 +13,24 @@ import {
 import { prisma } from '@/lib/db';
 import { syncUserToCRM } from '@/lib/zoho-crm';
 import { createSessionSchema } from '@/lib/validation/schemas';
+import { requireAuth } from '@/lib/with-auth';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Custom select includes extra user fields — cast to access typed fields
+    const authResult = await requireAuth({
+      select: {
+        id: true,
+        clerkId: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        country: true,
+      },
+    });
+    if (authResult.error) return authResult.error;
+    const user = authResult.user as Record<string, any>;
 
 
     const body = await request.json();
@@ -50,17 +58,6 @@ export async function POST(request: NextRequest) {
     }
 
 
-    // Get user from database
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-
     // Determine user's country (from request or stored profile)
     const userCountry = country || user.country || 'US';
 
@@ -76,7 +73,7 @@ export async function POST(request: NextRequest) {
       firstName: user.firstName || undefined,
       lastName: user.lastName || undefined,
       country: userCountry,
-      clerkId: userId,
+      clerkId: user.clerkId,
     });
 
 
@@ -91,7 +88,7 @@ export async function POST(request: NextRequest) {
       productId,
       {
         userId: user.id,
-        clerkId: userId,
+        clerkId: user.clerkId,
         productId,
         productName: PRODUCTS[productId].name,
       }

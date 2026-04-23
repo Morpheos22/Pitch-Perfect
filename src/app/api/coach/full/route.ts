@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzeFullPitchSession, FullPitchAnalysisResult, DeckAnalysisResult, analyzePitchDeck } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
@@ -7,6 +6,8 @@ import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { clampScore } from "@/lib/ai-utils";
+import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
 
@@ -19,23 +20,8 @@ export const maxDuration = 120;
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -254,30 +240,28 @@ async function handlePost(request: NextRequest) {
 
     // ── Score consistency validation ──
     // Clamp all numeric scores to 0-100 to guard against AI hallucinations
-    const clampScore = (v: number | null | undefined): number => {
-      if (v == null || !Number.isFinite(v)) return 0;
-      return Math.max(0, Math.min(100, Math.round(v)));
-    };
+    // Uses shared clampScore from ai-utils.ts with defaultVal=0 (E4 prefers 0 for null)
+    const cs = (v: unknown) => clampScore(v, 0, 100, 0);
 
 
-    analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
-    analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
-    analysis.businessModelViability = clampScore(analysis.businessModelViability);
-    analysis.teamCredibility = clampScore(analysis.teamCredibility);
-    analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
-    analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
-    analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+    analysis.problemSolutionFit = cs(analysis.problemSolutionFit);
+    analysis.marketOpportunity = cs(analysis.marketOpportunity);
+    analysis.businessModelViability = cs(analysis.businessModelViability);
+    analysis.teamCredibility = cs(analysis.teamCredibility);
+    analysis.tractionMilestones = cs(analysis.tractionMilestones);
+    analysis.deliveryPresence = cs(analysis.deliveryPresence);
+    analysis.overallReadinessScore = cs(analysis.overallReadinessScore);
 
 
     // Clamp nested score objects
     if (analysis.contentScores) {
       for (const key of Object.keys(analysis.contentScores) as (keyof typeof analysis.contentScores)[]) {
-        analysis.contentScores[key] = clampScore(analysis.contentScores[key]);
+        analysis.contentScores[key] = cs(analysis.contentScores[key]);
       }
     }
     if (analysis.deliveryScores) {
       for (const key of Object.keys(analysis.deliveryScores) as (keyof typeof analysis.deliveryScores)[]) {
-        analysis.deliveryScores[key] = clampScore(analysis.deliveryScores[key]);
+        analysis.deliveryScores[key] = cs(analysis.deliveryScores[key]);
       }
     }
 
@@ -390,21 +374,8 @@ export const POST = withRateLimit(handlePost, {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const body = await request.json();
@@ -444,21 +415,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);
@@ -485,23 +443,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/lib/ai-service";
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { founderInputSchema } from "@/lib/validation/schemas";
+import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
 
@@ -430,19 +430,8 @@ async function executeAIAnalysis(
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -710,19 +699,8 @@ export const POST = withRateLimit(handlePost, {
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);
