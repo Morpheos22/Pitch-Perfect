@@ -372,6 +372,10 @@ export async function GET(request: NextRequest) {
         version: script.version,
         parentId: script.parentScriptId,
         targetAudience: script.targetAudience,
+        // Include original script text so the session page can pass it to
+        // the iterate endpoint. Without this, iterate always re-analyzes
+        // the AI-rewritten version, never the user's original input.
+        script: script.inputText || undefined,
         analysis: {
           scores: {
             hook: script.hookScore,

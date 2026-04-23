@@ -37,6 +37,15 @@ export async function getOrCreateUser() {
         email,
         firstName,
         lastName,
+        // Ensure Subscription + Usage records exist from the start.
+        // Without these, requireModuleAccess() fails because updateMany
+        // returns 0 rows on a missing Usage record.
+        subscription: {
+          create: { plan: 'FREE', status: 'ACTIVE' },
+        },
+        usage: {
+          create: {},
+        },
       },
     });
   }

@@ -156,6 +156,23 @@ export async function requireModuleAccess(
     if (module !== 'e5') {
       const usageField = MODULE_USAGE_FIELD[module];
 
+      // ── Ensure Usage record exists ──
+      // The Clerk webhook, user/sync, and onboarding routes all create Usage
+      // records, but edge cases (webhook failure, direct API calls, race
+      // conditions) can leave a paid user without a Usage record. Without this
+      // guard, updateMany returns 0 rows → user is falsely denied access.
+      try {
+        await prisma.usage.upsert({
+          where: { userId },
+          create: { userId },
+          update: {},
+        });
+      } catch (upsertErr) {
+        // Non-fatal — if upsert fails (e.g. User row doesn't exist yet),
+        // the updateMany below will also fail gracefully.
+        console.error('[Entitlement] Usage upsert failed (non-fatal):', upsertErr);
+      }
+
       // ── Lazy monthly reset ──
       // Check if the Usage.month is stale (different calendar month than now).
       // If so, reset all counters to 0 and update month to current month.
@@ -207,7 +224,19 @@ export async function requireModuleAccess(
         });
 
         if (result.count === 0) {
-          // No row was updated — user has reached the limit
+          // No row was updated — user has reached the limit (or no Usage record)
+          // Distinguish between "at limit" and "missing record" for clearer errors
+          const usageRecord = await prisma.usage.findUnique({
+            where: { userId },
+            select: { [usageField]: true },
+          });
+          if (!usageRecord) {
+            // Should never happen after the upsert above, but handle gracefully
+            console.error(`[Entitlement] No Usage record found for paid user ${userId} — this should have been created by upsert`);
+            // Allow access this once and create the record
+            await prisma.usage.create({ data: { userId } });
+            return { allowed: true, plan: sub.plan };
+          }
           return {
             allowed: false,
             reason: `You've reached the ${sub.plan} plan limit (${moduleLimit}) for this module. Upgrade your plan for more analyses.`,
