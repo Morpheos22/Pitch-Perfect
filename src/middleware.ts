@@ -73,7 +73,20 @@ export default clerkMiddleware(async (auth, request) => {
   const userId = authResult.userId;
 
   // ── Rate Limiting (API routes only) ──
-  if (pathname.startsWith("/api/")) {
+  // Skip middleware rate limiting for routes that have their own withRateLimit()
+  // wrapper — otherwise each request gets double-counted (middleware + route handler).
+  const routesWithOwnRateLimit = [
+    '/api/coach/script',
+    '/api/coach/deck',
+    '/api/coach/live',
+    '/api/coach/full',
+    '/api/coach/drills',
+    '/api/coach/founder',
+    '/api/coach/diagnostic',
+  ];
+  const hasOwnRateLimit = routesWithOwnRateLimit.some(r => pathname === r || pathname.startsWith(r + '/'));
+
+  if (pathname.startsWith("/api/") && !hasOwnRateLimit) {
     const rateLimitResponse = await rateLimitMiddleware(request, userId ?? undefined);
     if (rateLimitResponse) return rateLimitResponse;
   }

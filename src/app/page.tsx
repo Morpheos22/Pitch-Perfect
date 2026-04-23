@@ -58,7 +58,7 @@ const products = [
   {
     id: "elevator-script",
     icon: MessageSquare,
-    name: "Elevator Pitch Script Check",
+    name: "Script Check",
     description: "Submit your script for element-by-element feedback and rewrite suggestions.",
     modules: ["M2: Script Coaching × 2 cycles"],
     price: "From $10",

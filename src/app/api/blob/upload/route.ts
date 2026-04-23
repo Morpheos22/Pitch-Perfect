@@ -85,8 +85,19 @@ export async function POST(request: NextRequest) {
 
         // ── 4. Return token options with constraints ──
         // These constraints are enforced by Vercel Blob when the client uploads.
+        //
+        // IMPORTANT: Include 'application/octet-stream' as a fallback MIME type
+        // because browsers frequently report .doc files and other binary formats
+        // with this generic MIME type instead of the specific one (e.g., they
+        // send 'application/octet-stream' instead of 'application/msword').
+        // The file extension is already validated above, so MIME enforcement is
+        // secondary — the extension check is the primary gate.
+        const mimeTypes = [...(ALLOWED_MIME_TYPES[category] || [])];
+        if (!mimeTypes.includes('application/octet-stream')) {
+          mimeTypes.push('application/octet-stream');
+        }
         return {
-          allowedContentTypes: ALLOWED_MIME_TYPES[category] || [],
+          allowedContentTypes: mimeTypes,
           maximumSizeInBytes: MAX_FILE_SIZES[category],
           addRandomSuffix: true,
           tokenPayload: clientPayload,

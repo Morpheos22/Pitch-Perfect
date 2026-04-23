@@ -14,7 +14,7 @@ export type FileCategory = 'deck' | 'script' | 'video';
 /** Allowed extensions per category — the ONLY list in the codebase */
 export const ALLOWED_EXTENSIONS: Record<FileCategory, string[]> = {
   deck: ['.pdf', '.pptx', '.ppt'],
-  script: ['.pdf', '.docx', '.doc', '.txt', '.md'],
+  script: ['.docx', '.doc', '.txt'],
   video: ['.mp4', '.webm', '.mov', '.avi'],
 };
 
@@ -26,11 +26,9 @@ export const ALLOWED_MIME_TYPES: Record<FileCategory, string[]> = {
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ],
   script: [
-    'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/msword',
     'text/plain',
-    'text/markdown',
   ],
   video: [
     'video/mp4',
@@ -127,7 +125,7 @@ export function validateFileTypeByCategory(
   if (!allowedExts.includes(ext)) {
     const categoryLabels: Record<FileCategory, string> = {
       deck: 'PDF or PowerPoint',
-      script: 'PDF, Word, or text',
+      script: 'Word or text',
       video: 'MP4, WebM, MOV, or AVI',
     };
     return {

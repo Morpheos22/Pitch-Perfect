@@ -95,7 +95,7 @@ export default function BillingPage() {
 
   const billingModules = [
     { key: "e1", label: "E1 — Pitch Deck Analyser", icon: FileText, used: usage?.e1DeckAnalyses ?? 0, limit: limits.e1 },
-    { key: "e2", label: "E2 — Script Coach", icon: MessageSquare, used: usage?.e2ScriptCoachSessions ?? 0, limit: limits.e2 },
+    { key: "e2", label: "E2 — Script Check", icon: MessageSquare, used: usage?.e2ScriptCoachSessions ?? 0, limit: limits.e2 },
     { key: "e3", label: "E3 — Live Pitch", icon: Video, used: usage?.e3LivePitchSessions ?? 0, limit: limits.e3 },
     { key: "e4", label: "E4 — Full Pitch Session", icon: TrendingUp, used: usage?.e4FullPitchSessions ?? 0, limit: limits.e4 },
   ];

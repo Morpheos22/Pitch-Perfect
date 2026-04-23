@@ -69,7 +69,7 @@ export default function ElevatorScriptNewPage() {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
       if (!SCRIPT_EXTENSIONS.includes(ext)) {
-        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, TXT, and MD files are accepted.`);
+        toast.error(`Unsupported file format. Only DOCX, DOC, and TXT files are accepted.`);
         return;
       }
       // MIME type check: extension is already validated above.
@@ -196,7 +196,7 @@ export default function ElevatorScriptNewPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Elevator Pitch Script Check</h1>
+        <h1 className="text-2xl font-bold">Script Check</h1>
         <p className="text-muted-foreground">Submit your script for element-by-element AI feedback</p>
       </div>
 
@@ -275,7 +275,7 @@ export default function ElevatorScriptNewPage() {
             <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <input
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md"
+                accept=".docx,.doc,.txt"
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
@@ -284,7 +284,7 @@ export default function ElevatorScriptNewPage() {
                 <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium">Drag your script here, or click to browse</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  PDF, DOCX, DOC, TXT, or MD — up to 10MB
+                  DOCX, DOC, or TXT — up to 10MB
                 </p>
               </label>
             </div>

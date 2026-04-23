@@ -63,12 +63,12 @@ export default function ElevatorPitchLiveScriptNewPage() {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
       if (!SCRIPT_EXTENSIONS.includes(ext)) {
-        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, TXT, and MD files are accepted.`);
+        toast.error(`Unsupported file format. Only DOCX, DOC, and TXT files are accepted.`);
         return;
       }
       // MIME type check: extension is already validated above.
       // Per file-validation.ts, MIME mismatches are warnings, not blockers.
-      // Browsers report incorrect MIME types for .md files (empty string or
+      // Browsers report incorrect MIME types for some files (empty string or
       // application/octet-stream), so we skip the MIME block for valid extensions.
       if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);
@@ -257,7 +257,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
             <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <input
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md"
+                accept=".docx,.doc,.txt"
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
@@ -265,7 +265,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
               <label htmlFor="file-upload" className="cursor-pointer">
                 <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium">Drag your script here, or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, TXT, or MD — up to 10MB</p>
+                <p className="text-sm text-muted-foreground mt-1">DOCX, DOC, or TXT — up to 10MB</p>
               </label>
             </div>
           ) : (

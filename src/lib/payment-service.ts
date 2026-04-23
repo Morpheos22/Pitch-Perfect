@@ -10,7 +10,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 export const PRODUCTS: Record<string, { name: string; description: string }> = {
   'pitch-deck': { name: 'Pitch Deck Analyzer', description: 'AI-powered pitch deck analysis' },
-  'elevator-script': { name: 'Elevator Pitch Script Coach', description: 'Script analysis and improvement' },
+  'elevator-script': { name: 'Script Check', description: 'Script analysis and improvement' },
   'elevator-live': { name: 'Live Elevator Pitch Coach', description: 'Video delivery analysis' },
   'pitch-deck-live': { name: 'Pitch Deck + Live Bundle', description: 'Combined deck and video analysis' },
   'master': { name: 'Master Plan', description: 'Full access to all modules' },
