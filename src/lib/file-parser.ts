@@ -47,17 +47,47 @@ async function parsePdfText(file: File): Promise<string> {
   //
   // In Vercel's serverless environment, the dynamic import() can resolve
   // to the browser bundle, causing "DOMMatrix is not defined" errors.
-  // The PDFParse class is only available from the default (Node) entry.
+  //
+  // FIX: Provide a DOMMatrix polyfill for the browser bundle path,
+  // so it works regardless of which bundle Vercel resolves.
+  // DOMMatrix is only used for matrix calculations that we don't need
+  // for text extraction — providing a minimal stub is safe.
+
+  // Polyfill DOMMatrix if not available (Vercel serverless Node.js)
+  if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+    // Minimal DOMMatrix polyfill — enough for pdf-parse to not crash
+    (globalThis as any).DOMMatrix = class DOMMatrix {
+      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+      is2D = true; isIdentity = true;
+      constructor(_init?: string | number[]) { /* stub */ }
+      multiply(_other?: any) { return this; }
+      inverse() { return this; }
+      translate(_tx: number, _ty: number, _tz?: number) { return this; }
+      scale(_scale: number) { return this; }
+      rotate(_angle: number) { return this; }
+      rotateFromVector(_x: number, _y: number) { return this; }
+      toString() { return 'matrix(1, 0, 0, 1, 0, 0)'; }
+    };
+    console.log('[file-parser] DOMMatrix polyfill installed for pdf-parse');
+  }
+
   let PDFParse: any;
   try {
     // Try the default import first (works when serverExternalPackages handles it)
     const pdfParse = await import('pdf-parse');
     PDFParse = pdfParse.PDFParse;
-  } catch {
-    // Fallback: use require() which always resolves to the CJS Node bundle
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse');
-    PDFParse = pdfParse.PDFParse;
+  } catch (importErr: any) {
+    // If the import itself fails (e.g., DOMMatrix reference in module scope),
+    // try require() which resolves to the CJS Node bundle
+    console.warn('[file-parser] pdf-parse import failed, trying require():', importErr?.message?.slice(0, 150));
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pdfParse = require('pdf-parse');
+      PDFParse = pdfParse.PDFParse;
+    } catch (requireErr: any) {
+      console.error('[file-parser] pdf-parse require() also failed:', requireErr?.message?.slice(0, 150));
+      throw new Error('PDF parser unavailable — could not load pdf-parse module. Try uploading a DOCX instead.');
+    }
   }
 
   if (!PDFParse) {

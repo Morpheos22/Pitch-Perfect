@@ -381,12 +381,15 @@ async function testDatabase(): Promise<TestResult> {
 
 
 // ════════════════════════════════════════════════════════════════
-// TEST 6: Google AI / Gemini Connectivity
+// TEST 6: Google AI / Gemini Connectivity (Vertex AI or AI Studio)
 // ════════════════════════════════════════════════════════════════
 async function testGoogleAI(): Promise<TestResult> {
   const start = Date.now();
 
   const apiKey = process.env.GOOGLE_GENAI_API_KEY || '';
+  const project = process.env.GOOGLE_CLOUD_PROJECT || '';
+  const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
+  const model = 'gemini-2.0-flash';
 
   if (!apiKey) {
     return {
@@ -397,9 +400,18 @@ async function testGoogleAI(): Promise<TestResult> {
     };
   }
 
-  try {
-    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
+  // Build the correct endpoint based on configuration
+  let endpoint: string;
+  let provider: string;
+  if (project) {
+    endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
+    provider = `Vertex AI (${project}/${location})`;
+  } else {
+    endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    provider = 'AI Studio';
+  }
 
+  try {
     const resp = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -426,7 +438,7 @@ async function testGoogleAI(): Promise<TestResult> {
       responseSnippet = `HTTP ${resp.status} — non-JSON response: ${responseSnippet}`;
     }
 
-    // PERMISSION_DENIED or RESOURCE_EXHAUSTED are expected failures — not connectivity issues
+    // Classify errors with actionable guidance
     let status: TestResult['status'] = resp.ok ? 'PASS' : 'FAIL';
     if (!resp.ok) {
       try {
@@ -434,10 +446,16 @@ async function testGoogleAI(): Promise<TestResult> {
         const reason = parsed?.error?.details?.[0]?.reason;
         if (reason === 'API_KEY_SERVICE_BLOCKED') {
           status = 'WARN';
-          responseSnippet += '\n\n⚠️ The API key\'s Google Cloud project has the Generative Language API disabled. Enable it at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com';
+          responseSnippet += '\n\n⚠️ Generative Language API not enabled. Enable at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com';
+        } else if (reason === 'BILLING_DISABLED') {
+          status = 'WARN';
+          responseSnippet += '\n\n⚠️ Billing not enabled on the Google Cloud project. Enable at: https://console.developers.google.com/billing/enable?project=' + project;
         } else if (resp.status === 429) {
           status = 'WARN';
           responseSnippet += '\n\n⚠️ Quota exhausted — need to enable billing or use a different project.';
+        } else if (resp.status === 404) {
+          status = 'WARN';
+          responseSnippet += '\n\n⚠️ Model not found — the model name may be incorrect or not available for this endpoint/key.';
         }
       } catch { /* ignore */ }
     }
@@ -446,15 +464,15 @@ async function testGoogleAI(): Promise<TestResult> {
       test: '6. Google AI / Gemini Connectivity',
       status,
       durationMs: Date.now() - start,
-      detail: `Model: gemini-2.5-flash-preview-05-20\nKey: ${apiKey.slice(0, 8)}...\n${responseSnippet}`,
-      error: resp.ok ? undefined : `Google AI returned HTTP ${resp.status}`,
+      detail: `Provider: ${provider}\nModel: ${model}\nKey: ${apiKey.slice(0, 8)}...\n${responseSnippet}`,
+      error: resp.ok ? undefined : `Google AI (${provider}) returned HTTP ${resp.status}`,
     };
   } catch (err: any) {
     return {
       test: '6. Google AI / Gemini Connectivity',
       status: 'FAIL',
       durationMs: Date.now() - start,
-      detail: 'Could not reach Google AI API.',
+      detail: `Provider: ${provider}\nCould not reach Google AI API.`,
       error: err?.message || String(err),
     };
   }
