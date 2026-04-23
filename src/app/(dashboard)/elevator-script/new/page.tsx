@@ -10,11 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
-import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES } from "@/lib/file-validation";
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZES } from "@/lib/file-validation";
 
 // Script-specific constants derived from the single source of truth
 const SCRIPT_EXTENSIONS = ALLOWED_EXTENSIONS.script;
-const SCRIPT_MIME_TYPES = ALLOWED_MIME_TYPES.script;
 const SCRIPT_MAX_SIZE = MAX_FILE_SIZES.script; // 10MB
 
 const PLAN_LIMITS: Record<string, { e2: number }> = {
@@ -73,10 +72,10 @@ export default function ElevatorScriptNewPage() {
         toast.error(`Unsupported file format. Only PDF, DOCX, DOC, TXT, and MD files are accepted.`);
         return;
       }
-      if (!SCRIPT_MIME_TYPES.includes(selectedFile.type) && !SCRIPT_EXTENSIONS.includes(ext)) {
-        toast.error(`Invalid file type. Only PDF, DOCX, DOC, TXT, and MD files are accepted.`);
-        return;
-      }
+      // MIME type check: extension is already validated above.
+      // Per file-validation.ts, MIME mismatches are warnings, not blockers.
+      // Browsers report incorrect MIME types for .md files (empty string or
+      // application/octet-stream), so we skip the MIME block for valid extensions.
       if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);
         return;
@@ -112,12 +111,9 @@ export default function ElevatorScriptNewPage() {
       // ── ALWAYS use blob upload ──
       // This bypasses Vercel's 4.5MB serverless body limit entirely.
       // The file goes directly from the browser to Vercel Blob storage.
-      let blobPathname: string;
-
       try {
         const blobResult = await uploadFileToBlob(file, "script");
         blobUrl = blobResult.url;
-        blobPathname = blobResult.pathname;
         console.log("[E2] Blob upload succeeded:", blobUrl);
       } catch (blobError: any) {
         console.error("[E2] Blob upload failed:", blobError);
