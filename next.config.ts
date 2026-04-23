@@ -1,12 +1,15 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const nextConfig: any = {
   output: "standalone",
   reactStrictMode: true,
+
   // Ensure @vercel/blob/client is properly transpiled for browser usage.
   // The client subpath uses Node.js modules (undici, crypto) that must be
   // replaced with browser-compatible versions via the package's "browser" field.
   transpilePackages: ["@vercel/blob"],
+
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'blob.vercel-storage.com' },
@@ -14,6 +17,7 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'workdrive.zoho.com' },
     ],
   },
+
   serverExternalPackages: [
     "z-ai-web-dev-sdk",
     "resend",
@@ -21,29 +25,58 @@ const nextConfig: NextConfig = {
     "mammoth",
     "jszip",
   ],
+
+  // ── Body size limits for large file uploads ──
+  // proxyClientMaxBodySize handles proxy/middleware body size (replaces deprecated middlewareClientMaxBodySize).
+  // serverActions.bodySizeLimit covers Server Actions — placed under experimental in Next 16.
+  experimental: {
+    proxyClientMaxBodySize: '50mb',
+    serverActions: {
+      bodySizeLimit: '35mb',
+    },
+  },
+
+  // ── Unified security headers ──
+  // Previously split between next.config.ts and vercel.json with conflicting CSPs.
+  // Now consolidated here as the SINGLE source of truth.
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
-          // Allow connections to Google AI / Gemini API from browser
+          // Consolidated CSP — merged from both next.config.ts and vercel.json
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://blob.vercel-storage.com https://public.blob.vercel-storage.com",
-              "font-src 'self'",
-              "connect-src 'self' https://blob.vercel-storage.com https://public.blob.vercel-storage.com https://generativelanguage.googleapis.com https://*.aiplatform.googleapis.com https://z.ai https://api.upstash.com",
-              "frame-src 'self' https://challenges.cloudflare.com",
+              // Script sources: Clerk auth, Cloudflare challenges, analytics
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.accounts.dev https://cdn.clerk.com https://challenges.cloudflare.com https://static.cloudflareinsights.com",
+              // Style sources: Google Fonts, Clerk
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.clerk.accounts.dev",
+              // Font sources
+              "font-src 'self' https://fonts.gstatic.com",
+              // Image sources: blobs, data URIs, any HTTPS (for deck screenshots)
+              "img-src 'self' data: https: blob:",
+              // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho, Resend
+              "connect-src 'self' https://api.clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk.telemetry.cloudflare.com https://clerk.com https://z.ai https://blob.vercel-storage.com https://*.blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://*.vercel-storage.com https://generativelanguage.googleapis.com https://*.aiplatform.googleapis.com https://api.upstash.com https://*.zoho.com https://resend.com",
+              // Frame sources: Clerk auth iframe, Cloudflare challenge
+              "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev",
+              // Media sources: audio/video playback for TTS and video analysis
               "media-src 'self' blob:",
+              // Worker sources: blob workers for client-side processing
+              "worker-src 'self' blob:",
             ].join('; '),
           },
+          // Standard security headers
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
         ],
       },
     ];
   },
 };
 
-export default nextConfig;
+export default nextConfig as NextConfig;

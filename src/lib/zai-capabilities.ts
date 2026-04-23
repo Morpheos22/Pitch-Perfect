@@ -39,6 +39,9 @@ export async function synthesizeSpeech(
   options: TTSOptions = {}
 ): Promise<Buffer> {
   const zai = await getZai();
+  if (!zai) {
+    throw new Error('Z.ai SDK not available — TTS requires a valid SDK connection. Check ZAI_API_KEY env var.');
+  }
   const response = await zai.audio.tts.create({
     input: text,
     voice: options.voice || 'tongtong',
@@ -72,6 +75,9 @@ export async function webSearch(
   options?: { num?: number; recencyDays?: number }
 ): Promise<WebSearchResult[]> {
   const zai = await getZai();
+  if (!zai) {
+    throw new Error('Z.ai SDK not available — web search requires a valid SDK connection. Check ZAI_API_KEY env var.');
+  }
   const results = await zai.functions.invoke('web_search', {
     query,
     num: options?.num || 5,
