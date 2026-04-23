@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createOrUpdateLead } from "@/lib/zoho-crm";
 import { contactSchema } from '@/lib/validation/schemas';
+import { withRateLimit } from '@/lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 // Zoho Forms configuration
@@ -12,9 +13,8 @@ const ZOHO_FORMS_CONFIG = {
 
 
 // ============================================
-// VALIDATION
+// TYPES
 // ============================================
-
 
 interface ContactFormData {
   name: string;
@@ -23,68 +23,6 @@ interface ContactFormData {
   subject?: string;
   message: string;
 }
-
-
-function validateInput(body: unknown): {
-  valid: boolean;
-  data?: ContactFormData;
-  errors?: string[];
-} {
-  const errors: string[] = [];
-
-
-  if (!body || typeof body !== "object") {
-    return { valid: false, errors: ["Invalid request body"] };
-  }
-
-
-  const data = body as Record<string, unknown>;
-
-
-  // Name is required
-  const name = typeof data.name === "string" ? data.name.trim() : "";
-  if (!name || name.length < 2) {
-    errors.push("Name is required and must be at least 2 characters");
-  }
-
-
-  // Email is required and must be valid
-  const email = typeof data.email === "string" ? data.email.trim() : "";
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email) {
-    errors.push("Email is required");
-  } else if (!emailRegex.test(email)) {
-    errors.push("Please provide a valid email address");
-  }
-
-
-  // Message is required with minimum length
-  const message = typeof data.message === "string" ? data.message.trim() : "";
-  if (!message) {
-    errors.push("Message is required");
-  } else if (message.length < 10) {
-    errors.push("Message must be at least 10 characters long");
-  } else if (message.length > 5000) {
-    errors.push("Message must be under 5000 characters");
-  }
-
-
-  // Optional fields
-  const company = typeof data.company === "string" ? data.company.trim() : "";
-  const subject = typeof data.subject === "string" ? data.subject.trim() : "";
-
-
-  if (errors.length > 0) {
-    return { valid: false, errors };
-  }
-
-
-  return {
-    valid: true,
-    data: { name, email, company: company || undefined, subject: subject || undefined, message },
-  };
-}
-
 
 // ============================================
 // ZOHO FORMS SUBMISSION
@@ -180,11 +118,9 @@ async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean;
 // ============================================
 // API ROUTE HANDLER
 // ============================================
-// TODO: Add rate limiting (e.g., 5 submissions per 15 minutes per IP)
-// Consider using a rate-limiting middleware or service like Upstash Ratelimit
 
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // Parse and validate input
     const body = await request.json();
@@ -235,3 +171,12 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// Rate-limited POST: 3 submissions per 15 minutes per IP
+// Prevents spam and CRM pollution from unauthenticated endpoints
+export const POST = withRateLimit(handlePost, {
+  limit: 3,
+  windowMs: 15 * 60_000, // 15 minutes
+  identifierType: 'ip',
+  name: 'Contact Form',
+});

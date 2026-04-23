@@ -54,11 +54,12 @@ import { extractJsonFromContent, clampScore, validateStringArray, repairJson, pa
 // ═══════════════════════════════════════════════════════════════════════
 // GATEWAY CREDENTIAL RESOLUTION
 // ═══════════════════════════════════════════════════════════════════════
-// Priority: env vars > .z-ai-config file > hardcoded defaults
-// The default gateway is the internal Z.ai API proxy (http://172.25.136.193:8080/v1 in dev).
-// In production on Vercel, ZAI_BASE_URL should point to the live Z.ai platform API.
+// Priority: env vars > .z-ai-config file
+// ZAI_BASE_URL is REQUIRED — there is no safe default since internal IPs
+// (like 172.25.136.193) are unreachable from Vercel serverless. If unset,
+// the gateway will fail with a clear error rather than silently timing out.
 
-const DEFAULT_GATEWAY_URL = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
+const DEFAULT_GATEWAY_URL = process.env.ZAI_BASE_URL || '';
 
 type ResolvedConfig = {
   baseUrl: string;
@@ -169,6 +170,10 @@ async function callGatewayText(
   // Resolve credentials LIVE — never use stale module-level constants
   const config = getResolvedConfig();
 
+  if (!config.baseUrl) {
+    throw new Error('ZAI_BASE_URL not set — cannot reach Z.ai gateway. Set ZAI_BASE_URL env var to your gateway URL.');
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Z-AI-From': 'Z',
@@ -225,6 +230,10 @@ async function callGatewayVision(
 
   // Resolve credentials LIVE — never use stale module-level constants
   const config = getResolvedConfig();
+
+  if (!config.baseUrl) {
+    throw new Error('ZAI_BASE_URL not set — cannot reach Z.ai gateway. Set ZAI_BASE_URL env var to your gateway URL.');
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
