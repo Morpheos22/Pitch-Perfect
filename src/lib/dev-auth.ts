@@ -1,17 +1,16 @@
 // Dev Auth Utility for Pitch Perfect × Automagikal
-// Admin emails that bypass onboarding in development only.
+// Admin emails that bypass onboarding and get ENTERPRISE entitlement.
 // The middleware uses isAdminEmail() to skip the onboarding redirect.
 //
-// SECURITY: Admin bypass is ONLY available in development mode (NODE_ENV=development).
-// The ALLOW_ADMIN_BYPASS environment variable has been removed to prevent
-// accidental production exposure of admin capabilities.
+// SECURITY: Developer emails are read from the DEVELOPER_EMAILS env var.
+// In production, the env var is REQUIRED — no hardcoded fallback.
+// In development, a hardcoded fallback is allowed for convenience.
 
 /** Parsed set of developer/admin emails from DEVELOPER_EMAILS env var */
 let _devEmails: Set<string> | null = null;
 
-/** Hardcoded dev email fallback — ensures admins always get ENTERPRISE tier
- *  even if DEVELOPER_EMAILS env var is not set (e.g., during initial deploy). */
-const HARDCODED_DEV_EMAILS = new Set([
+/** Hardcoded dev email fallback — ONLY used in development when env var is not set */
+const DEV_FALLBACK_EMAILS = new Set([
   'helloautomagikal@gmail.com',
   'morphylee22@gmail.com',
 ]);
@@ -21,8 +20,14 @@ function getDevEmails(): Set<string> {
 
   const raw = process.env.DEVELOPER_EMAILS;
   if (!raw || !raw.trim()) {
-    // Use hardcoded fallback when env var is not set
-    _devEmails = HARDCODED_DEV_EMAILS;
+    if (process.env.NODE_ENV === 'production') {
+      // In production, no hardcoded fallback — require the env var
+      console.warn('[dev-auth] DEVELOPER_EMAILS env var not set in production. No admin emails configured.');
+      _devEmails = new Set();
+    } else {
+      // In development, use fallback for convenience
+      _devEmails = DEV_FALLBACK_EMAILS;
+    }
     return _devEmails;
   }
 

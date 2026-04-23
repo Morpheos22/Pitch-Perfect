@@ -69,8 +69,8 @@ export function getVertexAIConfigStatus(): {
 // ============================================
 
 /**
- * Analyze a pitch script using Vertex AI (Google Gemini).
- * This is Strategy 3 in the AI fallback chain.
+ * Analyze a pitch script using Google AI / Gemini.
+ * This is Strategy 1 (PRIMARY) for E2 Script Check.
  *
  * @param script - The pitch script text to analyze
  * @param targetAudience - Target audience (e.g., "investors")
@@ -83,15 +83,10 @@ export async function analyzeWithVertexAI(
   targetDuration?: number,
 ): Promise<ScriptAnalysisResult> {
   if (!isVertexAIConfigured()) {
-    throw new Error('Vertex AI is not configured. Set GOOGLE_CLOUD_PROJECT and GOOGLE_GENAI_API_KEY env vars.');
+    throw new Error('Google AI is not configured. Set GOOGLE_GENAI_API_KEY env var.');
   }
 
-  console.log('[VertexAI] Starting script analysis...');
-
-  // Use the Google Generative AI REST API directly
-  // This avoids the need for the @google-cloud/vertexai SDK which has
-  // complex authentication requirements (service account keys, etc.)
-  const endpoint = `https://${GOOGLE_CLOUD_LOCATION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT}/locations/${GOOGLE_CLOUD_LOCATION}/endpoints/openapi/chat/completions`;
+  console.log('[GoogleAI] Starting script analysis (PRIMARY for E2)...');
 
   const systemPrompt = `You are an expert pitch coach with 15+ years of experience evaluating elevator pitches. Analyze the script against the 5-Element Elevator Pitch Framework:
 
@@ -139,14 +134,15 @@ Provide your analysis as a JSON object with this EXACT structure:
 }`;
 
   try {
-    // Use the Generative Language API (simpler auth with API key)
-    // Endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent
-    const genAIEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_GENAI_API_KEY}`;
+    // Use the Generative Language API with API key in header (not URL query param)
+    // This prevents the key from appearing in server/proxy access logs.
+    const genAIEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
 
     const response = await fetch(genAIEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': GOOGLE_GENAI_API_KEY,
       },
       body: JSON.stringify({
         contents: [
@@ -165,7 +161,7 @@ Provide your analysis as a JSON object with this EXACT structure:
 
     if (!response.ok) {
       const body = await response.text().catch(() => 'unknown');
-      throw new Error(`Vertex AI API returned ${response.status}: ${body.slice(0, 300)}`);
+      throw new Error(`Google AI API returned ${response.status}: ${body.slice(0, 300)}`);
     }
 
     const data = await response.json();
@@ -196,14 +192,14 @@ Provide your analysis as a JSON object with this EXACT structure:
       improvements: validateImprovements(parsed.improvements),
       rewrittenScript: parsed.rewrittenScript || '',
       alternativeHooks: validateStringArray(parsed.alternativeHooks),
-      modelUsed: 'vertex-ai/gemini-2.0-flash',
+      modelUsed: 'google-ai/gemini-2.0-flash',
       tokensUsed: data?.usageMetadata?.totalTokenCount,
     };
 
-    console.log(`[VertexAI] Analysis complete: overall=${result.overallScore}, hook=${result.hookScore}`);
+    console.log(`[GoogleAI] Analysis complete: overall=${result.overallScore}, hook=${result.hookScore}`);
     return result;
   } catch (error: any) {
-    console.error('[VertexAI] Analysis failed:', error?.message || error);
+    console.error('[GoogleAI] Analysis failed:', error?.message || error);
     throw error;
   }
 }

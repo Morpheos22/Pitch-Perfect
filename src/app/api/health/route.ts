@@ -106,9 +106,18 @@ export async function GET(request: NextRequest) {
   }
 
 
-  // Entitlement check — verify dev emails are recognized
+  // Entitlement check — verify dev email system is working (without leaking specific emails)
   checks.entitlement = {
-    devEmailsConfigured: isAdminEmail('helloautomagikal@gmail.com'),
+    devEmailsConfigured: (() => {
+      // Check if any dev emails are configured without leaking which ones
+      try {
+        const { default: devAuth } = require('@/lib/dev-auth');
+        // Just check if the function is importable and env var is set
+        return !!(process.env.DEVELOPER_EMAILS && process.env.DEVELOPER_EMAILS.trim().length > 0);
+      } catch {
+        return false;
+      }
+    })(),
   };
 
 
