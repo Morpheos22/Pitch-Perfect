@@ -136,7 +136,8 @@ Provide your analysis as a JSON object with this EXACT structure:
   try {
     // Use the Generative Language API with API key in header (not URL query param)
     // This prevents the key from appearing in server/proxy access logs.
-    const genAIEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+    // Using gemini-2.5-flash-preview-05-20 for separate quota pool from gemini-2.0-flash
+    const genAIEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
 
     const response = await fetch(genAIEndpoint, {
       method: 'POST',
@@ -192,7 +193,7 @@ Provide your analysis as a JSON object with this EXACT structure:
       improvements: validateImprovements(parsed.improvements),
       rewrittenScript: parsed.rewrittenScript || '',
       alternativeHooks: validateStringArray(parsed.alternativeHooks),
-      modelUsed: 'google-ai/gemini-2.0-flash',
+      modelUsed: 'google-ai/gemini-2.5-flash-preview-05-20',
       tokensUsed: data?.usageMetadata?.totalTokenCount,
     };
 
