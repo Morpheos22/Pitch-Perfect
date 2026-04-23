@@ -6,34 +6,42 @@ import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
+
 // E2: Elevator Pitch Script Coach API
 // Analyzes and improves elevator pitch scripts using REAL AI
+
 
 async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e2');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     // Accept both JSON body and FormData (file upload)
     let script: string = '';
@@ -43,7 +51,9 @@ async function handlePost(request: NextRequest) {
     let scriptFileUrl: string | null = null;
     let detectedInputType: "TEXT" | "PDF" | "DOCX" = "TEXT";
 
+
     const contentType = request.headers.get("content-type") || "";
+
 
     if (contentType.includes("multipart/form-data")) {
       // FormData: file upload or Blob URL
@@ -56,6 +66,7 @@ async function handlePost(request: NextRequest) {
       const rawDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string, 10) : undefined;
       targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
 
+
       if (!file && !fileUrl) {
         console.error("[E2] No file or fileUrl received in FormData");
         return NextResponse.json(
@@ -63,6 +74,7 @@ async function handlePost(request: NextRequest) {
           { status: 400 }
         );
       }
+
 
       // NEW: Blob upload flow — extract text from URL
       if (fileUrl && blobFileName) {
@@ -89,6 +101,7 @@ async function handlePost(request: NextRequest) {
         else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
         console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
 
+
         // Server-side body size guard (legacy path only)
         if (file.size > 4.5 * 1024 * 1024) {
           return NextResponse.json(
@@ -96,6 +109,7 @@ async function handlePost(request: NextRequest) {
             { status: 413 }
           );
         }
+
 
         // Extract text from file using unified parser
         try {
@@ -109,6 +123,7 @@ async function handlePost(request: NextRequest) {
           );
         }
       }
+
 
       if (!script || script.trim().length < 20) {
         return NextResponse.json(
@@ -137,6 +152,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     if (!script || typeof script !== "string") {
       return NextResponse.json(
         { error: "Script content required" },
@@ -144,7 +160,9 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     const wordCount = script.split(/\s+/).filter(Boolean).length;
+
 
     if (wordCount < 30) {
       return NextResponse.json(
@@ -153,12 +171,14 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     if (wordCount > 1000) {
       return NextResponse.json(
         { error: "Script is too long. For elevator pitches, please keep it under 1000 words." },
         { status: 400 }
       );
     }
+
 
     // Run REAL AI analysis
     let analysis: ScriptAnalysisResult;
@@ -174,7 +194,9 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
+
 
     // Store analysis in database using correct schema fields
     const savedScript = await prisma.pitchScript.create({
@@ -202,6 +224,7 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // Return real result
     return NextResponse.json({
       success: true,
@@ -228,6 +251,7 @@ async function handlePost(request: NextRequest) {
     console.error(`[E2] Error message: ${msg}`);
     console.error(`[E2] Error stack:`, error?.stack?.substring(0, 500));
 
+
     if (msg.includes("BLOB_READ_WRITE_TOKEN") || msg.includes("Blob not found") || msg.includes("Blob returned")) {
       return NextResponse.json(
         { error: "File storage access error — could not retrieve uploaded file. Please try again or contact support." },
@@ -242,12 +266,14 @@ async function handlePost(request: NextRequest) {
   }
 }
 
+
 export const POST = withRateLimit(handlePost, {
   limit: 5,
   windowMs: 60_000,
   identifierType: 'both',
   name: 'AI Analysis',
 });
+
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -256,14 +282,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     const body = await request.json();
     const parsed = scriptIterateSchema.safeParse(body);
@@ -276,17 +305,21 @@ export async function PATCH(request: NextRequest) {
     const validatedData = parsed.data;
     const notes = validatedData.notes;
 
+
     if (!validatedData.id) {
       return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
     }
 
+
     const updateData: Record<string, unknown> = {};
     if (notes !== undefined) updateData.notes = notes;
+
 
     const updated = await prisma.pitchScript.update({
       where: { id: validatedData.id, userId: user.id },
       data: updateData,
     });
+
 
     return NextResponse.json({ success: true, notes: updated.notes });
   } catch (error) {
@@ -295,6 +328,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+
 export async function DELETE(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -302,25 +336,31 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const scriptId = searchParams.get("id");
+
 
     if (!scriptId) {
       return NextResponse.json({ error: "Script ID is required" }, { status: 400 });
     }
 
+
     await prisma.pitchScript.delete({
       where: { id: scriptId, userId: user.id },
     });
+
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -329,25 +369,31 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const scriptId = searchParams.get("id");
+
 
     // Single script lookup by ID (for session detail page)
     if (scriptId) {
@@ -355,16 +401,20 @@ export async function GET(request: NextRequest) {
         where: { id: scriptId, userId: user.id },
       });
 
+
       if (!script) {
         return NextResponse.json({ error: "Script not found" }, { status: 404 });
       }
+
 
       // Transform to match the session page's expected format
       const improvements = typeof script.improvements === "object" && script.improvements !== null
         ? script.improvements as Record<string, string[]>
         : { hook: [], problem: [], solution: [], credibility: [], cta: [] };
 
+
       const alternativeHooks = Array.isArray(script.alternativeHooks) ? script.alternativeHooks : [];
+
 
       return NextResponse.json({
         id: script.id,
@@ -400,6 +450,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // List all scripts (for history page) — exclude sensitive fields
     const scripts = await prisma.pitchScript.findMany({
       where: { userId: user.id },
@@ -424,6 +475,7 @@ export async function GET(request: NextRequest) {
         // Explicitly exclude: inputText, rewrittenScript, rawAnalysis
       },
     });
+
 
     return NextResponse.json({
       success: true,

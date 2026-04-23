@@ -1,31 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
 
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const body = await req.json();
     const { country, primaryUseCase } = body;
+
 
     // Validate input
     if (typeof country !== "string" || country.length > 100 || typeof primaryUseCase !== "string" || primaryUseCase.length > 100) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
+
     if (!country || !primaryUseCase) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
+
 
     // ── 1. Ensure user exists in DB (handles Clerk webhook race condition) ──
     const existingUser = await prisma.user.findUnique({
       where: { clerkId: userId },
     });
+
 
     if (!existingUser) {
       // Sync from Clerk before updating
@@ -55,6 +62,7 @@ export async function POST(req: NextRequest) {
             },
           });
 
+
           // Create subscription and usage if missing (atomic transaction to prevent race condition)
           const user = await prisma.user.findUnique({ where: { clerkId: userId } });
           if (user) {
@@ -77,6 +85,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+
     // ── 2. Update database ──
     await prisma.user.update({
       where: { clerkId: userId },
@@ -86,6 +95,7 @@ export async function POST(req: NextRequest) {
         onboardingCompleted: true,
       },
     });
+
 
     // ── 3. Update Clerk public metadata SERVER-SIDE ──
     // This is critical — client-side user.update() was unreliable because the JWT
@@ -105,6 +115,7 @@ export async function POST(req: NextRequest) {
       // Non-fatal — the DB is updated, and we'll force a hard redirect
       // which will trigger a fresh JWT with updated claims
     }
+
 
     return NextResponse.json({ success: true });
   } catch (error) {

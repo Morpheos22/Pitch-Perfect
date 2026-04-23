@@ -4,9 +4,12 @@
 //
 // GET /api/coach/diagnostic
 
+
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
+
 
 // ── Helper: mask sensitive env values ──
 function mask(value: string | undefined): string {
@@ -14,6 +17,7 @@ function mask(value: string | undefined): string {
   if (value.length <= 8) return '***';
   return value.slice(0, 8) + '...';
 }
+
 
 // ── Result type ──
 interface TestResult {
@@ -23,6 +27,7 @@ interface TestResult {
   detail: string;
   error?: string;
 }
+
 
 // ════════════════════════════════════════════════════════════════
 // TEST 1: Environment Check
@@ -38,8 +43,10 @@ async function testEnvironment(): Promise<TestResult> {
     'CLERK_SECRET_KEY',
   ];
 
+
   const results: Record<string, string> = {};
   const missing: string[] = [];
+
 
   for (const v of requiredVars) {
     const val = process.env[v];
@@ -47,11 +54,13 @@ async function testEnvironment(): Promise<TestResult> {
     if (!val) missing.push(v);
   }
 
+
   // Also check optional but useful vars
   const optionalVars = ['ZAI_USER_ID', 'ZAI_CHAT_ID', 'NEXT_PUBLIC_APP_URL'];
   for (const v of optionalVars) {
     results[v] = mask(process.env[v]);
   }
+
 
   return {
     test: '1. Environment Check',
@@ -62,16 +71,19 @@ async function testEnvironment(): Promise<TestResult> {
   };
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // TEST 2: Z.ai Gateway Connectivity
 // ════════════════════════════════════════════════════════════════
 async function testZaiGateway(): Promise<TestResult> {
   const start = Date.now();
 
+
   const baseUrl = process.env.ZAI_BASE_URL || 'https://z.ai/model-api';
   const token = process.env.ZAI_TOKEN || process.env.ZAI_API_KEY || '';
   const apiKey = process.env.ZAI_API_KEY || '';
   const userId = process.env.ZAI_USER_ID || '';
+
 
   if (!token && !apiKey) {
     return {
@@ -82,6 +94,7 @@ async function testZaiGateway(): Promise<TestResult> {
     };
   }
 
+
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -90,6 +103,7 @@ async function testZaiGateway(): Promise<TestResult> {
     if (token) headers['X-Token'] = token;
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
     if (userId) headers['X-User-Id'] = userId;
+
 
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -103,8 +117,10 @@ async function testZaiGateway(): Promise<TestResult> {
       signal: AbortSignal.timeout(30_000),
     });
 
+
     const body = await resp.text();
     let responseSnippet = body.slice(0, 500);
+
 
     // Try to extract just the content for a cleaner snippet
     try {
@@ -115,6 +131,7 @@ async function testZaiGateway(): Promise<TestResult> {
     } catch {
       responseSnippet = `HTTP ${resp.status} — non-JSON response: ${responseSnippet}`;
     }
+
 
     return {
       test: '2. Z.ai Gateway Connectivity',
@@ -134,11 +151,13 @@ async function testZaiGateway(): Promise<TestResult> {
   }
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // TEST 3: Vercel Blob Write/Read/Delete
 // ════════════════════════════════════════════════════════════════
 async function testVercelBlob(): Promise<TestResult> {
   const start = Date.now();
+
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return {
@@ -149,8 +168,10 @@ async function testVercelBlob(): Promise<TestResult> {
     };
   }
 
+
   const steps: string[] = [];
   let blobUrl: string | undefined;
+
 
   try {
     // WRITE
@@ -158,12 +179,14 @@ async function testVercelBlob(): Promise<TestResult> {
     const testContent = 'diagnostic test';
     const testKey = 'pitchcoach-diagnostic-test.txt';
 
+
     const putResult = await put(testKey, testContent, {
       access: 'public',
       addRandomSuffix: true,
     });
     blobUrl = putResult.url;
     steps.push(`✅ WRITE: Success — url=${blobUrl.slice(0, 80)}...`);
+
 
     // READ
     const { get } = await import('@vercel/blob');
@@ -179,19 +202,23 @@ async function testVercelBlob(): Promise<TestResult> {
       };
     }
 
+
     // For public blobs, get() returns the blob metadata. We need to fetch the content separately.
     const readResp = await fetch(blobUrl);
     const readContent = await readResp.text();
     steps.push(`✅ READ: Success — content="${readContent}" (expected: "${testContent}")`);
 
+
     if (readContent !== testContent) {
       steps.push(`⚠️ CONTENT MISMATCH: got "${readContent}" expected "${testContent}"`);
     }
+
 
     // DELETE
     const { del } = await import('@vercel/blob');
     await del(blobUrl);
     steps.push('✅ DELETE: Success — test blob cleaned up');
+
 
     const contentMatch = readContent === testContent;
     return {
@@ -213,6 +240,7 @@ async function testVercelBlob(): Promise<TestResult> {
       }
     }
 
+
     return {
       test: '3. Vercel Blob Write/Read/Delete',
       status: 'FAIL',
@@ -223,14 +251,17 @@ async function testVercelBlob(): Promise<TestResult> {
   }
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // TEST 4: PDF Parse Test
 // ════════════════════════════════════════════════════════════════
 async function testPdfParse(): Promise<TestResult> {
   const start = Date.now();
 
+
   try {
     const { PDFParse } = await import('pdf-parse');
+
 
     // Build a minimal valid PDF in memory
     // This is a minimal PDF 1.0 file with the text "Hello PitchCoach"
@@ -256,11 +287,14 @@ startxref
 434
 %%EOF`;
 
+
     const uint8 = new Uint8Array(Buffer.from(pdfContent, 'binary'));
+
 
     // Use the same pattern as the actual code: new PDFParse(uint8)
     const parser = new PDFParse(uint8);
     let extractedText = '';
+
 
     try {
       const result = await parser.getText();
@@ -279,6 +313,7 @@ startxref
       try { parser.destroy(); } catch { /* ignore */ }
     }
 
+
     const hasText = extractedText.length > 0;
     return {
       test: '4. PDF Parse Test',
@@ -292,6 +327,7 @@ startxref
     const msg = err?.message || String(err);
     const isConstructorError = msg.includes('constructor') || msg.includes('argument') || msg.includes('parameter') || msg.includes('cannot read');
 
+
     return {
       test: '4. PDF Parse Test',
       status: isConstructorError ? 'FAIL' : 'WARN',
@@ -302,23 +338,29 @@ startxref
   }
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // TEST 5: Database Connectivity
 // ════════════════════════════════════════════════════════════════
 async function testDatabase(): Promise<TestResult> {
   const start = Date.now();
 
+
   try {
     const { prisma } = await import('@/lib/db');
+
 
     // Simple connectivity test
     const result = await prisma.$queryRaw`SELECT 1 as test`;
 
+
     // Also check pitch_scripts count (the table that's empty)
     const scriptCount = await prisma.pitchScript.count();
 
+
     // Check if there are any users at all
     const userCount = await prisma.user.count();
+
 
     return {
       test: '5. Database Connectivity',
@@ -337,24 +379,30 @@ async function testDatabase(): Promise<TestResult> {
   }
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // TEST 6: Full E2 Pipeline Simulation
 // ════════════════════════════════════════════════════════════════
 async function testE2Pipeline(): Promise<TestResult> {
   const start = Date.now();
 
+
   const testScript = `Did you know that 70% of small businesses fail because they can't manage their cash flow? I'm Sarah, founder of CashFlow Pro. We built an AI-powered tool that predicts cash flow gaps 30 days before they happen. Our beta users have already reduced late payments by 40%. We're raising $500K to scale our sales team. Can I show you our demo?`;
+
 
   try {
     // Step 1: Simulate text extraction (we already have the text)
     const extractedText = testScript;
     const step1 = `✅ Text extraction: ${extractedText.split(/\s+/).length} words extracted`;
 
+
     // Step 2: Call analyzePitchScript with the test script
     const { analyzePitchScript } = await import('@/lib/ai-service');
     const analysis = await analyzePitchScript(extractedText, 'investor', 60);
 
+
     const step2 = `✅ AI analysis: hookScore=${analysis.hookScore}, problemScore=${analysis.problemScore}, solutionScore=${analysis.solutionScore}, credibilityScore=${analysis.credibilityScore}, ctaScore=${analysis.ctaScore}, overallScore=${analysis.overallScore}`;
+
 
     // Step 3: Check if result has all required fields
     const requiredFields = ['hookScore', 'problemScore', 'solutionScore', 'credibilityScore', 'ctaScore', 'overallScore', 'wordCount', 'estimatedDuration', 'improvements', 'rewrittenScript', 'alternativeHooks'];
@@ -362,6 +410,7 @@ async function testE2Pipeline(): Promise<TestResult> {
     const step3 = missingFields.length === 0
       ? '✅ All required fields present in result'
       : `⚠️ Missing fields: ${missingFields.join(', ')}`;
+
 
     // Step 4: Check if improvements has the expected structure
     const improvements = analysis.improvements;
@@ -371,6 +420,7 @@ async function testE2Pipeline(): Promise<TestResult> {
     const step4 = missingImpKeys.length === 0
       ? `✅ Improvements structure correct: ${impKeys.join(', ')}`
       : `⚠️ Missing improvement keys: ${missingImpKeys.join(', ')}`;
+
 
     return {
       test: '6. Full E2 Pipeline Simulation',
@@ -382,6 +432,7 @@ async function testE2Pipeline(): Promise<TestResult> {
   } catch (err: any) {
     const msg = err?.message || String(err);
     const stack = err?.stack?.slice(0, 300) || '';
+
 
     // Classify the error to help pinpoint the failure
     let classification = 'UNKNOWN';
@@ -397,6 +448,7 @@ async function testE2Pipeline(): Promise<TestResult> {
       classification = 'NETWORK_ERROR — Could not reach Z.ai gateway. Check ZAI_BASE_URL and network connectivity.';
     }
 
+
     return {
       test: '6. Full E2 Pipeline Simulation',
       status: 'FAIL',
@@ -407,13 +459,16 @@ async function testE2Pipeline(): Promise<TestResult> {
   }
 }
 
+
 // ════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ════════════════════════════════════════════════════════════════
 
+
 export async function GET() {
   const results: TestResult[] = [];
   const pipelineStart = Date.now();
+
 
   // Run all tests sequentially (some share state/connections)
   results.push(await testEnvironment());
@@ -422,6 +477,7 @@ export async function GET() {
   results.push(await testPdfParse());
   results.push(await testDatabase());
   results.push(await testE2Pipeline());
+
 
   // ── Bug analysis ──
   // Based on code review, document the potential bugs found
@@ -461,9 +517,11 @@ export async function GET() {
     likely_root_cause: 'The most likely reason for ZERO records in pitch_scripts is that the Z.ai gateway call is failing. This could be due to: (1) ZAI_API_KEY/ZAI_TOKEN not set in Vercel env vars, (2) the SDK initialization failing silently (zaiInstance remains null), or (3) the AI returning non-JSON output that parseJsonResponse() cannot parse. The error is caught in the script route handler (line 163) and returns a generic 503, but the root cause is not logged to the database — so there are no records at all.',
   };
 
+
   const totalDuration = Date.now() - pipelineStart;
   const passCount = results.filter(r => r.status === 'PASS').length;
   const failCount = results.filter(r => r.status === 'FAIL').length;
+
 
   return NextResponse.json({
     timestamp: new Date().toISOString(),

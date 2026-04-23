@@ -3,12 +3,15 @@ import { Webhook } from "svix";
 import { prisma } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/email";
 import { syncUserToCRM } from "@/lib/zoho-crm";
+export const dynamic = 'force-dynamic';
 
 // Clerk webhook events we handle
 // - user.created: Create user record
 // - user.updated: Update user record, detect email verification, trigger welcome email
 
+
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
+
 
 interface ClerkWebhookEvent {
   type: string;
@@ -30,6 +33,7 @@ interface ClerkWebhookEvent {
   object: string;
 }
 
+
 export async function POST(req: NextRequest) {
   // Verify webhook signature
   if (!WEBHOOK_SECRET) {
@@ -40,10 +44,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
+
   const payload = await req.text();
   const svixId = req.headers.get("svix-id");
   const svixTimestamp = req.headers.get("svix-timestamp");
   const svixSignature = req.headers.get("svix-signature");
+
 
   if (!svixId || !svixTimestamp || !svixSignature) {
     return NextResponse.json(
@@ -52,7 +58,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+
   const wh = new Webhook(WEBHOOK_SECRET);
+
 
   let event: ClerkWebhookEvent;
   try {
@@ -69,7 +77,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+
   const { type, data } = event;
+
 
   try {
     switch (type) {
@@ -77,13 +87,16 @@ export async function POST(req: NextRequest) {
         await handleUserCreated(data);
         break;
 
+
       case "user.updated":
         await handleUserUpdated(data);
         break;
 
+
       default:
         // Unhandled event — silently ignore
     }
+
 
     return NextResponse.json({ success: true, type });
   } catch (error) {
@@ -95,18 +108,22 @@ export async function POST(req: NextRequest) {
   }
 }
 
+
 async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   const email = data.email_addresses.find(
     (e: any) => e.id === data.primary_email_address_id
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
+
   // Check if user already exists (idempotency)
   const existingUser = await prisma.user.findUnique({
     where: { clerkId: data.id },
   });
 
+
   if (existingUser) return;
+
 
   // Developer emails for full access (configurable via env var)
   const DEVELOPER_EMAILS = (process.env.DEVELOPER_EMAILS || 'helloautomagikal@gmail.com,morphylee22@gmail.com')
@@ -114,11 +131,13 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     .map((e) => e.trim().toLowerCase());
   const isDeveloper = DEVELOPER_EMAILS.includes(email.toLowerCase());
 
+
   // Check if email is already verified
   const primaryEmail = data.email_addresses.find(
     (e) => e.id === data.primary_email_address_id
   );
   const emailVerified = primaryEmail?.verification?.status === 'verified';
+
 
   // Create user
   const user = await prisma.user.create({
@@ -132,6 +151,7 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     },
   });
 
+
   // Create subscription
   await prisma.subscription.create({
     data: {
@@ -141,10 +161,12 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     },
   });
 
+
   // Create usage record
   await prisma.usage.create({
     data: { userId: user.id },
   });
+
 
   // Sync to Zoho CRM (fire-and-forget — non-blocking)
   syncUserToCRM({
@@ -157,11 +179,13 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
   });
 
+
   // If email is already verified (e.g., Google SSO), trigger welcome email
   if (emailVerified) {
     await sendWelcomeEmail({ email, firstName: data.first_name });
   }
 }
+
 
 async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   const email = data.email_addresses.find(
@@ -169,10 +193,12 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
+
   // Get existing user to compare email verification status
   const existingUser = await prisma.user.findUnique({
     where: { clerkId: data.id },
   });
+
 
   // Check email verification status
   const primaryEmail = data.email_addresses.find(
@@ -180,10 +206,12 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   );
   const emailVerified = primaryEmail?.verification?.status === 'verified';
 
+
   // Detect if email was just verified
   const wasJustVerified = existingUser &&
     !existingUser.emailVerified &&
     emailVerified;
+
 
   // Build update data with only non-null fields from Clerk
   const updateData: Record<string, any> = {
@@ -197,11 +225,13 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   if (data.last_name != null) updateData.lastName = data.last_name;
   if (data.image_url != null) updateData.avatarUrl = data.image_url;
 
+
   // Update user
   await prisma.user.update({
     where: { clerkId: data.id },
     data: updateData,
   });
+
 
   // If email was just verified, trigger welcome email
   if (wasJustVerified) {

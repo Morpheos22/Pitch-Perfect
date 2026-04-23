@@ -2,22 +2,27 @@
 // POST /api/webhooks/lemonsqueezy
 // Handles LemonSqueezy (Merchant of Record) payment callbacks for international customers
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
 import { getPlanFromProduct, getModuleCycles } from '@/lib/payment-service';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
     const signature = request.headers.get('x-signature') || '';
 
+
     // Parse and verify webhook
     const { valid, event, data } = parseWebhookPayload('lemonsqueezy', body, signature);
+
 
     if (!valid) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
+
 
     // Handle order completed event
     if (event === 'order_created' || event === 'order_completed') {
@@ -25,42 +30,52 @@ export async function POST(request: NextRequest) {
       const orderId = order.id as string;
       const orderAttributes = order.attributes as Record<string, unknown>;
 
+
       // Check if order is paid
       if (orderAttributes.status !== 'paid') {
         return NextResponse.json({ received: true, status: 'not_paid' });
       }
 
+
       // Extract custom data — DO NOT trust client-supplied userId
       const customData = (orderAttributes.custom_data as Record<string, unknown>) || {};
       const productId = customData.productId as string;
+
 
       if (!productId) {
         return NextResponse.json({ error: 'Missing product ID' }, { status: 400 });
       }
 
+
       // Verify payment with LemonSqueezy API
       const paymentResult = await verifyPayment('lemonsqueezy', orderId);
+
 
       if (!paymentResult.success) {
         return NextResponse.json({ error: 'Payment not successful' }, { status: 400 });
       }
+
 
       // Look up user by customer email (from LemonSqueezy, not client-supplied)
       const customerEmail = orderAttributes.user_email as string
         || orderAttributes.customer_email as string
         || orderAttributes.email as string;
 
+
       if (!customerEmail) {
         return NextResponse.json({ error: 'Customer email not found in order' }, { status: 400 });
       }
+
 
       const user = await prisma.user.findFirst({
         where: { email: customerEmail },
       });
 
+
       if (!user) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
+
 
       // Create transaction record if not exists (idempotent)
       let txId: string;
@@ -70,6 +85,7 @@ export async function POST(request: NextRequest) {
           provider: 'LEMONSQUEEZY',
         },
       });
+
 
       if (existingTx) {
         txId = existingTx.id;
@@ -89,6 +105,7 @@ export async function POST(request: NextRequest) {
         txId = newTx.id;
       }
 
+
       // Create module access if not exists (atomic upsert to prevent TOCTOU race condition)
       await prisma.moduleAccess.upsert({
         where: { transactionId: txId },
@@ -106,6 +123,7 @@ export async function POST(request: NextRequest) {
         update: {}, // no-op if already exists
       });
 
+
       // Update user subscription
       await prisma.subscription.upsert({
         where: { userId: user.id },
@@ -121,11 +139,14 @@ export async function POST(request: NextRequest) {
         },
       });
 
+
       return NextResponse.json({ success: true });
     }
 
+
     // Acknowledge other events
     return NextResponse.json({ received: true, event });
+
 
   } catch (error) {
     console.error('LemonSqueezy webhook error:', error);

@@ -6,11 +6,14 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
 
+
 // POST /api/coach/full/iterate
 // Creates a new version of a full pitch session analysis, incorporating the previous analysis.
+
 
 async function handlePost(request: NextRequest) {
   try {
@@ -19,20 +22,24 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e4');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const body = await request.json();
     const parsed = fullPitchIterateSchema.safeParse(body);
@@ -46,22 +53,27 @@ async function handlePost(request: NextRequest) {
     const parentId = validatedData.id;
     const { videoUrl, duration } = body;
 
+
     if (!parentId) {
       return NextResponse.json({ error: "Parent session ID is required" }, { status: 400 });
     }
+
 
     // Fetch the parent session
     const parentSession = await prisma.fullPitchSession.findFirst({
       where: { id: parentId, userId: user.id },
     });
 
+
     if (!parentSession) {
       return NextResponse.json({ error: "Parent session not found" }, { status: 404 });
     }
 
+
     // Use new video URL or fall back to parent's video
     const analysisVideoUrl = videoUrl || parentSession.videoUrl;
     const analysisDuration = duration || parentSession.duration;
+
 
     if (!analysisVideoUrl) {
       return NextResponse.json(
@@ -69,6 +81,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // C8: SSRF prevention — validate video URL host (same as parent route)
     if (!analysisVideoUrl.startsWith('mock://')) {
@@ -96,6 +109,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // M2: Validate duration bounds (same as parent route)
     if (!Number.isFinite(analysisDuration) || analysisDuration < 180 || analysisDuration > 3600) {
       return NextResponse.json(
@@ -103,6 +117,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Get parent deck analysis if available
     let deckAnalysis;
@@ -114,6 +129,7 @@ async function handlePost(request: NextRequest) {
         deckAnalysis = parentDeck.rawAnalysis as any;
       }
     }
+
 
     // Run AI full pitch analysis with previous analysis context for iteration awareness
     const previousAnalysis = {
@@ -144,6 +160,7 @@ async function handlePost(request: NextRequest) {
       }
     } catch { /* URL parse error, use as-is */ }
 
+
     const analysis = await analyzeFullPitchSession(
       aiVideoUrl,
       analysisDuration,
@@ -151,11 +168,13 @@ async function handlePost(request: NextRequest) {
       previousAnalysis
     );
 
+
     // ── Score consistency validation (same as parent route) ──
     const clampScore = (v: number | null | undefined): number => {
       if (v == null || !Number.isFinite(v)) return 0;
       return Math.max(0, Math.min(100, Math.round(v)));
     };
+
 
     analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
     analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
@@ -164,6 +183,7 @@ async function handlePost(request: NextRequest) {
     analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
     analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
     analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+
 
     if (analysis.contentScores) {
       for (const key of Object.keys(analysis.contentScores) as (keyof typeof analysis.contentScores)[]) {
@@ -176,11 +196,13 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
     if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
       console.warn(`[E4-iterate] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
       analysis.investorReadinessLevel = 'NEEDS_WORK';
     }
+
 
     const subScoreAvg = (
       analysis.problemSolutionFit +
@@ -195,6 +217,7 @@ async function handlePost(request: NextRequest) {
       console.warn(`[E4-iterate] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
     }
 
+
     // H8: Atomic version numbering — query DB max instead of trusting client
     const latestVersion = await prisma.fullPitchSession.findFirst({
       where: { parentFullSessionId: parentId, userId: user.id },
@@ -202,6 +225,7 @@ async function handlePost(request: NextRequest) {
       select: { version: true },
     });
     const nextVersion = (latestVersion?.version || parentSession.version || 1) + 1;
+
 
     // Store as new session with parent reference
     const savedSession = await prisma.fullPitchSession.create({
@@ -240,7 +264,9 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
+
 
     return NextResponse.json({
       success: true,
@@ -260,6 +286,7 @@ async function handlePost(request: NextRequest) {
     );
   }
 }
+
 
 export const POST = withRateLimit(handlePost, {
   limit: 5,

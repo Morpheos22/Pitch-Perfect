@@ -8,34 +8,42 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
 
+
 // E4: Full Pitch Session API
 // Comprehensive analysis combining deck and 30-min video using REAL AI
+
 
 async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e4');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const formData = await request.formData();
     const videoUrl = formData.get("videoUrl") as string;
@@ -48,6 +56,7 @@ async function handlePost(request: NextRequest) {
     // Parse duration (default to 15 minutes if not provided)
     const duration = durationStr ? parseInt(durationStr, 10) : 900;
 
+
     // Must have video URL
     if (!videoUrl && !videoFile) {
       return NextResponse.json(
@@ -55,6 +64,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     let analysisVideoUrl = videoUrl;
     
@@ -80,6 +90,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Validate duration for full pitch (guard against NaN / non-finite values)
     if (!Number.isFinite(duration) || duration < 180) {
       return NextResponse.json(
@@ -88,12 +99,14 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     if (duration > 3600) {
       return NextResponse.json(
         { error: "Video too long. Maximum duration is 60 minutes." },
         { status: 400 }
       );
     }
+
 
     // SSRF prevention: validate video URL host
     if (analysisVideoUrl) {
@@ -128,11 +141,14 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Get deck analysis if provided
     let deckAnalysis: DeckAnalysisResult | undefined;
 
+
     const deckFileUrl = formData.get("deckFileUrl") as string | null;
     const deckFileName = formData.get("deckFileName") as string | null;
+
 
     if (deckFileUrl && deckFileName) {
       // NEW: Blob upload flow — extract deck text from URL
@@ -208,15 +224,18 @@ async function handlePost(request: NextRequest) {
         where: { id: existingDeckId, userId: user.id },
       });
 
+
       if (existingDeck && existingDeck.rawAnalysis) {
         deckAnalysis = existingDeck.rawAnalysis as unknown as DeckAnalysisResult;
       }
     }
 
+
     // Run REAL AI full pitch analysis
     if (!analysisVideoUrl) {
       return NextResponse.json({ error: "Video URL is required for analysis" }, { status: 400 });
     }
+
 
     // Private blob URLs need conversion to data URI for AI gateway access
     // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
@@ -234,6 +253,7 @@ async function handlePost(request: NextRequest) {
       }
     } catch { /* URL parse error, use as-is */ }
 
+
     let analysis: FullPitchAnalysisResult;
     try {
       analysis = await analyzeFullPitchSession(aiVideoUrl, duration, deckAnalysis);
@@ -247,12 +267,14 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     // ── Score consistency validation ──
     // Clamp all numeric scores to 0-100 to guard against AI hallucinations
     const clampScore = (v: number | null | undefined): number => {
       if (v == null || !Number.isFinite(v)) return 0;
       return Math.max(0, Math.min(100, Math.round(v)));
     };
+
 
     analysis.problemSolutionFit = clampScore(analysis.problemSolutionFit);
     analysis.marketOpportunity = clampScore(analysis.marketOpportunity);
@@ -261,6 +283,7 @@ async function handlePost(request: NextRequest) {
     analysis.tractionMilestones = clampScore(analysis.tractionMilestones);
     analysis.deliveryPresence = clampScore(analysis.deliveryPresence);
     analysis.overallReadinessScore = clampScore(analysis.overallReadinessScore);
+
 
     // Clamp nested score objects
     if (analysis.contentScores) {
@@ -274,12 +297,14 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Validate investorReadinessLevel enum
     const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
     if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
       console.warn(`[E4] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
       analysis.investorReadinessLevel = 'NEEDS_WORK';
     }
+
 
     // Consistency check: overall vs sub-scores
     const subScoreAvg = (
@@ -294,6 +319,7 @@ async function handlePost(request: NextRequest) {
     if (overallDelta > 30) {
       console.warn(`[E4] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
     }
+
 
     // Store analysis in database
     const savedSession = await prisma.fullPitchSession.create({
@@ -330,7 +356,9 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
+
 
     // Return real result
     return NextResponse.json({
@@ -367,12 +395,14 @@ async function handlePost(request: NextRequest) {
   }
 }
 
+
 export const POST = withRateLimit(handlePost, {
   limit: 5,
   windowMs: 60_000,
   identifierType: 'both',
   name: 'AI Analysis',
 });
+
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -381,14 +411,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     const body = await request.json();
     const parsed = fullPitchIterateSchema.safeParse(body);
@@ -401,17 +434,21 @@ export async function PATCH(request: NextRequest) {
     const validatedData = parsed.data;
     const notes = validatedData.notes;
 
+
     if (!validatedData.id) {
       return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
     }
 
+
     const updateData: Record<string, unknown> = {};
     if (notes !== undefined) updateData.notes = notes;
+
 
     const updated = await prisma.fullPitchSession.update({
       where: { id: validatedData.id, userId: user.id },
       data: updateData,
     });
+
 
     return NextResponse.json({ success: true, notes: updated.notes });
   } catch (error) {
@@ -420,6 +457,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+
 export async function DELETE(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -427,25 +465,31 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("id");
+
 
     if (!sessionId) {
       return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
     }
 
+
     await prisma.fullPitchSession.delete({
       where: { id: sessionId, userId: user.id },
     });
+
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -454,25 +498,31 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("id");
+
 
     // Single session lookup by ID (for session detail page)
     if (sessionId) {
@@ -480,9 +530,11 @@ export async function GET(request: NextRequest) {
         where: { id: sessionId, userId: user.id },
       });
 
+
       if (!session) {
         return NextResponse.json({ error: "Session not found" }, { status: 404 });
       }
+
 
       return NextResponse.json({
         id: session.id,
@@ -513,12 +565,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // List all sessions (for history page)
     const sessions = await prisma.fullPitchSession.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+
 
     return NextResponse.json({
       success: true,

@@ -58,16 +58,18 @@ import { homedir } from 'os';
 
 const DEFAULT_GATEWAY_URL = 'https://z.ai/model-api';
 
-let _resolvedConfig: {
+type ResolvedConfig = {
   baseUrl: string;
   apiKey: string;
   token: string;
   userId: string;
   chatId: string;
   source: string;
-} | null = null;
+};
 
-function getResolvedConfig() {
+let _resolvedConfig: ResolvedConfig | null = null;
+
+function getResolvedConfig(): ResolvedConfig {
   // ── Cache: reuse if env vars haven't changed since last resolution ──
   // Previous implementation either cached forever (stale credentials) or
   // re-read .z-ai-config from disk on every call (disk thrashing).
@@ -105,17 +107,20 @@ function getResolvedConfig() {
     }
   }
 
-  _resolvedConfig = {
+  const resolved: ResolvedConfig = {
     baseUrl: process.env.ZAI_BASE_URL || fileConfig.baseUrl || DEFAULT_GATEWAY_URL,
     apiKey: process.env.ZAI_API_KEY || fileConfig.apiKey || '',
     token: process.env.ZAI_TOKEN || fileConfig.token || '',
     userId: process.env.ZAI_USER_ID || fileConfig.userId || '',
     chatId: process.env.ZAI_CHAT_ID || fileConfig.chatId || '',
     source: configSource,
-    _envSnapshot: currentEnvSnapshot,
-  } as any;
+  };
 
-  return _resolvedConfig;
+  // Cache for next call (invalidate when env snapshot changes)
+  _resolvedConfig = resolved;
+  (resolved as any)._envSnapshot = currentEnvSnapshot;
+
+  return resolved;
 }
 
 // NOTE: Gateway credentials are resolved LIVE on each call via getResolvedConfig().
@@ -551,7 +556,7 @@ export async function executeWithFallback(
   // and all vision models to glm-4.6v. Retrying the same model name is
   // wasteful since it hits the identical server endpoint. Only try each unique
   // model name once per strategy.
-  const uniqueModels = [...new Set(config.models)];
+  const uniqueModels = Array.from(new Set(config.models));
 
   // ── STRATEGY 1: Try SDK with model fallback chain ──
   for (const model of uniqueModels) {

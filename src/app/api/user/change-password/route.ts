@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { changePasswordSchema } from '@/lib/validation/schemas';
+export const dynamic = 'force-dynamic';
 
 // POST /api/user/change-password
 // Proxies password change to Clerk Backend API to avoid CORS issues
@@ -10,9 +11,11 @@ export async function POST(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const body = await request.json();
     const parsed = changePasswordSchema.safeParse(body);
@@ -25,12 +28,14 @@ export async function POST(request: NextRequest) {
     const validatedData = parsed.data;
     const { currentPassword, newPassword } = validatedData;
 
+
     if (!currentPassword || !newPassword) {
       return NextResponse.json(
         { error: "Current password and new password are required." },
         { status: 400 }
       );
     }
+
 
     if (newPassword.length < 8) {
       return NextResponse.json(
@@ -39,6 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     if (newPassword.length > 128) {
       return NextResponse.json(
         { error: "New password is too long (max 128 characters)." },
@@ -46,10 +52,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     // Get the session token from the client and forward it to Clerk's API
     // This keeps the Clerk API call server-side to avoid CORS issues
     const authHeader = request.headers.get("authorization");
     const clientToken = authHeader?.replace("Bearer ", "");
+
 
     if (!clientToken) {
       return NextResponse.json(
@@ -57,6 +65,7 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
 
     const res = await fetch("https://api.clerk.com/v1/me/password", {
       method: "POST",
@@ -70,13 +79,16 @@ export async function POST(request: NextRequest) {
       }),
     });
 
+
     if (res.ok) {
       return NextResponse.json({ success: true });
     }
 
+
     const data = await res.json().catch(() => ({}));
     const clerkError = data?.errors?.[0];
     const message = clerkError?.long_message || clerkError?.message || "Failed to change password.";
+
 
     return NextResponse.json(
       { error: message },

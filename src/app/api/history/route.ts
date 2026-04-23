@@ -1,9 +1,11 @@
 // API Route: Get user session history
 // GET /api/history
 
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateUser } from '@/lib/db-operations';
 import { prisma } from '@/lib/db';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,8 +18,10 @@ export async function GET(request: NextRequest) {
     let offset = parseInt(searchParams.get('offset') || '0', 10);
     if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
+
     // Build the response with explicit types
     const response: Record<string, unknown[]> = {};
+
 
     // Fetch data based on type
     if (!type || type === 'deck') {
@@ -37,6 +41,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     if (!type || type === 'script') {
       response.scripts = await prisma.pitchScript.findMany({
         where: { userId: user.id },
@@ -54,6 +59,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+
 
     if (!type || type === 'video') {
       response.videos = await prisma.pitchVideo.findMany({
@@ -73,6 +79,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+
 
     if (!type || type === 'full') {
       response.fullSessions = await prisma.fullPitchSession.findMany({
@@ -99,6 +106,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // Get total counts
     const counts = {
       decks: type && type !== 'deck' ? 0 : await prisma.pitchDeck.count({ where: { userId: user.id } }),
@@ -106,6 +114,7 @@ export async function GET(request: NextRequest) {
       videos: type && type !== 'video' ? 0 : await prisma.pitchVideo.count({ where: { userId: user.id } }),
       fullSessions: type && type !== 'full' ? 0 : await prisma.fullPitchSession.count({ where: { userId: user.id } }),
     };
+
 
     return NextResponse.json({
       success: true,
@@ -117,6 +126,7 @@ export async function GET(request: NextRequest) {
         hasMore: Object.values(response).some(arr => arr && arr.length === limit),
       },
     });
+
 
   } catch (error) {
     console.error('History API error:', error);

@@ -7,34 +7,42 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { liveNotesSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
 
+
 // E3: Live Elevator Pitch Coach API
 // Analyzes video recordings for delivery and body language using REAL AI
+
 
 async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e3');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const formData = await request.formData();
     const videoUrl = formData.get("videoUrl") as string;
@@ -45,6 +53,7 @@ async function handlePost(request: NextRequest) {
     // Parse duration (default to 60 seconds if not provided)
     const duration = durationStr ? parseInt(durationStr, 10) : 60;
 
+
     // Must have either video URL or file
     if (!videoUrl && !videoFile) {
       return NextResponse.json(
@@ -52,6 +61,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Validate video URL if provided
     let analysisVideoUrl = videoUrl;
@@ -78,6 +88,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Validate duration (guard against NaN / non-finite values)
     if (!Number.isFinite(duration) || duration < 10) {
       return NextResponse.json(
@@ -86,6 +97,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     if (duration > 180) {
       return NextResponse.json(
         { error: "Video too long for elevator pitch analysis" },
@@ -93,12 +105,14 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     // SSRF prevention: validate video URL host
     if (analysisVideoUrl) {
       // Disallow mock storage URLs entirely
       if (analysisVideoUrl.startsWith('mock://')) {
         return NextResponse.json({ error: 'Mock storage URLs are not permitted.' }, { status: 400 });
       }
+
 
       const allowedVideoHosts = [
         'workdrive.zoho.com', 'zoho.com',
@@ -124,10 +138,12 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Run REAL AI video analysis
     if (!analysisVideoUrl) {
       return NextResponse.json({ error: "Video URL is required for analysis" }, { status: 400 });
     }
+
 
     // Private blob URLs need conversion to data URI for AI gateway access
     // Note: Video data URIs can be large, but the AI gateway cannot fetch private blobs
@@ -146,6 +162,7 @@ async function handlePost(request: NextRequest) {
       }
     } catch { /* URL parse error, use as-is */ }
 
+
     let analysis: VideoAnalysisResult;
     try {
       analysis = await analyzePitchVideo(aiVideoUrl, duration);
@@ -158,6 +175,7 @@ async function handlePost(request: NextRequest) {
         { status: 503 }
       );
     }
+
 
     // Store analysis in database - videoId is required in schema
     const savedVideo = await prisma.pitchVideo.create({
@@ -189,7 +207,9 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
+
 
     // Return real result
     return NextResponse.json({
@@ -227,6 +247,7 @@ async function handlePost(request: NextRequest) {
   }
 }
 
+
 export const POST = withRateLimit(handlePost, {
   limit: 5,
   windowMs: 60_000,
@@ -234,25 +255,31 @@ export const POST = withRateLimit(handlePost, {
   name: 'AI Analysis',
 });
 
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get("id");
+
 
     // Single video lookup by ID (for session detail page)
     if (videoId) {
@@ -260,9 +287,11 @@ export async function GET(request: NextRequest) {
         where: { id: videoId, userId: user.id },
       });
 
+
       if (!video) {
         return NextResponse.json({ error: "Video session not found" }, { status: 404 });
       }
+
 
       return NextResponse.json({
         id: video.id,
@@ -293,12 +322,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // List all videos (for history page)
     const videos = await prisma.pitchVideo.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
+
 
     return NextResponse.json({
       success: true,
@@ -313,23 +344,28 @@ export async function GET(request: NextRequest) {
   }
 }
 
+
 // PATCH: Update notes on a video session (auto-save from session detail page)
 export async function PATCH(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     const body = await request.json();
     const parsed = liveNotesSchema.safeParse(body);
@@ -341,12 +377,14 @@ export async function PATCH(request: NextRequest) {
     }
     const validatedData = parsed.data;
 
+
     if (!validatedData.id) {
       return NextResponse.json(
         { error: "Session id is required" },
         { status: 400 }
       );
     }
+
 
     // Only allow updating the notes field — other fields are immutable after analysis
     const result = await prisma.pitchVideo.updateMany({
@@ -356,12 +394,14 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
+
     if (result.count === 0) {
       return NextResponse.json(
         { error: "Session not found or not owned by user" },
         { status: 404 }
       );
     }
+
 
     return NextResponse.json({ success: true, id: validatedData.id });
   } catch (error) {
@@ -373,26 +413,32 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+
 // DELETE: Delete a video session (cascade deletes related data via Prisma schema)
 export async function DELETE(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get("id");
+
 
     if (!videoId) {
       return NextResponse.json(
@@ -401,11 +447,13 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+
     // Verify ownership before deleting
     const existing = await prisma.pitchVideo.findFirst({
       where: { id: videoId, userId: user.id },
       select: { id: true },
     });
+
 
     if (!existing) {
       return NextResponse.json(
@@ -414,9 +462,11 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+
     await prisma.pitchVideo.delete({
       where: { id: existing.id },
     });
+
 
     return NextResponse.json({ success: true, id: videoId });
   } catch (error) {

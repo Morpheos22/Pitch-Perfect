@@ -7,34 +7,42 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
+
 // E1: Pitch Deck Analyser API
 // Analyzes uploaded pitch deck for content and visual quality using REAL AI
+
 
 async function handlePost(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e1');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -44,6 +52,7 @@ async function handlePost(request: NextRequest) {
     const sessionName = formData.get("sessionName") as string | null;
     const fileSizeStr = formData.get("fileSize") as string | null;
 
+
     console.log("[E1] Request received:", {
       hasFile: !!file,
       fileUrl: fileUrl ? fileUrl.substring(0, 80) + "..." : null,
@@ -52,12 +61,14 @@ async function handlePost(request: NextRequest) {
       hasContent: !!deckContent,
     });
 
+
     if (!file && !deckContent && !fileUrl) {
       return NextResponse.json(
         { error: "Either file, fileUrl, or content is required" },
         { status: 400 }
       );
     }
+
 
     // Validate file type for both direct uploads and blob URLs
     const allowedExtensions = [".pdf", ".pptx", ".ppt", ".txt"];
@@ -72,6 +83,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Validate file if provided (direct upload)
     if (file) {
       // Vercel Hobby body limit guard
@@ -84,9 +96,11 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Get content for analysis
     // Priority: deckContent > fileUrl (Blob upload) > file (legacy upload)
     let analysisContent = deckContent || "";
+
 
     if (!analysisContent && fileUrl && fileName) {
       // NEW: Blob upload flow — fetch from URL, extract text
@@ -114,6 +128,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     if (!analysisContent && file && !deckContent) {
       // LEGACY: Direct file upload (for backward compat / small files)
       console.warn("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
@@ -132,11 +147,13 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Truncate if content exceeds maximum length
     const MAX_CONTENT_LENGTH = 50000;
     if (analysisContent.length > MAX_CONTENT_LENGTH) {
       analysisContent = analysisContent.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated at 50,000 characters]";
     }
+
 
     if (!analysisContent || analysisContent.length < 50) {
       console.error("[E1] Insufficient content:", { length: analysisContent.length, source: fileUrl ? 'blob' : file ? 'direct' : 'content' });
@@ -145,6 +162,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Run AI analyses in parallel: content (text) + visual (vision)
     // Visual analysis requires a URL the AI gateway can fetch, or a data URI.
@@ -193,7 +211,9 @@ async function handlePost(request: NextRequest) {
     }
     const hasVisualInput = !!visualUrl;
 
+
     console.log("[E1] Starting AI analysis:", { contentLength: analysisContent.length, hasVisualInput, visualSource: visualUrl ? 'provided' : 'none' });
+
 
     let analysis: DeckAnalysisResult;
     try {
@@ -204,10 +224,12 @@ async function handlePost(request: NextRequest) {
           : Promise.resolve(null),
       ]);
 
+
       if (contentResult.status === 'rejected') {
         throw contentResult.reason;
       }
       analysis = contentResult.value;
+
 
       // Merge visual scores from vision model if available
       if (visualResult.status === 'fulfilled' && visualResult.value) {
@@ -218,6 +240,7 @@ async function handlePost(request: NextRequest) {
         analysis.colorSchemeScore = visual.colorSchemeScore;
         analysis.typographyScore = visual.typographyScore;
 
+
         // Enrich feedback with visual-specific insights
         if (visual.visualWeaknesses.length > 0) {
           analysis.weaknesses = [...analysis.weaknesses, ...visual.visualWeaknesses.slice(0, 2)];
@@ -225,6 +248,7 @@ async function handlePost(request: NextRequest) {
         if (visual.visualRecommendations.length > 0) {
           analysis.recommendations = [...analysis.recommendations, ...visual.visualRecommendations.slice(0, 2)];
         }
+
 
         console.warn("[E1] Visual audit merged from vision model");
       } else if (visualResult.status === 'rejected') {
@@ -241,6 +265,7 @@ async function handlePost(request: NextRequest) {
         { status: 503 }
       );
     }
+
 
     // Store analysis in database
     const savedDeck = await prisma.pitchDeck.create({
@@ -273,8 +298,10 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // Usage counter is now managed atomically inside requireModuleAccess().
     // No separate increment needed here — prevents dual-counting race condition.
+
 
     // Return real result
     return NextResponse.json({
@@ -309,6 +336,7 @@ async function handlePost(request: NextRequest) {
     console.error(`[E1] Error message: ${msg}`);
     console.error(`[E1] Error stack:`, error?.stack?.substring(0, 500));
 
+
     if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("timeout")) {
       return NextResponse.json(
         { error: "Network error — could not reach AI service. Please try again in a moment." },
@@ -342,12 +370,14 @@ async function handlePost(request: NextRequest) {
   }
 }
 
+
 export const POST = withRateLimit(handlePost, {
   limit: 5,
   windowMs: 60_000,
   identifierType: 'both',
   name: 'AI Analysis',
 });
+
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -356,14 +386,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     const body = await request.json();
     const parsed = deckIterateSchema.safeParse(body);
@@ -376,17 +409,21 @@ export async function PATCH(request: NextRequest) {
     const validatedData = parsed.data;
     const notes = validatedData.notes;
 
+
     if (!validatedData.id) {
       return NextResponse.json({ error: "Deck ID is required" }, { status: 400 });
     }
 
+
     const updateData: Record<string, unknown> = {};
     if (notes !== undefined) updateData.notes = notes;
+
 
     const updated = await prisma.pitchDeck.update({
       where: { id: validatedData.id, userId: user.id },
       data: updateData,
     });
+
 
     return NextResponse.json({ success: true, notes: updated.notes });
   } catch (error: any) {
@@ -398,6 +435,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+
 export async function DELETE(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
@@ -405,25 +443,31 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const deckId = searchParams.get("id");
+
 
     if (!deckId) {
       return NextResponse.json({ error: "Deck ID is required" }, { status: 400 });
     }
 
+
     await prisma.pitchDeck.delete({
       where: { id: deckId, userId: user.id },
     });
+
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -435,25 +479,31 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+
 export async function GET(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
+
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
 
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+
     const { searchParams } = new URL(request.url);
     const deckId = searchParams.get("id");
+
 
     // Single deck lookup by ID (for session detail page)
     if (deckId) {
@@ -461,14 +511,17 @@ export async function GET(request: NextRequest) {
         where: { id: deckId, userId: user.id },
       });
 
+
       if (!deck) {
         return NextResponse.json({ error: "Deck not found" }, { status: 404 });
       }
+
 
       // Transform to match the session page's expected format
       const strengths = Array.isArray(deck.strengths) ? deck.strengths : [];
       const weaknesses = Array.isArray(deck.weaknesses) ? deck.weaknesses : [];
       const recommendations = Array.isArray(deck.recommendations) ? deck.recommendations : [];
+
 
       return NextResponse.json({
         id: deck.id,
@@ -506,6 +559,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+
     // List all decks (for history page) — exclude rawAnalysis to reduce payload size
     const decks = await prisma.pitchDeck.findMany({
       where: { userId: user.id },
@@ -525,6 +579,7 @@ export async function GET(request: NextRequest) {
         // Explicitly exclude rawAnalysis — not needed for list views
       },
     });
+
 
     return NextResponse.json({
       success: true,

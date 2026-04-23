@@ -1,49 +1,62 @@
 // Prisma Client Singleton
 // Prevents multiple Prisma Client instances in development
 //
-// IMPORTANT: Some environments (e.g., dev containers) may set DATABASE_URL
-// as a system env var pointing to an old SQLite path. This module detects
-// that scenario and throws a clear error rather than falling back to
-// hardcoded credentials (which should NEVER be committed to source control).
-//
-// On Vercel, env vars are set correctly via the dashboard, so this guard
-// is a no-op in production deployments.
+// IMPORTANT: Database URL validation is DEFERRED to first access.
+// Module-level throws break Next.js build (route collection phase)
+// because env vars aren't available at build time on Vercel.
+// The validation runs lazily on the first prisma call instead.
 
 import { PrismaClient } from '@prisma/client';
 
-// ── Env override guard ──
-// If DATABASE_URL points to SQLite (file:), the environment is misconfigured.
-// We do NOT fall back to hardcoded credentials — that is a security violation.
-if (
-  process.env.DATABASE_URL?.startsWith('file:') ||
-  !process.env.DATABASE_URL
-) {
-  throw new Error(
-    'DATABASE_URL is missing or points to SQLite. ' +
-    'Set DATABASE_URL to your PostgreSQL connection string in your environment variables. ' +
-    'Never commit database credentials to source control.'
-  );
-}
-
-if (
-  process.env.DIRECT_URL?.startsWith('file:') ||
-  !process.env.DIRECT_URL
-) {
-  throw new Error(
-    'DIRECT_URL is missing or points to SQLite. ' +
-    'Set DIRECT_URL to your direct PostgreSQL connection string in your environment variables. ' +
-    'Never commit database credentials to source control.'
-  );
-}
-
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  __prismaClient: PrismaClient | undefined;
 };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  });
+/**
+ * Lazily-initialised Prisma Client singleton.
+ *
+ * Previous implementation threw at module-evaluation time if DATABASE_URL
+ * was missing/SQLite. That broke the Next.js build because Vercel doesn't
+ * inject env vars until runtime, not build time. Now the client is created
+ * on first property access, so the build succeeds and the error only fires
+ * if the route is actually called without proper env vars.
+ */
+function getPrismaClient(): PrismaClient {
+  if (!globalForPrisma.__prismaClient) {
+    // ── Env override guard (lazy — only runs at first access) ──
+    if (
+      process.env.DATABASE_URL?.startsWith('file:') ||
+      !process.env.DATABASE_URL
+    ) {
+      throw new Error(
+        'DATABASE_URL is missing or points to SQLite. ' +
+        'Set DATABASE_URL to your PostgreSQL connection string in your environment variables. ' +
+        'Never commit database credentials to source control.'
+      );
+    }
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+    if (
+      process.env.DIRECT_URL?.startsWith('file:') ||
+      !process.env.DIRECT_URL
+    ) {
+      throw new Error(
+        'DIRECT_URL is missing or points to SQLite. ' +
+        'Set DIRECT_URL to your direct PostgreSQL connection string in your environment variables. ' +
+        'Never commit database credentials to source control.'
+      );
+    }
+
+    globalForPrisma.__prismaClient = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    });
+  }
+  return globalForPrisma.__prismaClient;
+}
+
+// Export a Proxy so that `prisma.user.findFirst()` works transparently
+// while still deferring client creation until first property access.
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop: string | symbol) {
+    return Reflect.get(getPrismaClient(), prop);
+  },
+});

@@ -7,11 +7,14 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
+
 // POST /api/coach/deck/iterate
 // Creates a new version of a pitch deck analysis, incorporating the previous analysis for iteration context.
+
 
 async function handlePost(request: NextRequest) {
   try {
@@ -20,20 +23,24 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e1');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const body = await request.json();
     const parsed = deckIterateSchema.safeParse(body);
@@ -47,21 +54,26 @@ async function handlePost(request: NextRequest) {
     const parentId = validatedData.id;
     const { fileUrl, fileName, file, content } = body;
 
+
     if (!parentId) {
       return NextResponse.json({ error: "Parent deck ID is required" }, { status: 400 });
     }
+
 
     // Fetch the parent deck analysis
     const parentDeck = await prisma.pitchDeck.findFirst({
       where: { id: parentId, userId: user.id },
     });
 
+
     if (!parentDeck) {
       return NextResponse.json({ error: "Parent deck not found" }, { status: 404 });
     }
 
+
     // Determine the content source for the new analysis
     let analysisContent = content || "";
+
 
     if (!analysisContent && fileUrl && fileName) {
       // Blob upload flow — SSRF prevention: validate file URL host
@@ -85,6 +97,7 @@ async function handlePost(request: NextRequest) {
         );
       }
     }
+
 
     if (!analysisContent && file) {
       // Legacy file upload (base64 or buffer — not typical for iterate, but supported)
@@ -111,6 +124,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // If no new content provided, reuse parent deck content (user may just want re-analysis with improved model)
     if (!analysisContent) {
       // If no new content provided, fetch parent's file URL and try to extract text
@@ -130,6 +144,7 @@ async function handlePost(request: NextRequest) {
         }
       }
 
+
       // If still no content, return error
       if (!analysisContent || analysisContent.length < 50) {
         return NextResponse.json(
@@ -139,11 +154,13 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Truncate if needed
     const MAX_CONTENT_LENGTH = 50000;
     if (analysisContent.length > MAX_CONTENT_LENGTH) {
       analysisContent = analysisContent.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated at 50,000 characters]";
     }
+
 
     if (analysisContent.length < 50) {
       return NextResponse.json(
@@ -151,6 +168,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Build previousAnalysis context from parent — use 0 fallback for null scores
     const n = (v: number | null | undefined, fallback = 0) => v ?? fallback;
@@ -168,6 +186,7 @@ async function handlePost(request: NextRequest) {
       weaknesses: parentDeck.weaknesses,
       recommendations: parentDeck.recommendations,
     };
+
 
     // Run analyses in parallel: content (text) + visual (vision if file URL available)
     // SSRF protection: only send known-safe storage URLs to the vision model.
@@ -210,15 +229,18 @@ async function handlePost(request: NextRequest) {
       visualRecommendations: undefined as string[] | undefined,
     };
 
+
     const [contentResult, visualResult] = await Promise.allSettled([
       analyzePitchDeck(analysisContent, previousAnalysis),
       safeVisualUrl ? analyzeDeckVisual(safeVisualUrl, previousVisualScores) : Promise.resolve(null),
     ]);
 
+
     if (contentResult.status === 'rejected') {
       throw contentResult.reason;
     }
     const analysis = contentResult.value;
+
 
     // Merge visual scores from vision model if available
     if (visualResult.status === 'fulfilled' && visualResult.value) {
@@ -236,6 +258,7 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // Determine version number — use max existing version to prevent race conditions
     const latestVersion = await prisma.pitchDeck.findFirst({
       where: { parentDeckId: parentId, userId: user.id },
@@ -244,6 +267,7 @@ async function handlePost(request: NextRequest) {
     });
     const parentVersion = parentDeck.version || 1;
     const nextVersion = Math.max(parentVersion, latestVersion?.version ?? 0) + 1;
+
 
     // Store as new deck with parent reference
     const savedDeck = await prisma.pitchDeck.create({
@@ -278,8 +302,10 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // Usage counter is now managed atomically inside requireModuleAccess().
     // No separate increment needed here — prevents dual-counting race condition.
+
 
     return NextResponse.json({
       success: true,
@@ -299,6 +325,7 @@ async function handlePost(request: NextRequest) {
     );
   }
 }
+
 
 export const POST = withRateLimit(handlePost, {
   limit: 5,

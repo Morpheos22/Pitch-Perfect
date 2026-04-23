@@ -6,11 +6,14 @@ import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
 import { withRateLimit } from "@/lib/rate-limit";
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
+
 // POST /api/coach/script/iterate
 // Creates a new version of a script analysis, incorporating the previous analysis for iteration context.
+
 
 async function handlePost(request: NextRequest) {
   try {
@@ -19,20 +22,24 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+
     const user = await prisma.user.findUnique({
       where: { clerkId },
       select: { id: true },
     });
 
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
 
     // ── Entitlement check ──
     const entitlement = await requireModuleAccess(user.id, 'e2');
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason }, { status: 403 });
     }
+
 
     const body = await request.json();
     const parsed = scriptIterateSchema.safeParse(body);
@@ -49,22 +56,27 @@ async function handlePost(request: NextRequest) {
     const fileUrl = validatedData.fileUrl;
     const fileName = validatedData.fileName;
 
+
     if (!parentId) {
       return NextResponse.json({ error: "Parent script ID is required" }, { status: 400 });
     }
+
 
     // Fetch the parent script
     const parentScript = await prisma.pitchScript.findFirst({
       where: { id: parentId, userId: user.id },
     });
 
+
     if (!parentScript) {
       return NextResponse.json({ error: "Parent script not found" }, { status: 404 });
     }
 
+
     // Determine script content and input type
     let scriptText = script || "";
     let detectedInputType: "TEXT" | "PDF" | "DOCX" = parentScript.inputType || "TEXT";
+
 
     if (!scriptText && fileUrl && fileName) {
       // Detect input type from file extension
@@ -89,10 +101,12 @@ async function handlePost(request: NextRequest) {
       }
     }
 
+
     // If no new script, use the parent's original text or rewritten version
     if (!scriptText) {
       scriptText = parentScript.rewrittenScript || parentScript.inputText || "";
     }
+
 
     if (!scriptText || scriptText.trim().length < 30) {
       return NextResponse.json(
@@ -101,6 +115,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
+
     const wordCount = scriptText.split(/\s+/).filter(Boolean).length;
     if (wordCount > 1000) {
       return NextResponse.json(
@@ -108,6 +123,7 @@ async function handlePost(request: NextRequest) {
         { status: 400 }
       );
     }
+
 
     // Build previousAnalysis context from parent (coerce null → defaults for type safety)
     const previousAnalysis = {
@@ -121,6 +137,7 @@ async function handlePost(request: NextRequest) {
       rewrittenScript: parentScript.rewrittenScript ?? undefined,
     } as any;
 
+
     // Run AI analysis with iteration context
     const analysis = await analyzePitchScript(
       scriptText,
@@ -129,6 +146,7 @@ async function handlePost(request: NextRequest) {
       previousAnalysis
     );
 
+
     // Determine version number — query DB for max existing version to prevent race conditions
     const latestVersion = await prisma.pitchScript.findFirst({
       where: { parentScriptId: parentId, userId: user.id },
@@ -136,6 +154,7 @@ async function handlePost(request: NextRequest) {
       select: { version: true },
     });
     const nextVersion = (latestVersion?.version || parentScript.version || 1) + 1;
+
 
     // Store as new script with parent reference
     const savedScript = await prisma.pitchScript.create({
@@ -165,7 +184,9 @@ async function handlePost(request: NextRequest) {
       },
     });
 
+
     // NOTE: Usage is tracked atomically inside requireModuleAccess() — no separate increment needed
+
 
     return NextResponse.json({
       success: true,
@@ -185,6 +206,7 @@ async function handlePost(request: NextRequest) {
     );
   }
 }
+
 
 export const POST = withRateLimit(handlePost, {
   limit: 5,
