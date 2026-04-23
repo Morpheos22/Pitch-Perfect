@@ -10,11 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
-import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES } from "@/lib/file-validation";
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZES } from "@/lib/file-validation";
 
 // Script-specific constants derived from the single source of truth
 const SCRIPT_EXTENSIONS = ALLOWED_EXTENSIONS.script;
-const SCRIPT_MIME_TYPES = ALLOWED_MIME_TYPES.script;
 const SCRIPT_MAX_SIZE = MAX_FILE_SIZES.script; // 10MB
 
 const frameworkElements = [
@@ -64,13 +63,13 @@ export default function ElevatorPitchLiveScriptNewPage() {
       const ext = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf("."));
       
       if (!SCRIPT_EXTENSIONS.includes(ext)) {
-        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, and TXT files are accepted.`);
+        toast.error(`Unsupported file format. Only PDF, DOCX, DOC, TXT, and MD files are accepted.`);
         return;
       }
-      if (!SCRIPT_MIME_TYPES.includes(selectedFile.type) && !SCRIPT_EXTENSIONS.includes(ext)) {
-        toast.error(`Invalid file type. Only PDF, DOCX, DOC, and TXT files are accepted.`);
-        return;
-      }
+      // MIME type check: extension is already validated above.
+      // Per file-validation.ts, MIME mismatches are warnings, not blockers.
+      // Browsers report incorrect MIME types for .md files (empty string or
+      // application/octet-stream), so we skip the MIME block for valid extensions.
       if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);
         return;
@@ -89,13 +88,20 @@ export default function ElevatorPitchLiveScriptNewPage() {
       return;
     }
 
+    // ── Pre-check entitlement BEFORE blob upload to prevent orphaned blobs ──
+    if (usedCount !== null && limitCount !== null && !isEnterprise && usedCount >= limitCount) {
+      toast.error("Usage limit reached. Please upgrade your plan.");
+      router.push("/elevator-pitch-live/upgrade");
+      return;
+    }
+
     setSubmitting(true);
+
+    let blobUrl: string | undefined;
 
     try {
       // ── ALWAYS use blob upload ──
       // Bypasses Vercel's 4.5MB serverless body limit entirely.
-      let blobUrl: string;
-
       try {
         const blobResult = await uploadFileToBlob(file, "script");
         blobUrl = blobResult.url;
@@ -126,6 +132,14 @@ export default function ElevatorPitchLiveScriptNewPage() {
 
     } catch (error: any) {
       console.error("[E2] Submit error:", error);
+
+      // ── Clean up orphaned blob if analysis was rejected ──
+      if (blobUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {
+          // Cleanup is best-effort — don't surface cleanup failures to the user
+        });
+      }
+
       if (error?.status === 403) {
         toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-pitch-live/upgrade");
@@ -243,7 +257,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
             <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
               <input
                 type="file"
-                accept=".pdf,.docx,.doc,.txt"
+                accept=".pdf,.docx,.doc,.txt,.md"
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
@@ -251,7 +265,7 @@ export default function ElevatorPitchLiveScriptNewPage() {
               <label htmlFor="file-upload" className="cursor-pointer">
                 <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="font-medium">Drag your script here, or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, or TXT — up to 10MB</p>
+                <p className="text-sm text-muted-foreground mt-1">PDF, DOCX, DOC, TXT, or MD — up to 10MB</p>
               </label>
             </div>
           ) : (
