@@ -41,21 +41,36 @@ async function parseDocxText(file: File): Promise<string> {
 }
 
 async function parsePdfText(file: File): Promise<string> {
-  // pdf-parse exports { PDFParse } as a named export.
-  // Usage: new PDFParse(data) → .getText() (load is called internally)
-  const { PDFParse } = await import('pdf-parse');
+  // pdf-parse v2.4.5 has conditional exports:
+  //   "browser" → web bundle (requires DOMMatrix — fails in Node.js serverless)
+  //   "import"/"require" → Node.js bundle (works in server-side)
+  //
+  // In Vercel's serverless environment, the dynamic import() can resolve
+  // to the browser bundle, causing "DOMMatrix is not defined" errors.
+  // The PDFParse class is only available from the default (Node) entry.
+  let PDFParse: any;
+  try {
+    // Try the default import first (works when serverExternalPackages handles it)
+    const pdfParse = await import('pdf-parse');
+    PDFParse = pdfParse.PDFParse;
+  } catch {
+    // Fallback: use require() which always resolves to the CJS Node bundle
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require('pdf-parse');
+    PDFParse = pdfParse.PDFParse;
+  }
+
+  if (!PDFParse) {
+    throw new Error('PDFParse class not found in pdf-parse module. The browser bundle may have been loaded instead of the Node bundle.');
+  }
+
   const arrayBuffer = await file.arrayBuffer();
   const uint8 = new Uint8Array(arrayBuffer);
   const parser = new PDFParse(uint8);
   try {
-    // getText() internally calls load() to initialize the document.
-    // The `load` method is private in TypeScript types but getText()
-    // handles initialization automatically.
     const result = await parser.getText();
-    // result.text contains full text, result.pages[] has per-page text
     return result.text || '';
   } catch (parseErr) {
-    // Some PDFs fail on first attempt — retry with a fresh parser instance
     console.warn('[file-parser] PDF parse failed on first attempt, retrying:', parseErr);
     try {
       const retryParser = new PDFParse(uint8);
