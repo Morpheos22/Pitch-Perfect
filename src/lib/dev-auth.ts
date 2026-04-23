@@ -50,10 +50,5 @@ export function isAdminEmail(email: string): boolean {
   return getDevEmails().has(lower);
 }
 
-/** Return the list of configured dev emails (for display in dev-tools). */
-function getDevEmailList(): string[] {
-  return Array.from(getDevEmails());
-}
-
 /** True when running in Next.js development mode (npm run dev) */
 export const DEV_MODE = process.env.NODE_ENV === 'development';

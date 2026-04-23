@@ -103,11 +103,18 @@ export const blobUploadSchema = z.object({
 // ── Payment ──
 
 export const createSessionSchema = z.object({
-  plan: z.enum(['STARTER', 'PROFESSIONAL', 'ENTERPRISE']),
+  productId: z.enum([
+    'pitch-deck',
+    'elevator-script',
+    'elevator-live',
+    'pitch-deck-live',
+    'master',
+  ]),
   provider: z.enum(['stripe', 'paystack', 'lemonsqueezy']).optional(),
   modules: z.array(z.string().max(50)).max(10).optional(),
   successUrl: z.string().url().max(500).optional(),
   cancelUrl: z.string().url().max(500).optional(),
+  country: z.string().max(2).optional(),
 });
 
 // ── User ──

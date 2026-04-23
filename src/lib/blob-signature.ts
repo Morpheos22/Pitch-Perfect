@@ -7,8 +7,7 @@
 //
 // This module provides:
 //   - extractBlobPathname: Parse blob URLs to get the pathname
-//   - fetchBlob: Server-side fetch of blob content via SDK (public access)
-//   - fetchPrivateBlob: Legacy alias for fetchBlob (kept for backward compat)
+//   - fetchBlob: Server-side fetch of blob content via SDK (public + private access)
 //   - generateBlobDownloadUrl: Generate a URL to our proxy route for client access
 
 import { auth } from "@clerk/nextjs/server";
@@ -90,12 +89,6 @@ export async function fetchBlob(blobUrlOrPathname: string): Promise<Buffer> {
   console.log(`[Blob] Buffered ${buffer.length} bytes from blob`);
   return buffer;
 }
-
-/**
- * Legacy alias — the store is public, not private, but some callers
- * still reference fetchPrivateBlob. This alias ensures backward compat.
- */
-export const fetchPrivateBlob = fetchBlob;
 
 /**
  * Check if a URL is a Vercel Blob URL.
