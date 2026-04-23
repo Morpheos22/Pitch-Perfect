@@ -6,12 +6,16 @@ import {
 } from '@/lib/file-validation';
 
 // Storage Utilities for Pitch Perfect × Automagikal
-// Multi-backend: Zoho WorkDrive (primary) → Vercel Blob (fallback) → Mock (dev)
+// Multi-backend: Vercel Blob (primary) → Zoho WorkDrive (secondary) → Mock (dev)
 //
 // STORAGE PRIORITY:
-//   1. Zoho WorkDrive — if ZOHO_WORKDRIVE_* env vars are configured
-//   2. Vercel Blob       — if BLOB_READ_WRITE_TOKEN is set (auto on Vercel)
+//   1. Vercel Blob       — if BLOB_READ_WRITE_TOKEN is set (auto on Vercel)
+//   2. Zoho WorkDrive    — if ZOHO_WORKDRIVE_* env vars are configured
 //   3. Mock (in-memory)  — development only, not persistent
+//
+// CLIENT-SIDE UPLOAD (preferred):
+//   For user-facing uploads, use @vercel/blob/client upload() via blob-upload.ts.
+//   This server-side module is the fallback for server-to-server transfers.
 //
 // File validation constants are imported from lib/file-validation.ts — the single source of truth.
 
@@ -54,8 +58,8 @@ export function isStorageConfigured(): boolean {
 
 /** Get active storage backend name */
 export function getStorageBackend(): string {
-  if (isWorkDriveConfigured()) return 'zoho-workdrive';
   if (isVercelBlobConfigured()) return 'vercel-blob';
+  if (isWorkDriveConfigured()) return 'zoho-workdrive';
   return 'mock';
 }
 
@@ -308,20 +312,10 @@ export async function uploadFile(
 
   const key = generateFileKey(userId, type, originalName);
 
-  // ── STRATEGY 1: Zoho WorkDrive ──
-  if (isWorkDriveConfigured()) {
-    const result = await uploadToWorkDrive(buffer, originalName, WORKDRIVE_FOLDER_ID!);
-    return {
-      key,
-      url: result.downloadUrl,
-      fileName: originalName,
-      fileSize,
-      fileType: mimeType,
-      fileId: result.fileId,
-    };
-  }
-
-  // ── STRATEGY 2: Vercel Blob (real persistent storage) ──
+  // ── STRATEGY 1: Vercel Blob (PRIMARY — direct, reliable, no external credentials) ──
+  // Client-side upload via @vercel/blob/client is the preferred path for user uploads.
+  // This server-side path serves as a fallback when client upload isn't possible
+  // (e.g., server-to-server transfers, webhook-received files).
   if (isVercelBlobConfigured()) {
     try {
       const { put } = await import('@vercel/blob');
@@ -340,6 +334,24 @@ export async function uploadFile(
       };
     } catch (blobError) {
       console.error('[Storage] Vercel Blob upload failed:', blobError);
+      // Fall through to WorkDrive or mock
+    }
+  }
+
+  // ── STRATEGY 2: Zoho WorkDrive (secondary — requires external OAuth credentials) ──
+  if (isWorkDriveConfigured()) {
+    try {
+      const result = await uploadToWorkDrive(buffer, originalName, WORKDRIVE_FOLDER_ID!);
+      return {
+        key,
+        url: result.downloadUrl,
+        fileName: originalName,
+        fileSize,
+        fileType: mimeType,
+        fileId: result.fileId,
+      };
+    } catch (workDriveError) {
+      console.error('[Storage] WorkDrive upload failed:', workDriveError);
       // Fall through to mock
     }
   }
