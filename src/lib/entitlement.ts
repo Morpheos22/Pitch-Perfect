@@ -335,7 +335,7 @@ export async function requireModuleAccess(
   // ── Denied: no valid entitlement ──
   const moduleNames: Record<CoachModule, string> = {
     e1: 'Pitch Deck Analyser',
-    e2: 'Elevator Pitch Script Coach',
+    e2: 'Script Check',
     e3: 'Live Elevator Pitch Coach',
     e4: 'Full Pitch Session',
     e5: 'Founder Module',

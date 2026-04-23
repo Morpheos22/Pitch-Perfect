@@ -42,27 +42,51 @@ export async function uploadFileToBlob(
   // Validate file format before uploading (uses single source of truth)
   validateFileFormat(file, category);
 
-  // Dynamic import — @vercel/blob/client is a client-side module
-  // that must only run in the browser (not during SSR)
-  const { upload } = await import("@vercel/blob/client");
+  try {
+    // Dynamic import — @vercel/blob/client is a client-side module
+    // that must only run in the browser (not during SSR)
+    const { upload } = await import("@vercel/blob/client");
 
-  // Use client-side upload — file goes directly from browser to Vercel Blob
-  // The handleUploadUrl tells the SDK where to request a client token
-  // clientPayload carries the category so the server can validate constraints
-  //
-  // IMPORTANT: access must be "public" because the Vercel Blob store for this
-  // project is a public store. Private access would cause the upload to fail with
-  // "Cannot use private access on a public store".
-  const blob = await upload(file.name, file, {
-    access: "public",
-    handleUploadUrl: "/api/blob/upload",
-    clientPayload: JSON.stringify({ category }),
-    // Use multipart for files > 10MB for better reliability
-    multipart: file.size > 10 * 1024 * 1024,
-  });
+    // Use client-side upload — file goes directly from browser to Vercel Blob
+    // The handleUploadUrl tells the SDK where to request a client token
+    // clientPayload carries the category so the server can validate constraints
+    //
+    // IMPORTANT: access must be "public" because the Vercel Blob store for this
+    // project is a public store. Private access would cause the upload to fail with
+    // "Cannot use private access on a public store".
+    const blob = await upload(file.name, file, {
+      access: "public",
+      handleUploadUrl: "/api/blob/upload",
+      clientPayload: JSON.stringify({ category }),
+      // Use multipart for files > 10MB for better reliability
+      multipart: file.size > 10 * 1024 * 1024,
+    });
 
-  return {
-    url: blob.url,
-    pathname: blob.pathname,
-  };
+    return {
+      url: blob.url,
+      pathname: blob.pathname,
+    };
+  } catch (error: any) {
+    // Provide user-friendly error messages based on common failure modes
+    const msg = error?.message || String(error);
+
+    if (msg.includes('Unauthorized') || msg.includes('401')) {
+      throw new Error('You must be signed in to upload files. Please sign in and try again.');
+    }
+    if (msg.includes('Invalid file type') || msg.includes('allowedContentTypes')) {
+      throw new Error(`File type not accepted for ${category} uploads. Please check the supported formats.`);
+    }
+    if (msg.includes('maximumSizeInBytes') || msg.includes('size') || msg.includes('too large')) {
+      throw new Error('File is too large. Please reduce the file size and try again.');
+    }
+    if (msg.includes('NetworkError') || msg.includes('Failed to fetch') || msg.includes('network')) {
+      throw new Error('Network error during upload. Please check your internet connection and try again.');
+    }
+    if (msg.includes('Cannot use private access on a public store')) {
+      throw new Error('Storage configuration error. Please contact support.');
+    }
+
+    // Re-throw with the original message if no specific match
+    throw error;
+  }
 }

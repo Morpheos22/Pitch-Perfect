@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
+import { analyzeWithVertexAI, isVertexAIConfigured } from "@/lib/vertex-ai";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
@@ -49,7 +50,7 @@ async function handlePost(request: NextRequest) {
     let targetDuration: number | undefined;
     let sessionName: string | null = null;
     let scriptFileUrl: string | null = null;
-    let detectedInputType: "TEXT" | "PDF" | "DOCX" = "TEXT";
+    let detectedInputType: "TEXT" | "DOCX" = "TEXT";
 
 
     const contentType = request.headers.get("content-type") || "";
@@ -81,8 +82,7 @@ async function handlePost(request: NextRequest) {
         scriptFileUrl = fileUrl;
         // Detect input type from file extension
         const ext = blobFileName.toLowerCase().split('.').pop();
-        if (ext === 'pdf') detectedInputType = 'PDF';
-        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
         console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName, inputType: detectedInputType });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
@@ -97,8 +97,7 @@ async function handlePost(request: NextRequest) {
       } else if (file) {
         // Detect input type from uploaded file extension
         const ext = file.name.toLowerCase().split('.').pop();
-        if (ext === 'pdf') detectedInputType = 'PDF';
-        else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
+        if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
         console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
 
 
@@ -148,7 +147,7 @@ async function handlePost(request: NextRequest) {
       sessionName = validatedData.sessionName || null;
       // Set detectedInputType from the declared inputType (consistency with FormData path)
       if (validatedData.inputType) {
-        detectedInputType = validatedData.inputType.toUpperCase() as "TEXT" | "PDF" | "DOCX";
+        detectedInputType = validatedData.inputType.toUpperCase() as "TEXT" | "DOCX";
       }
     }
 
@@ -180,18 +179,38 @@ async function handlePost(request: NextRequest) {
     }
 
 
-    // Run REAL AI analysis
+    // Run REAL AI analysis with 3-strategy cascading fallback:
+    //   Strategy 1: Z.ai SDK (via ai-service executeWithFallback)
+    //   Strategy 2: Direct HTTP to Z.ai gateway (built into executeWithFallback)
+    //   Strategy 3: Vertex AI (Google Gemini) — final fallback
     let analysis: ScriptAnalysisResult;
     try {
       analysis = await analyzePitchScript(script, targetAudience, targetDuration);
     } catch (aiError: any) {
-      console.error("AI script analysis failed:", aiError);
-      const msg = aiError?.message || String(aiError);
-      const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
-      return NextResponse.json(
-        { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
-        { status: 503 }
-      );
+      console.error("[E2] Z.ai gateway failed (Strategies 1+2):", aiError?.message);
+
+      // ── Strategy 3: Vertex AI fallback ──
+      if (isVertexAIConfigured()) {
+        console.log("[E2] Attempting Strategy 3: Vertex AI fallback...");
+        try {
+          analysis = await analyzeWithVertexAI(script, targetAudience, targetDuration);
+          console.log("[E2] Vertex AI analysis succeeded (Strategy 3)");
+        } catch (vertexError: any) {
+          console.error("[E2] Vertex AI also failed (Strategy 3):", vertexError?.message);
+          return NextResponse.json(
+            { error: "All AI providers failed. Please try again later." },
+            { status: 503 }
+          );
+        }
+      } else {
+        console.error("[E2] Vertex AI not configured — no fallback available");
+        const msg = aiError?.message || String(aiError);
+        const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
+        return NextResponse.json(
+          { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },
+          { status: 503 }
+        );
+      }
     }
 
 
