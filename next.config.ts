@@ -22,6 +22,7 @@ const nextConfig: any = {
     "z-ai-web-dev-sdk",
     "resend",
     "pdf-parse",
+    "pdfjs-dist",
     "mammoth",
     "jszip",
   ],

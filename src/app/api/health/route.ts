@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
+import { getVertexAIConfigStatus, isVertexAIConfigured } from '@/lib/vertex-ai';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
 import { isAdminEmail } from '@/lib/dev-auth';
@@ -138,6 +139,22 @@ export async function GET(request: NextRequest) {
   const blobTokenSet = !!process.env.BLOB_READ_WRITE_TOKEN;
   if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — private blob uploads will fail to be read back');
   (checks.storage as any).blobTokenConfigured = blobTokenSet;
+
+  // Google AI / Vertex AI check — verify fallback provider config
+  const vertexAIStatus = getVertexAIConfigStatus();
+  (checks as any).googleAI = {
+    configured: vertexAIStatus.configured,
+    provider: vertexAIStatus.provider,
+    project: vertexAIStatus.project,
+    location: vertexAIStatus.location,
+    hasApiKey: vertexAIStatus.hasApiKey,
+  };
+  if (!vertexAIStatus.configured) {
+    warnings.push('Google AI / Vertex AI not configured — Z.ai fallback unavailable. Set GOOGLE_GENAI_API_KEY.');
+  } else if (vertexAIStatus.provider === 'vertex-ai') {
+    // Vertex AI requires billing — note this as a potential issue
+    warnings.push('Vertex AI endpoint selected (GOOGLE_CLOUD_PROJECT set) — requires billing enabled. If billing is disabled, auto-fallback to AI Studio will be attempted.');
+  }
 
 
   checks.status = allHealthy ? 'healthy' : 'degraded';
