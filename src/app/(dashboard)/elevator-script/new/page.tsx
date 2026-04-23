@@ -106,11 +106,12 @@ export default function ElevatorScriptNewPage() {
 
     setSubmitting(true);
 
+    let blobUrl: string | undefined;
+
     try {
       // ── ALWAYS use blob upload ──
       // This bypasses Vercel's 4.5MB serverless body limit entirely.
       // The file goes directly from the browser to Vercel Blob storage.
-      let blobUrl: string;
       let blobPathname: string;
 
       try {
@@ -145,6 +146,17 @@ export default function ElevatorScriptNewPage() {
       
     } catch (error: any) {
       console.error("[E2] Upload/analysis error:", error);
+
+      // ── Clean up orphaned blob if analysis was rejected ──
+      // The blob was already uploaded, but if the coach API rejected the request
+      // (e.g., entitlement denied, analysis failure), the blob is orphaned.
+      // Fire-and-forget cleanup — don't await, don't block the error flow.
+      if (blobUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {
+          // Cleanup is best-effort — don't surface cleanup failures to the user
+        });
+      }
+
       if (error?.status === 413) {
         toast.error("File is too large for upload. Maximum size is 10MB for scripts.");
         return;

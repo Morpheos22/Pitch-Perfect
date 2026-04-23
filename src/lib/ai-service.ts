@@ -1174,8 +1174,6 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
   "credibilityScore": <number 0-100>,
   "ctaScore": <number 0-100>,
   "overallScore": <number 0-100, weighted average>,
-  "wordCount": <number>,
-  "estimatedDuration": <number in seconds>,
   "improvements": {
     "hook": ["<specific improvement suggestion 1>", "<specific improvement suggestion 2>"],
     "problem": ["<specific improvement suggestion 1>", "<specific improvement suggestion 2>"],

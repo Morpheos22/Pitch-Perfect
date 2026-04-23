@@ -87,10 +87,16 @@ export function validateFileFormat(
   }
 
   // Check MIME type if available (some browsers don't report it)
+  // Note: Extension was already validated above, so here we only flag MIME
+  // mismatches. A valid extension + invalid MIME means the browser detected
+  // a different content type — worth warning about but not blocking if the
+  // extension is legitimate (some browsers report incorrect MIME types).
   if (file.type && file.type !== 'application/octet-stream') {
-    if (!allowedMimes.includes(file.type) && !allowedExts.includes(ext)) {
-      throw new Error(
-        `Invalid file type "${file.type}". Accepted: ${allowedExts.join(', ')}`
+    if (!allowedMimes.includes(file.type)) {
+      // MIME doesn't match, but extension was already validated above.
+      // Log a warning but don't block — browser MIME detection is unreliable.
+      console.warn(
+        `[FileValidation] MIME type "${file.type}" doesn't match expected types for category "${category}", but extension "${ext}" is valid. Proceeding.`
       );
     }
   }
