@@ -5,19 +5,67 @@ import {
   type FileCategory,
 } from '@/lib/file-validation';
 
+// ═══════════════════════════════════════════════════════════════════════════
 // Storage Utilities for Pitch Perfect × Automagikal
-// Multi-backend: Vercel Blob (primary) → Zoho WorkDrive (secondary) → Mock (dev)
+// ═══════════════════════════════════════════════════════════════════════════
 //
-// STORAGE PRIORITY:
+// DUAL-PATH UPLOAD ARCHITECTURE:
+//
+//   PATH A — Client-side Blob Upload (PRIMARY for user-facing uploads):
+//     Browser → /api/blob/upload (token request) → Browser → Vercel Blob
+//     Bypasses Vercel serverless body size limits entirely.
+//     File goes directly from browser to Vercel Blob.
+//     See: blob-upload.ts + /api/blob/upload/route.ts
+//
+//   PATH B — Server-side Blob Upload (FALLBACK for server-to-server transfers):
+//     Server → Vercel Blob put()
+//     Used when client-side upload isn't possible (e.g., webhook-received
+//     files, server-side processing results, video files that need
+//     server-side validation before storage).
+//
+// STORAGE PRIORITY (server-side fallback chain):
 //   1. Vercel Blob       — if BLOB_READ_WRITE_TOKEN is set (auto on Vercel)
 //   2. Zoho WorkDrive    — if ZOHO_WORKDRIVE_* env vars are configured
 //   3. Mock (in-memory)  — development only, not persistent
 //
-// CLIENT-SIDE UPLOAD (preferred):
-//   For user-facing uploads, use @vercel/blob/client upload() via blob-upload.ts.
-//   This server-side module is the fallback for server-to-server transfers.
-//
 // File validation constants are imported from lib/file-validation.ts — the single source of truth.
+
+// ============================================
+// SSRF PROTECTION — Shared host allowlists
+// ============================================
+// Centralized allowlist for URL validation across all API routes.
+// Routes should import these instead of hardcoding their own lists.
+
+/** Allowed hosts for file upload URLs (SSRF prevention) */
+export const ALLOWED_UPLOAD_HOSTS = [
+  'blob.vercel-storage.com',
+  'public.blob.vercel-storage.com',
+  'workdrive.zoho.com',
+  'zoho.com',
+] as const;
+
+/** Allowed hosts for video URL validation (subset without zoho for video) */
+export const ALLOWED_VIDEO_HOSTS = [
+  'blob.vercel-storage.com',
+  'public.blob.vercel-storage.com',
+  'workdrive.zoho.com',
+] as const;
+
+/**
+ * Check if a URL's hostname matches any host in the allowlist.
+ * Supports exact match and subdomain suffix matching (e.g.,
+ * mystore.public.blob.vercel-storage.com matches blob.vercel-storage.com).
+ */
+export function isHostAllowed(url: string, allowedHosts: readonly string[]): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return allowedHosts.some(
+      h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
+    );
+  } catch {
+    return false;
+  }
+}
 
 // ============================================
 // ZOHO WORKDRIVE CONFIGURATION
@@ -51,9 +99,9 @@ export function isVercelBlobConfigured(): boolean {
   return !!process.env.BLOB_READ_WRITE_TOKEN;
 }
 
-/** Check if ANY real storage backend is available */
+/** Check if ANY real storage backend is available (Blob checked first — it's primary) */
 export function isStorageConfigured(): boolean {
-  return isWorkDriveConfigured() || isVercelBlobConfigured();
+  return isVercelBlobConfigured() || isWorkDriveConfigured();
 }
 
 /** Get active storage backend name */

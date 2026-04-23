@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchDeck, analyzeDeckVisual, DeckAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
@@ -7,6 +6,8 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
+import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
+import { requireAuth } from "@/lib/with-auth";
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -18,23 +19,8 @@ export const maxDuration = 60;
 
 async function handlePost(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     // ── Entitlement check ──
@@ -103,17 +89,10 @@ async function handlePost(request: NextRequest) {
 
 
     if (!analysisContent && fileUrl && fileName) {
-      // NEW: Blob upload flow — fetch from URL, extract text
-      // SSRF prevention: validate file URL host
-      const ALLOWED_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
-      try {
-        const parsedUrl = new URL(fileUrl);
-        const isAllowed = ALLOWED_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-        if (!isAllowed) {
-          return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
-        }
-      } catch {
-        return NextResponse.json({ error: 'Invalid file URL format.' }, { status: 400 });
+      // Blob upload flow — fetch from URL, extract text
+      // SSRF prevention: validate file URL host using shared allowlist
+      if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+        return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
       }
       console.log("[E1] Extracting text from Blob URL:", { fileUrl: fileUrl.substring(0, 80), fileName });
       try {
@@ -168,33 +147,23 @@ async function handlePost(request: NextRequest) {
     // Visual analysis requires a URL the AI gateway can fetch, or a data URI.
     // Blob URLs are converted to data URIs since the AI gateway may not be
     // able to fetch external blob URLs directly.
-    const ALLOWED_VISUAL_HOSTS = [
-      'public.blob.vercel-storage.com',
-      'blob.vercel-storage.com',
-      'workdrive.zoho.com',
-    ];
     let visualUrl: string | null = null;
     if (fileUrl) {
       try {
         const parsedUrl = new URL(fileUrl);
-        const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-        if (isAllowed) {
+        if (isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
           // PPTX files cannot be visually analyzed — the vision model expects image/PDF formats.
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (['pptx', 'ppt'].includes(ext)) {
             console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model');
           } else {
             // Blob URLs — the store is public so URLs are directly accessible.
-            // For vision model access, we may still convert to data URI for reliability
+            // For vision model access, convert to data URI for reliability
             // since the AI gateway might not be able to fetch external URLs directly.
-            // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.public.blob.vercel-storage.com)
-            // so we check hostname suffix, not exact match.
             const isBlobUrl = parsedUrl.hostname.endsWith('.blob.vercel-storage.com') ||
               parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com') ||
               parsedUrl.hostname === 'blob.vercel-storage.com';
             if (isBlobUrl) {
-              // Convert to data URI for reliable AI vision model access
-              // (the AI gateway may not be able to fetch external blob URLs directly)
               console.warn('[E1] Converting blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               visualUrl = dataUri || fileUrl; // Fallback to raw URL (may fail, but will degrade gracefully)
@@ -381,21 +350,8 @@ export const POST = withRateLimit(handlePost, {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const body = await request.json();
@@ -438,21 +394,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);
@@ -482,23 +425,8 @@ export async function DELETE(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkId } = await auth();
-
-
-    if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true },
-    });
-
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
 
 
     const { searchParams } = new URL(request.url);

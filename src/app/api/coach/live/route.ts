@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
-import { uploadFile, isStorageConfigured } from "@/lib/storage";
+import { uploadFile, isStorageConfigured, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { liveNotesSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri } from "@/lib/blob-signature";
@@ -106,33 +106,16 @@ async function handlePost(request: NextRequest) {
     }
 
 
-    // SSRF prevention: validate video URL host
+    // SSRF prevention: validate video URL host using shared allowlist
     if (analysisVideoUrl) {
       // Disallow mock storage URLs entirely
       if (analysisVideoUrl.startsWith('mock://')) {
         return NextResponse.json({ error: 'Mock storage URLs are not permitted.' }, { status: 400 });
       }
 
-
-      const allowedVideoHosts = [
-        'workdrive.zoho.com', 'zoho.com',
-        'blob.vercel-storage.com',
-        'public.blob.vercel-storage.com',
-      ];
-      try {
-        const parsedUrl = new URL(analysisVideoUrl);
-        const isAllowed = allowedVideoHosts.some(h =>
-          parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h)
-        );
-        if (!isAllowed) {
-          return NextResponse.json(
-            { error: 'Invalid video source. Files must be uploaded through the platform.' },
-            { status: 400 }
-          );
-        }
-      } catch {
+      if (!isHostAllowed(analysisVideoUrl, ALLOWED_VIDEO_HOSTS)) {
         return NextResponse.json(
-          { error: 'Invalid video URL format.' },
+          { error: 'Invalid video source. Files must be uploaded through the platform.' },
           { status: 400 }
         );
       }

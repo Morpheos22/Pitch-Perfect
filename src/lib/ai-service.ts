@@ -39,7 +39,7 @@
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
-import { extractJsonFromContent, clampScore, validateStringArray } from './ai-utils';
+import { extractJsonFromContent, clampScore, validateStringArray, repairJson, parseJsonResponse } from './ai-utils';
 
 // ============================================
 // DIRECT HTTP FALLBACK CONFIGURATION
@@ -677,98 +677,13 @@ export async function executeWithFallback(
 // ============================================
 // HELPER: Parse JSON from AI response
 // ============================================
-// extractJsonFromContent is now imported from ./ai-utils
-
-function parseJsonResponse<T>(content: string): T {
-  const jsonStr = extractJsonFromContent(content);
-  if (!jsonStr) {
-    console.error('[ZAI] Failed to parse AI response:', content.slice(0, 500));
-    throw new Error('No JSON object found in AI response');
-  }
-  try {
-    return JSON.parse(jsonStr) as T;
-  } catch (parseErr: any) {
-    // AI models sometimes return JSON with unescaped newlines inside string values
-    // (especially in rewrittenScript). Try to repair by escaping raw newlines.
-    console.warn('[ZAI] Initial JSON parse failed, attempting repair:', parseErr?.message);
-    try {
-      const repaired = repairJson(jsonStr);
-      return JSON.parse(repaired) as T;
-    } catch (repairErr: any) {
-      console.error('[ZAI] JSON repair also failed:', repairErr?.message);
-      console.error('[ZAI] Raw JSON (first 800 chars):', jsonStr.slice(0, 800));
-      throw parseErr; // throw original error
-    }
-  }
-}
-
-/**
- * Repair common JSON issues from AI model responses:
- * 1. Unescaped newlines inside string values
- * 2. Unescaped tabs inside string values
- * 3. Trailing commas before closing brackets
- * 4. Single quotes instead of double quotes
- */
-function repairJson(json: string): string {
-  let result = json;
-
-  // Remove trailing commas before } or ]
-  result = result.replace(/,\s*([}\]])/g, '$1');
-
-  // Fix unescaped newlines/tabs inside string values.
-  // Strategy: walk through the string character by character, tracking
-  // whether we're inside a JSON string. If we encounter a raw newline
-  // or tab inside a string, escape it.
-  let inString = false;
-  let escape = false;
-  let output = '';
-
-  for (let i = 0; i < result.length; i++) {
-    const ch = result[i];
-
-    if (escape) {
-      output += ch;
-      escape = false;
-      continue;
-    }
-
-    if (ch === '\\' && inString) {
-      output += ch;
-      escape = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = !inString;
-      output += ch;
-      continue;
-    }
-
-    if (inString) {
-      if (ch === '\n') {
-        output += '\\n';
-        continue;
-      }
-      if (ch === '\r') {
-        output += '\\r';
-        continue;
-      }
-      if (ch === '\t') {
-        output += '\\t';
-        continue;
-      }
-    }
-
-    output += ch;
-  }
-
-  return output;
-}
+// parseJsonResponse, repairJson, extractJsonFromContent, clampScore,
+// and validateStringArray are all now imported from ./ai-utils
 
 // ============================================
 // HELPER: Validate and clamp AI response values
 // ============================================
-// clampScore and validateStringArray are now imported from ./ai-utils
+// All validation helpers are now imported from ./ai-utils
 
 // ============================================
 // SCORING WEIGHTS & QUALITY FRAMEWORK
