@@ -46,6 +46,8 @@ export default function LiveRecordingReviewPage() {
 
     setIsSubmitting(true);
 
+    let downloadUrl: string | undefined;
+
     try {
       // Step 1: Convert blob URL to a File
       const response = await fetch(recordingUrl);
@@ -57,35 +59,26 @@ export default function LiveRecordingReviewPage() {
 
       const file = new File([blob], fileName, { type: mimeType });
 
-      let downloadUrl: string;
-
-      // Step 2: Upload — use client-side blob upload for files >4MB to bypass
-      // Vercel's 4.5MB serverless body limit. Fall back to server route for small files.
-      const VERCEL_BODY_LIMIT = 4 * 1024 * 1024; // 4MB safety margin
-
-      if (file.size > VERCEL_BODY_LIMIT) {
-        // Large file: client-side direct upload to Vercel Blob
+      // ── ALWAYS use client-side blob upload ──
+      // This bypasses Vercel's 4.5MB serverless body limit entirely.
+      // The file goes directly from the browser to Vercel Blob storage.
+      // Only a lightweight token request hits our server.
+      //
+      // PREVIOUS BUG: The old code branched on VERCEL_BODY_LIMIT (4MB):
+      //   - Small files (<=4MB) were sent as FormData directly to /api/video
+      //   - This STILL hit the serverless body limit and could timeout
+      //   - Large files used blob upload
+      //
+      // FIX: ALL files now go through client-side blob upload. The coach API
+      // only receives blob URLs — no file content ever passes through our
+      // serverless functions. This eliminates body size limits entirely.
+      try {
         const { uploadFileToBlob } = await import("@/lib/blob-upload");
         const blobResult = await uploadFileToBlob(file, "video");
         downloadUrl = blobResult.url;
-      } else {
-        // Small file: server-side upload (supports WorkDrive fallback)
-        const videoFormData = new FormData();
-        videoFormData.append("video", file);
-        videoFormData.append("type", "live");
-
-        const videoRes = await fetch("/api/video", {
-          method: "POST",
-          body: videoFormData,
-        });
-
-        if (!videoRes.ok) {
-          const videoError = await videoRes.json();
-          throw new Error(videoError.error || "Failed to upload video");
-        }
-
-        const videoData = await videoRes.json();
-        downloadUrl = videoData.downloadUrl;
+      } catch (blobError: any) {
+        console.error("[E3] Blob upload failed:", blobError);
+        throw new Error(blobError?.message || "Video upload failed. Please try again.");
       }
 
       // Step 3: Trigger analysis via POST /api/coach/live
@@ -123,6 +116,17 @@ export default function LiveRecordingReviewPage() {
       router.push(`/elevator-pitch-live/live/session/${sessionId}`);
     } catch (error) {
       console.error("Submit error:", error);
+
+      // ── Clean up orphaned blob if analysis was rejected ──
+      // The blob was already uploaded, but if the coach API rejected the request
+      // (e.g., entitlement denied, analysis failure), the blob is orphaned.
+      // Fire-and-forget cleanup — don't await, don't block the error flow.
+      if (downloadUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(downloadUrl)}`, { method: "DELETE" }).catch(() => {
+          // Cleanup is best-effort — don't surface cleanup failures to the user
+        });
+      }
+
       toast.error(error instanceof Error ? error.message : "Failed to submit recording");
     } finally {
       setIsSubmitting(false);

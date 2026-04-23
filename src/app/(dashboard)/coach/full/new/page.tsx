@@ -22,6 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
+import { uploadFileToBlob } from "@/lib/blob-upload";
+import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES } from "@/lib/file-validation";
 
 const sixDimensions = [
   { name: "Problem-Solution Fit", description: "Does your solution address a real, urgent problem?" },
@@ -107,64 +109,67 @@ export default function FullPitchNewPage() {
     setVideoUploading(true);
     setUploadProgress(0);
 
+    // Hoist blob URLs for cleanup in catch block
+    let videoUrl = "";
+    let videoPathname = "";
+    let deckFileUrl: string | undefined;
+
     try {
-      const SERVERLESS_LIMIT = 4 * 1024 * 1024;
+      // ── ALWAYS use client-side blob upload ──
+      // This bypasses Vercel's 4.5MB serverless body limit entirely.
+      // The file goes directly from the browser to Vercel Blob storage.
+      // Only a lightweight token request hits our server.
+      //
+      // PREVIOUS BUG: The old code branched on SERVERLESS_LIMIT (4MB):
+      //   - Small files (<=4MB) were sent as FormData directly to the coach API
+      //   - This STILL hit the serverless body limit and could timeout
+      //   - Large files used blob upload
+      //
+      // FIX: ALL files now go through client-side blob upload. The coach API
+      // only receives blob URLs — no file content ever passes through our
+      // serverless functions. This eliminates body size limits entirely.
 
-      // Step 1: Upload video
-      // Videos are almost always > 4MB, so try blob first.
-      // If blob fails, try direct (may hit Vercel limit for large files).
+      // Step 1: Upload video via client-side blob
       setUploadProgress(5);
-      let videoUrl = "";
-      let videoPathname = "";
 
-      if (videoFile.size <= SERVERLESS_LIMIT) {
-        // Small video — direct upload via FormData
-        // We'll send it directly to the coach/full API
-      } else {
-        // Large video — must use blob
-        try {
-          const { uploadFileToBlob } = await import("@/lib/blob-upload");
-          const videoBlobResult = await uploadFileToBlob(videoFile, "video");
-          videoUrl = videoBlobResult.url;
-          videoPathname = videoBlobResult.pathname;
-        } catch (videoUploadError) {
-          console.error("[E4] Video Blob upload failed:", videoUploadError);
-          // Try direct as fallback
-        }
+      try {
+        const videoBlobResult = await uploadFileToBlob(videoFile, "video");
+        videoUrl = videoBlobResult.url;
+        videoPathname = videoBlobResult.pathname;
+        console.log("[E4] Video blob upload succeeded:", videoUrl);
+      } catch (videoUploadError: any) {
+        console.error("[E4] Video Blob upload failed:", videoUploadError);
+        toast.error(videoUploadError?.message || "Video upload failed. Please try again.");
+        return;
       }
       setUploadProgress(40);
       setVideoUploading(false);
 
-      // Step 2: Submit for AI analysis
-      const analysisFormData = new FormData();
-      analysisFormData.append("sessionName", sessionName);
-      analysisFormData.append("duration", "900"); // Default 15 min
-
-      if (videoUrl) {
-        // Blob upload succeeded — send URL
-        analysisFormData.append("videoUrl", videoUrl);
-        analysisFormData.append("videoId", videoPathname);
-      } else {
-        // Direct upload — send file
-        analysisFormData.append("video", videoFile);
-      }
+      // Step 2: Upload deck via client-side blob (if provided)
 
       if (deckFile) {
         setUploadProgress(50);
-        if (deckFile.size <= SERVERLESS_LIMIT) {
-          // Small deck — send directly
-          analysisFormData.append("deckFile", deckFile);
-        } else {
-          try {
-            const { uploadFileToBlob } = await import("@/lib/blob-upload");
-            const deckBlobResult = await uploadFileToBlob(deckFile, "deck");
-            analysisFormData.append("deckFileUrl", deckBlobResult.url);
-            analysisFormData.append("deckFileName", deckFile.name);
-          } catch (deckUploadError) {
-            console.warn("[E4] Deck Blob upload failed, trying direct:", deckUploadError);
-            analysisFormData.append("deckFile", deckFile);
-          }
+        try {
+          const deckBlobResult = await uploadFileToBlob(deckFile, "deck");
+          deckFileUrl = deckBlobResult.url;
+          console.log("[E4] Deck blob upload succeeded:", deckFileUrl);
+        } catch (deckUploadError: any) {
+          console.warn("[E4] Deck Blob upload failed:", deckUploadError);
+          // Non-fatal: deck is optional, continue without it
+          toast.error("Deck upload failed. Continuing with video-only analysis.");
         }
+      }
+
+      // Step 3: Submit for AI analysis (only blob URLs, no file content)
+      const analysisFormData = new FormData();
+      analysisFormData.append("sessionName", sessionName);
+      analysisFormData.append("duration", "900"); // Default 15 min
+      analysisFormData.append("videoUrl", videoUrl);
+      analysisFormData.append("videoId", videoPathname);
+
+      if (deckFileUrl && deckFile) {
+        analysisFormData.append("deckFileUrl", deckFileUrl);
+        analysisFormData.append("deckFileName", deckFile.name);
       }
 
       setUploadProgress(70);
@@ -184,8 +189,19 @@ export default function FullPitchNewPage() {
 
     } catch (error: any) {
       console.error("Upload error:", error);
+
+      // ── Clean up orphaned blobs if analysis was rejected ──
+      // Blobs were uploaded but if the coach API rejected the request,
+      // they're orphaned. Fire-and-forget cleanup.
+      if (videoUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(videoUrl)}`, { method: "DELETE" }).catch(() => {});
+      }
+      if (deckFileUrl) {
+        fetch(`/api/blob/upload?url=${encodeURIComponent(deckFileUrl)}`, { method: "DELETE" }).catch(() => {});
+      }
+
       if (error?.status === 413) {
-        toast.error("File is too large for direct upload. Please use a smaller file or provide a URL instead.");
+        toast.error("File is too large for upload. Please use a smaller file.");
         return;
       }
       if (error?.status === 403) {
@@ -198,7 +214,12 @@ export default function FullPitchNewPage() {
         router.push("/sign-in");
         return;
       }
-      toast.error("Failed to start analysis. Please try again.");
+      const serverMessage = error?.message || error?.data?.error;
+      if (serverMessage && serverMessage !== "Request failed (500)") {
+        toast.error(serverMessage);
+      } else {
+        toast.error("Failed to start analysis. Please try again.");
+      }
     } finally {
       setUploading(false);
       setVideoUploading(false);
