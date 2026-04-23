@@ -56,7 +56,7 @@ async function testEnvironment(): Promise<TestResult> {
 
 
   // Also check optional but useful vars
-  const optionalVars = ['ZAI_USER_ID', 'ZAI_CHAT_ID', 'NEXT_PUBLIC_APP_URL'];
+  const optionalVars = ['ZAI_USER_ID', 'ZAI_CHAT_ID', 'NEXT_PUBLIC_APP_URL', 'GOOGLE_GENAI_API_KEY', 'GOOGLE_CLOUD_PROJECT'];
   for (const v of optionalVars) {
     results[v] = mask(process.env[v]);
   }
@@ -381,7 +381,88 @@ async function testDatabase(): Promise<TestResult> {
 
 
 // ════════════════════════════════════════════════════════════════
-// TEST 6: Full E2 Pipeline Simulation
+// TEST 6: Google AI / Gemini Connectivity
+// ════════════════════════════════════════════════════════════════
+async function testGoogleAI(): Promise<TestResult> {
+  const start = Date.now();
+
+  const apiKey = process.env.GOOGLE_GENAI_API_KEY || '';
+
+  if (!apiKey) {
+    return {
+      test: '6. Google AI / Gemini Connectivity',
+      status: 'SKIP',
+      durationMs: Date.now() - start,
+      detail: 'GOOGLE_GENAI_API_KEY not set — cannot test Google AI.',
+    };
+  }
+
+  try {
+    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
+
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'Say hello' }] }],
+        generationConfig: { maxOutputTokens: 32 },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    const body = await resp.text();
+    let responseSnippet = body.slice(0, 300);
+
+    try {
+      const parsed = JSON.parse(body);
+      const content = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (content) responseSnippet = `Gemini response: "${content.slice(0, 100)}" (HTTP ${resp.status})`;
+      else if (parsed?.error) responseSnippet = `HTTP ${resp.status} — ${parsed.error.message?.slice(0, 200) || JSON.stringify(parsed.error).slice(0, 200)}`;
+      else responseSnippet = `HTTP ${resp.status} — no content in response. Body: ${body.slice(0, 200)}`;
+    } catch {
+      responseSnippet = `HTTP ${resp.status} — non-JSON response: ${responseSnippet}`;
+    }
+
+    // PERMISSION_DENIED or RESOURCE_EXHAUSTED are expected failures — not connectivity issues
+    let status: TestResult['status'] = resp.ok ? 'PASS' : 'FAIL';
+    if (!resp.ok) {
+      try {
+        const parsed = JSON.parse(body);
+        const reason = parsed?.error?.details?.[0]?.reason;
+        if (reason === 'API_KEY_SERVICE_BLOCKED') {
+          status = 'WARN';
+          responseSnippet += '\n\n⚠️ The API key\'s Google Cloud project has the Generative Language API disabled. Enable it at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com';
+        } else if (resp.status === 429) {
+          status = 'WARN';
+          responseSnippet += '\n\n⚠️ Quota exhausted — need to enable billing or use a different project.';
+        }
+      } catch { /* ignore */ }
+    }
+
+    return {
+      test: '6. Google AI / Gemini Connectivity',
+      status,
+      durationMs: Date.now() - start,
+      detail: `Model: gemini-2.5-flash-preview-05-20\nKey: ${apiKey.slice(0, 8)}...\n${responseSnippet}`,
+      error: resp.ok ? undefined : `Google AI returned HTTP ${resp.status}`,
+    };
+  } catch (err: any) {
+    return {
+      test: '6. Google AI / Gemini Connectivity',
+      status: 'FAIL',
+      durationMs: Date.now() - start,
+      detail: 'Could not reach Google AI API.',
+      error: err?.message || String(err),
+    };
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// TEST 7: Full E2 Pipeline Simulation (with fallback chain)
 // ════════════════════════════════════════════════════════════════
 async function testE2Pipeline(): Promise<TestResult> {
   const start = Date.now();
@@ -395,14 +476,46 @@ async function testE2Pipeline(): Promise<TestResult> {
     const extractedText = testScript;
     const step1 = `✅ Text extraction: ${extractedText.split(/\s+/).length} words extracted`;
 
+    const steps: string[] = [step1];
+    let analysis: any = null;
+    let strategyUsed = 'none';
 
-    // Step 2: Call analyzePitchScript with the test script
-    const { analyzePitchScript } = await import('@/lib/ai-service');
-    const analysis = await analyzePitchScript(extractedText, 'investor', 60);
+    // Step 2a: Try Strategy 1 — Google AI / Gemini (PRIMARY for E2)
+    const { analyzeWithVertexAI, isVertexAIConfigured } = await import('@/lib/vertex-ai');
+    if (isVertexAIConfigured()) {
+      try {
+        analysis = await analyzeWithVertexAI(extractedText, 'investor', 60);
+        strategyUsed = 'Strategy 1 (Google AI)';
+        steps.push(`✅ Strategy 1 (Google AI): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
+      } catch (vertexErr: any) {
+        steps.push(`❌ Strategy 1 (Google AI): failed — ${vertexErr?.message?.slice(0, 150)}`);
+        analysis = null;
+      }
+    } else {
+      steps.push('⏭️ Strategy 1 (Google AI): skipped — not configured');
+    }
 
+    // Step 2b: Try Strategy 2+3 — Z.ai Gateway (fallback)
+    if (!analysis) {
+      try {
+        const { analyzePitchScript } = await import('@/lib/ai-service');
+        analysis = await analyzePitchScript(extractedText, 'investor', 60);
+        strategyUsed = 'Strategy 2+3 (Z.ai Gateway)';
+        steps.push(`✅ Strategy 2+3 (Z.ai Gateway): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
+      } catch (zaiErr: any) {
+        steps.push(`❌ Strategy 2+3 (Z.ai Gateway): failed — ${zaiErr?.message?.slice(0, 150)}`);
+      }
+    }
 
-    const step2 = `✅ AI analysis: hookScore=${analysis.hookScore}, problemScore=${analysis.problemScore}, solutionScore=${analysis.solutionScore}, credibilityScore=${analysis.credibilityScore}, ctaScore=${analysis.ctaScore}, overallScore=${analysis.overallScore}`;
-
+    if (!analysis) {
+      return {
+        test: '7. Full E2 Pipeline Simulation (with fallback chain)',
+        status: 'FAIL',
+        durationMs: Date.now() - start,
+        detail: steps.join('\n'),
+        error: 'All AI strategies failed — neither Google AI nor Z.ai Gateway could analyze the script.',
+      };
+    }
 
     // Step 3: Check if result has all required fields
     const requiredFields = ['hookScore', 'problemScore', 'solutionScore', 'credibilityScore', 'ctaScore', 'overallScore', 'wordCount', 'estimatedDuration', 'improvements', 'rewrittenScript', 'alternativeHooks'];
@@ -423,10 +536,10 @@ async function testE2Pipeline(): Promise<TestResult> {
 
 
     return {
-      test: '6. Full E2 Pipeline Simulation',
+      test: '7. Full E2 Pipeline Simulation (with fallback chain)',
       status: missingFields.length === 0 ? 'PASS' : 'WARN',
       durationMs: Date.now() - start,
-      detail: [step1, step2, step3, step4, `modelUsed: ${analysis.modelUsed}`, `tokensUsed: ${analysis.tokensUsed ?? 'N/A'}`].join('\n'),
+      detail: [...steps, step3, step4, `Strategy used: ${strategyUsed}`, `modelUsed: ${analysis.modelUsed}`, `tokensUsed: ${analysis.tokensUsed ?? 'N/A'}`].join('\n'),
       error: missingFields.length > 0 ? `Some fields missing from analysis result` : undefined,
     };
   } catch (err: any) {
@@ -450,7 +563,7 @@ async function testE2Pipeline(): Promise<TestResult> {
 
 
     return {
-      test: '6. Full E2 Pipeline Simulation',
+      test: '7. Full E2 Pipeline Simulation (with fallback chain)',
       status: 'FAIL',
       durationMs: Date.now() - start,
       detail: `Classification: ${classification}\n\nStack: ${stack}`,
@@ -476,6 +589,7 @@ export async function GET() {
   results.push(await testVercelBlob());
   results.push(await testPdfParse());
   results.push(await testDatabase());
+  results.push(await testGoogleAI());
   results.push(await testE2Pipeline());
 
 
