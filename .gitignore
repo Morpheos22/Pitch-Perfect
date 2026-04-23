@@ -55,6 +55,7 @@ server.log
 /upload/
 /download/
 /pitchcoach-ai/
+/pitch-perfect/
 /mini-services/
 
 # Environment artifacts

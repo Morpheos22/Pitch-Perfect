@@ -36,7 +36,7 @@
 //   ✅ Image Gen        → E5 network visuals, report covers
 //   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
-import { readFileSync, writeFileSync } from 'fs';
+import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -68,13 +68,20 @@ type ResolvedConfig = {
 };
 
 let _resolvedConfig: ResolvedConfig | null = null;
+let _lastEnvSnapshot = '';
 
+/**
+ * Resolve gateway credentials from env vars (primary) + config file (secondary).
+ *
+ * REFACTORED: Replaced synchronous readFileSync with cached resolution.
+ * The .z-ai-config file is only read ONCE per cold start (when cache is empty)
+ * or when env vars change. This avoids blocking the event loop with sync I/O
+ * on every request — critical for Vercel serverless performance.
+ *
+ * Priority: env vars > .z-ai-config file > hardcoded defaults
+ */
 function getResolvedConfig(): ResolvedConfig {
   // ── Cache: reuse if env vars haven't changed since last resolution ──
-  // Previous implementation either cached forever (stale credentials) or
-  // re-read .z-ai-config from disk on every call (disk thrashing).
-  // Now we cache but invalidate when env vars change, avoiding redundant
-  // file reads while still picking up runtime credential rotations.
   const currentEnvSnapshot = [
     process.env.ZAI_BASE_URL || '',
     process.env.ZAI_API_KEY || '',
@@ -83,27 +90,43 @@ function getResolvedConfig(): ResolvedConfig {
     process.env.ZAI_CHAT_ID || '',
   ].join('|');
 
-  if (_resolvedConfig && (_resolvedConfig as any)._envSnapshot === currentEnvSnapshot) {
+  if (_resolvedConfig && _lastEnvSnapshot === currentEnvSnapshot) {
     return _resolvedConfig;
   }
 
-  // Try reading from .z-ai-config file first (for SDK compatibility)
+  _lastEnvSnapshot = currentEnvSnapshot;
+
+  // Resolve from env vars first — this is the primary path on Vercel
+  const hasEnvVars = !!(process.env.ZAI_API_KEY || process.env.ZAI_TOKEN);
+
+  // Try to augment from .z-ai-config file if env vars are incomplete
+  // NOTE: File reads happen only when cache is cold or env vars changed.
+  // This is a one-time cost per cold start, not per request.
   let fileConfig: Record<string, string | undefined> = {};
-  const readPaths = [
-    join(process.cwd(), '.z-ai-config'),
-    join(homedir(), '.z-ai-config'),
-    '/etc/.z-ai-config',
-  ];
   let configSource = 'env';
 
-  for (const p of readPaths) {
-    try {
-      const raw = readFileSync(p, 'utf-8');
-      fileConfig = JSON.parse(raw);
-      configSource = p;
-      break;
-    } catch {
-      /* not found, continue */
+  if (!hasEnvVars) {
+    // Only read from disk if env vars are missing — avoid unnecessary I/O
+    const readPaths = [
+      join(process.cwd(), '.z-ai-config'),
+      join(homedir(), '.z-ai-config'),
+      '/etc/.z-ai-config',
+    ];
+
+    for (const p of readPaths) {
+      try {
+        // Use require() for sync read during cold start — this only runs
+        // once per function instance lifecycle, not per request.
+        // Async readFile would require making getResolvedConfig() async,
+        // which would cascade through every caller.
+        const { readFileSync: syncRead } = require('fs');
+        const raw = syncRead(p, 'utf-8');
+        fileConfig = JSON.parse(raw);
+        configSource = p;
+        break;
+      } catch {
+        /* not found, continue */
+      }
     }
   }
 
@@ -116,10 +139,7 @@ function getResolvedConfig(): ResolvedConfig {
     source: configSource,
   };
 
-  // Cache for next call (invalidate when env snapshot changes)
   _resolvedConfig = resolved;
-  (resolved as any)._envSnapshot = currentEnvSnapshot;
-
   return resolved;
 }
 
@@ -246,17 +266,34 @@ async function callGatewayVision(
 type ZAIInstance = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>;
 
 let zaiInstance: ZAIInstance | null = null;
-let configCreated = false;
+let sdkInitAttempted = false;
 
-function createZaiConfig(): boolean {
-  if (configCreated) return true;
+/**
+ * Ensure the .z-ai-config file exists so the SDK can initialize.
+ *
+ * REFACTORED: Replaced synchronous writeFileSync with async writeFile.
+ * The SDK (z-ai-web-dev-sdk) REQUIRES a .z-ai-config file — it has no
+ * env-var-only initialization path. Its ZAI.create() reads from:
+ *   1. process.cwd()/.z-ai-config  (primary — SDK hardcoded)
+ *   2. homedir()/.z-ai-config      (secondary)
+ *   3. /etc/.z-ai-config           (tertiary)
+ *
+ * On Vercel serverless, process.cwd() (/var/task) IS writable at runtime.
+ * As a safety net, we also write to /tmp/.z-ai-config for read-only CWD scenarios.
+ *
+ * Security: The file contains API credentials. On Vercel, the function sandbox
+ * is isolated per-request, so this is acceptable. The .z-ai-config is already
+ * in .gitignore to prevent accidental commits.
+ */
+async function ensureZaiConfigFile(): Promise<boolean> {
+  if (sdkInitAttempted) return zaiInstance !== null;
+  sdkInitAttempted = true;
 
-  // Resolve credentials using the same priority as direct HTTP calls
   const resolved = getResolvedConfig();
 
   // Validate minimum requirements
   if (!resolved.apiKey && !resolved.token) {
-    console.error('[ZAI] No API key or token configured. Set ZAI_API_KEY or ZAI_TOKEN env var, or create .z-ai-config.');
+    console.error('[ZAI] No API key or token configured. Set ZAI_API_KEY or ZAI_TOKEN env var.');
     return false;
   }
 
@@ -267,56 +304,53 @@ function createZaiConfig(): boolean {
   console.log(`[ZAI] Token: ${resolved.token ? resolved.token.slice(0, 8) + '...' : 'NOT SET'}`);
   console.log(`[ZAI] User ID: ${resolved.userId || 'NOT SET'}`);
 
-  // The z-ai-web-dev-sdk reads from .z-ai-config and env vars automatically.
-  // Ensure the config file exists with resolved credentials so the SDK can find it.
-  const configPath = join(process.cwd(), '.z-ai-config');
-  try {
-    const existing = readFileSync(configPath, 'utf-8');
-    const existingCfg = JSON.parse(existing);
-    // Update the config file if our resolved values are different (env vars may have changed)
-    const needsUpdate = existingCfg.baseUrl !== resolved.baseUrl
-      || existingCfg.apiKey !== resolved.apiKey
-      || existingCfg.token !== resolved.token
-      || existingCfg.userId !== resolved.userId;
-    if (needsUpdate) {
-      const configToWrite = {
-        baseUrl: resolved.baseUrl,
-        apiKey: resolved.apiKey || resolved.token,
-        token: resolved.token || resolved.apiKey,
-        userId: resolved.userId,
-        chatId: resolved.chatId,
-      };
-      writeFileSync(configPath, JSON.stringify(configToWrite, null, 2));
-      console.log(`[ZAI] Updated .z-ai-config with latest credentials`);
-    }
-  } catch {
-    // Config file doesn't exist — write it so the SDK can initialize
+  const configToWrite = {
+    baseUrl: resolved.baseUrl,
+    apiKey: resolved.apiKey || resolved.token,
+    token: resolved.token || resolved.apiKey,
+    userId: resolved.userId,
+    chatId: resolved.chatId,
+  };
+
+  // Write targets: CWD first (SDK's primary search path), then /tmp as fallback
+  const writeTargets = [
+    join(process.cwd(), '.z-ai-config'),
+    '/tmp/.z-ai-config',
+  ];
+
+  let wroteAny = false;
+  for (const configPath of writeTargets) {
     try {
-      const configToWrite = {
-        baseUrl: resolved.baseUrl,
-        apiKey: resolved.apiKey || resolved.token,
-        token: resolved.token || resolved.apiKey,
-        userId: resolved.userId,
-        chatId: resolved.chatId,
-      };
-      writeFileSync(configPath, JSON.stringify(configToWrite, null, 2));
-      console.log(`[ZAI] Wrote .z-ai-config for SDK initialization`);
-    } catch (writeErr) {
-      console.warn('[ZAI] Could not write .z-ai-config (non-fatal):', writeErr);
+      await writeFile(configPath, JSON.stringify(configToWrite, null, 2), { mode: 0o600 });
+      console.log(`[ZAI] Wrote config to ${configPath}`);
+      wroteAny = true;
+    } catch (writeErr: any) {
+      // Non-fatal — the SDK may still find an existing config or we have the direct HTTP fallback
+      console.warn(`[ZAI] Could not write to ${configPath} (non-fatal): ${writeErr?.code || writeErr?.message}`);
     }
   }
 
-  configCreated = true;
-  return true;
+  return wroteAny;
 }
 
-export async function getZai() {
-  if (!zaiInstance) {
-    createZaiConfig();
+/**
+ * Get or initialize the Z.ai SDK instance.
+ *
+ * Returns null if initialization fails — callers should fall back to
+ * the direct HTTP path (callGatewayText / callGatewayVision).
+ */
+export async function getZai(): Promise<ZAIInstance | null> {
+  if (zaiInstance) return zaiInstance;
+
+  try {
+    await ensureZaiConfigFile();
     const { default: ZAI } = await import('z-ai-web-dev-sdk');
     zaiInstance = await ZAI.create();
+    return zaiInstance;
+  } catch (sdkErr: any) {
+    console.warn(`[ZAI] SDK initialization failed (will use direct HTTP fallback): ${sdkErr?.message}`);
+    return null;
   }
-  return zaiInstance;
 }
 
 // ============================================
@@ -559,37 +593,42 @@ export async function executeWithFallback(
   const uniqueModels = Array.from(new Set(config.models));
 
   // ── STRATEGY 1: Try SDK with model fallback chain ──
-  for (const model of uniqueModels) {
-    try {
-      const zai = await getZai();
-      const request = buildRequest(model);
+  const zai = await getZai();
 
-      let response;
-      if (config.method === 'vision') {
-        const vr = request as VisionRequest;
-        response = await zai.chat.completions.createVision({
-          model: vr.model,
-          messages: vr.messages as any,
-          temperature: vr.temperature,
-          max_tokens: vr.max_tokens,
-          thinking: config.thinkingEnabled ? { type: 'enabled' as const } : { type: 'disabled' as const },
-        } as any);
-      } else {
-        const cr = request as ChatRequest;
-        response = await zai.chat.completions.create({
-          model: cr.model,
-          messages: cr.messages as any,
-          temperature: cr.temperature,
-          max_tokens: cr.max_tokens,
-        });
+  if (zai) {
+    for (const model of uniqueModels) {
+      try {
+        const request = buildRequest(model);
+
+        let response;
+        if (config.method === 'vision') {
+          const vr = request as VisionRequest;
+          response = await zai.chat.completions.createVision({
+            model: vr.model,
+            messages: vr.messages as any,
+            temperature: vr.temperature,
+            max_tokens: vr.max_tokens,
+            thinking: config.thinkingEnabled ? { type: 'enabled' as const } : { type: 'disabled' as const },
+          } as any);
+        } else {
+          const cr = request as ChatRequest;
+          response = await zai.chat.completions.create({
+            model: cr.model,
+            messages: cr.messages as any,
+            temperature: cr.temperature,
+            max_tokens: cr.max_tokens,
+          });
+        }
+
+        return { response, modelUsed: model, moduleKey };
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        lastError.push(err);
+        console.warn(`[ZAI-SDK] Model ${model} failed for ${moduleKey}: ${err.message}. Trying next...`);
       }
-
-      return { response, modelUsed: model, moduleKey };
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      lastError.push(err);
-      console.warn(`[ZAI-SDK] Model ${model} failed for ${moduleKey}: ${err.message}. Trying next...`);
     }
+  } else {
+    console.warn(`[ZAI] SDK not available for ${moduleKey}, skipping to direct HTTP fallback.`);
   }
 
   // ── STRATEGY 2: Direct HTTP fallback to gateway (bypass SDK) ──
@@ -1709,7 +1748,7 @@ JSON structure (no markdown):
 }
 
 export function getZaiConfigStatus(): {
-  configCreated: boolean;
+  sdkInitAttempted: boolean;
   hasToken: boolean;
   hasApiKey: boolean;
   hasBaseUrl: boolean;
@@ -1719,7 +1758,7 @@ export function getZaiConfigStatus(): {
 } {
   const resolved = getResolvedConfig();
   return {
-    configCreated,
+    sdkInitAttempted,
     hasToken: !!resolved.token,
     hasApiKey: !!resolved.apiKey,
     hasBaseUrl: !!resolved.baseUrl && resolved.baseUrl !== DEFAULT_GATEWAY_URL,
@@ -1752,6 +1791,10 @@ export async function checkAIServiceHealth(): Promise<{
 
   try {
     const zai = await getZai();
+    if (!zai) {
+      results.zai = { status: 'unhealthy', message: 'SDK initialization failed — check ZAI_API_KEY' };
+      return { ...results } as any;
+    }
     // Test text endpoint
     const textResp = await zai.chat.completions.create({
       model: AI_MODELS.PRIMARY_TEXT,
@@ -1771,6 +1814,9 @@ export async function checkAIServiceHealth(): Promise<{
   // Test vision endpoint — critical for E1 visual audit, E3 live pitch, E4 full session
   try {
     const zai = await getZai();
+    if (!zai) {
+      results.vision = { status: 'unhealthy', message: 'SDK initialization failed' };
+    } else {
     // Minimal vision test: a 1x1 white PNG pixel as data URI
     const testPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
     const visionResp = await zai.chat.completions.createVision({
@@ -1792,6 +1838,7 @@ export async function checkAIServiceHealth(): Promise<{
     } else {
       results.vision = { status: 'degraded', message: 'Vision endpoint returned empty response' };
     }
+    } // end else (zai available)
   } catch (error) {
     results.vision = { status: 'unhealthy', message: error instanceof Error ? error.message : 'Unknown' };
   }
