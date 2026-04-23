@@ -180,40 +180,36 @@ async function handlePost(request: NextRequest) {
 
 
     // Run AI analysis with priority strategy for E2 Script Check:
-    //   Strategy 1: Google AI / Gemini (Vertex AI module) — PRIMARY for E2
-    //   Strategy 2: Z.ai SDK (via ai-service executeWithFallback)
-    //   Strategy 3: Direct HTTP to Z.ai gateway (built into executeWithFallback)
+    //   Strategy 1: Z.ai Gateway (PRIMARY — most capable GLM models)
+    //   Strategy 2: Google AI / Vertex AI (FALLBACK — Gemini)
     let analysis: ScriptAnalysisResult;
 
-    // ── Strategy 1: Google AI / Gemini (PRIMARY for E2) ──
-    if (isVertexAIConfigured()) {
-      try {
-        console.log("[E2] Strategy 1: Analyzing with Google AI / Gemini...");
-        analysis = await analyzeWithVertexAI(script, targetAudience, targetDuration);
-        console.log("[E2] Google AI analysis succeeded (Strategy 1)");
-      } catch (vertexError: any) {
-        console.error("[E2] Google AI failed (Strategy 1):", vertexError?.message);
-        // Fall through to Z.ai strategies
-        analysis = null as any;
-      }
-    } else {
-      console.log("[E2] Google AI not configured, skipping Strategy 1");
+    // ── Strategy 1: Z.ai Gateway (PRIMARY for E2) ──
+    try {
+      console.log("[E2] Strategy 1: Analyzing with Z.ai Gateway (GLM)...");
+      analysis = await analyzePitchScript(script, targetAudience, targetDuration);
+      console.log("[E2] Z.ai analysis succeeded (Strategy 1), model:", analysis.modelUsed);
+    } catch (zaiError: any) {
+      console.error("[E2] Z.ai Gateway failed (Strategy 1):", zaiError?.message);
       analysis = null as any;
     }
 
-    // ── Strategy 2+3: Z.ai Gateway fallback ──
-    if (!analysis) {
+    // ── Strategy 2: Google AI / Vertex AI (FALLBACK) ──
+    if (!analysis && isVertexAIConfigured()) {
       try {
-        console.log("[E2] Strategy 2+3: Falling back to Z.ai gateway...");
-        analysis = await analyzePitchScript(script, targetAudience, targetDuration);
-        console.log("[E2] Z.ai gateway analysis succeeded (Strategy 2+3)");
-      } catch (aiError: any) {
-        console.error("[E2] Z.ai gateway also failed (Strategies 2+3):", aiError?.message);
-        return NextResponse.json(
-          { error: "All AI providers failed. Please try again later." },
-          { status: 503 }
-        );
+        console.log("[E2] Strategy 2: Falling back to Google AI / Vertex AI...");
+        analysis = await analyzeWithVertexAI(script, targetAudience, targetDuration);
+        console.log("[E2] Google AI analysis succeeded (Strategy 2)");
+      } catch (vertexError: any) {
+        console.error("[E2] Google AI also failed (Strategy 2):", vertexError?.message);
       }
+    }
+
+    if (!analysis) {
+      return NextResponse.json(
+        { error: "All AI providers failed. Please try again later." },
+        { status: 503 }
+      );
     }
 
 

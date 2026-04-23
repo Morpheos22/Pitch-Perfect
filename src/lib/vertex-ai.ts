@@ -1,10 +1,9 @@
 // src/lib/vertex-ai.ts
-// Google AI (Gemini) integration for Pitch Perfect — PRIMARY for E2 Script Check
+// Google AI (Gemini) integration for Pitch Perfect — FALLBACK for E2 Script Check
 //
 // AI Strategy Chain for E2 Script Check:
-//   Strategy 1: Google AI / Gemini (this module) — PRIMARY for E2
-//   Strategy 2: Z.ai SDK (z-ai-web-dev-sdk) — secondary
-//   Strategy 3: Z.ai direct HTTP fallback — tertiary
+//   Strategy 1: Z.ai Gateway (GLM models) — PRIMARY for ALL modules
+//   Strategy 2: Google AI / Vertex AI (this module) — FALLBACK for E2
 //
 // ENDPOINT ROUTING:
 //   If GOOGLE_CLOUD_PROJECT is set → Vertex AI endpoint:

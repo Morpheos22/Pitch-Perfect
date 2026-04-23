@@ -498,30 +498,30 @@ async function testE2Pipeline(): Promise<TestResult> {
     let analysis: any = null;
     let strategyUsed = 'none';
 
-    // Step 2a: Try Strategy 1 — Google AI / Gemini (PRIMARY for E2)
-    const { analyzeWithVertexAI, isVertexAIConfigured } = await import('@/lib/vertex-ai');
-    if (isVertexAIConfigured()) {
-      try {
-        analysis = await analyzeWithVertexAI(extractedText, 'investor', 60);
-        strategyUsed = 'Strategy 1 (Google AI)';
-        steps.push(`✅ Strategy 1 (Google AI): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
-      } catch (vertexErr: any) {
-        steps.push(`❌ Strategy 1 (Google AI): failed — ${vertexErr?.message?.slice(0, 150)}`);
-        analysis = null;
-      }
-    } else {
-      steps.push('⏭️ Strategy 1 (Google AI): skipped — not configured');
+    // Step 2a: Try Strategy 1 — Z.ai Gateway (PRIMARY for ALL modules)
+    try {
+      const { analyzePitchScript } = await import('@/lib/ai-service');
+      analysis = await analyzePitchScript(extractedText, 'investor', 60);
+      strategyUsed = 'Strategy 1 (Z.ai Gateway — PRIMARY)';
+      steps.push(`✅ Strategy 1 (Z.ai Gateway): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
+    } catch (zaiErr: any) {
+      steps.push(`❌ Strategy 1 (Z.ai Gateway): failed — ${zaiErr?.message?.slice(0, 150)}`);
+      analysis = null;
     }
 
-    // Step 2b: Try Strategy 2+3 — Z.ai Gateway (fallback)
+    // Step 2b: Try Strategy 2 — Google AI / Vertex AI (FALLBACK)
     if (!analysis) {
-      try {
-        const { analyzePitchScript } = await import('@/lib/ai-service');
-        analysis = await analyzePitchScript(extractedText, 'investor', 60);
-        strategyUsed = 'Strategy 2+3 (Z.ai Gateway)';
-        steps.push(`✅ Strategy 2+3 (Z.ai Gateway): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
-      } catch (zaiErr: any) {
-        steps.push(`❌ Strategy 2+3 (Z.ai Gateway): failed — ${zaiErr?.message?.slice(0, 150)}`);
+      const { analyzeWithVertexAI, isVertexAIConfigured } = await import('@/lib/vertex-ai');
+      if (isVertexAIConfigured()) {
+        try {
+          analysis = await analyzeWithVertexAI(extractedText, 'investor', 60);
+          strategyUsed = 'Strategy 2 (Google AI / Vertex AI — FALLBACK)';
+          steps.push(`✅ Strategy 2 (Vertex AI): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
+        } catch (vertexErr: any) {
+          steps.push(`❌ Strategy 2 (Vertex AI): failed — ${vertexErr?.message?.slice(0, 150)}`);
+        }
+      } else {
+        steps.push('⏭️ Strategy 2 (Vertex AI): skipped — not configured');
       }
     }
 
