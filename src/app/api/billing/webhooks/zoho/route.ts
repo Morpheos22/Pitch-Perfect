@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { verifyZohoWebhook, parseWebhookPayload, createModuleAccess } from '@/lib/payment-service';
+import { verifyZohoWebhook, parseWebhookPayload, createModuleAccess, PRODUCTS } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
             // Create module access for the Zoho plan
             // Map Zoho plan_code to our productId format for module access
             const productId = mapZohoPlanToProductId(plan_code);
-            if (productId) {
+            // SECURITY: Validate mapped productId against allowlist before granting entitlement
+            if (productId && PRODUCTS[productId]) {
               // Find or create a transaction record to link module access
               let txId: string;
               const existingTx = await prisma.transaction.findFirst({

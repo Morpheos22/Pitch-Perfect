@@ -4,7 +4,7 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
+import { parseWebhookPayload, verifyPayment, PRODUCTS } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
 import { getPlanFromProduct, getModuleCycles, createModuleAccess } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
@@ -44,6 +44,15 @@ export async function POST(request: NextRequest) {
 
       if (!productId) {
         return NextResponse.json({ error: 'Missing product ID' }, { status: 400 });
+      }
+
+      // SECURITY: Validate productId against server-side allowlist.
+      // custom_data is set client-side during checkout — an attacker could inject
+      // a fraudulent productId (e.g. "master") to escalate their entitlement.
+      // Only product IDs defined in our PRODUCTS map are valid.
+      if (!PRODUCTS[productId]) {
+        console.error('[LemonSqueezy] Rejected unknown productId:', productId);
+        return NextResponse.json({ error: 'Invalid product ID' }, { status: 400 });
       }
 
 
