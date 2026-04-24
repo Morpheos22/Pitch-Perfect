@@ -43,10 +43,16 @@ export async function POST(request: NextRequest) {
           const { subscription_id, customer_id, plan_code } = subData.subscription;
 
 
-          // Find user by Zoho customer ID
-          const user = await prisma.user.findFirst({
-            where: { zohoContactId: customer_id },
+          // Find user via Subscription.zohoCustomerId — the Zoho Billing customer_id
+          // is NOT the same as User.zohoContactId (which is a Zoho CRM Contact ID).
+          // The subscription record stores the billing-side customer reference.
+          const subscription = await prisma.subscription.findFirst({
+            where: { zohoCustomerId: customer_id },
+            select: { userId: true },
           });
+          const user = subscription
+            ? await prisma.user.findUnique({ where: { id: subscription.userId } })
+            : null;
 
 
           if (user) {
@@ -241,6 +247,8 @@ function mapZohoPlanToProductId(planCode: string): string {
   if (code.includes('live') || code.includes('elevator-live') || code.includes('video')) return 'elevator-live';
   if (code.includes('deck') || code.includes('pitch')) return 'pitch-deck';
   if (code.includes('script') || code.includes('elevator-script')) return 'elevator-script';
-  // Default: pitch-deck (STARTER tier)
-  return 'pitch-deck';
+  // Unknown plan code — grant NO access by default. The productId allowlist
+  // check above will reject empty strings, preventing privilege escalation
+  // from unrecognized Zoho plan codes.
+  return '';
 }

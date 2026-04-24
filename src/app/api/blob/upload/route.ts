@@ -170,11 +170,10 @@ export async function DELETE(request: NextRequest) {
         where: { userId: user.id, inputFileUrl: { contains: pathname } },
         select: { id: true },
       }),
-      // If PitchDeck model exists, check that too
-      prisma.pitchDeck?.findFirst({
+      prisma.pitchDeck.findFirst({
         where: { userId: user.id, fileUrl: { contains: pathname } },
         select: { id: true },
-      }).catch(() => null),
+      }),
     ]);
 
     if (ownedScript || ownedDeck) {

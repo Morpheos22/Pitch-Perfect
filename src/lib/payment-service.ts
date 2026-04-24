@@ -61,7 +61,7 @@ const AFRICAN_COUNTRIES_PAYSTACK = [
 export function determinePaymentGateway(country: string): string {
   const code = country?.toUpperCase?.() || 'US';
   if (AFRICAN_COUNTRIES_PAYSTACK.includes(code)) return 'paystack';
-  if (process.env.ZOHO_BILLING_CLIENT_ID) return 'zoho';
+  if (process.env.ZOHO_BILLING_AUTH_TOKEN) return 'zoho';
   if (process.env.STRIPE_SECRET_KEY) return 'stripe';
   return 'lemonsqueezy';
 }
