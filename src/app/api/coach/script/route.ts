@@ -8,12 +8,13 @@ import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
+import { activateKalProtocol, KAL_PLACEHOLDER_MESSAGE } from "@/lib/kal-protocol";
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
 
 
-// E2: Elevator Pitch Script Coach API
+// E2: Script Check API
 // Analyzes and improves elevator pitch scripts using REAL AI
 
 
@@ -188,10 +189,57 @@ async function handlePost(request: NextRequest) {
     const analysis = await analyzeScriptWithFallback(script, targetAudience, targetDuration);
 
     if (!analysis) {
-      return NextResponse.json(
-        { error: "All AI providers failed. Please try again later." },
-        { status: 503 }
-      );
+      // ── Kal Protocol: graceful degradation ──
+      // Instead of returning a generic 503, activate the Kal Protocol
+      // which marks the session as KAL_PENDING, fires a background retry,
+      // and tells the user to check their dashboard.
+      const savedKalSession = await prisma.pitchScript.create({
+        data: {
+          userId: user.id,
+          fileName: sessionName || null,
+          inputType: detectedInputType,
+          inputText: script,
+          inputFileUrl: scriptFileUrl,
+          targetAudience: targetAudience || "investor",
+          pitchDuration: targetDuration || 60,
+          status: "KAL_PENDING",
+          hookScore: 0,
+          problemScore: 0,
+          solutionScore: 0,
+          credibilityScore: 0,
+          ctaScore: 0,
+          overallScore: 0,
+          wordCount: wordCount,
+          estimatedDuration: Math.round(wordCount / 2.5),
+          improvements: { hook: [], problem: [], solution: [], credibility: [], cta: [] },
+          rewrittenScript: "",
+          alternativeHooks: [],
+          notes: "Kal Protocol: Analysis in progress. Check dashboard in a few minutes.",
+        },
+      });
+
+      // Fire Kal Protocol (non-blocking — the user gets an immediate response)
+      activateKalProtocol({
+        userId: user.id,
+        sessionId: savedKalSession.id,
+        module: 'e2',
+        model: 'glm-4-plus',
+        error: 'All AI providers failed during initial request',
+        inputPayload: script,
+        userEmail: user.email || '',
+        userName: user.firstName || undefined,
+        targetAudience,
+        targetDuration,
+      }).catch((kalErr) => {
+        console.error('[E2] Kal Protocol activation failed:', kalErr);
+      });
+
+      return NextResponse.json({
+        success: true,
+        kalProtocol: true,
+        id: savedKalSession.id,
+        message: KAL_PLACEHOLDER_MESSAGE,
+      });
     }
 
 

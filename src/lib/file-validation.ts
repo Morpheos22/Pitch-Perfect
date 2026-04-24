@@ -53,7 +53,6 @@ export const EXTENSION_TO_MIME: Record<string, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword',
   txt: 'text/plain',
-  md: 'text/markdown',
   text: 'text/plain',
   mp4: 'video/mp4',
   webm: 'video/webm',

@@ -27,7 +27,7 @@ const DEV_MODE_CHECK = process.env.NODE_ENV === "development";
 const moduleLinks = [
   { label: "E1 — Pitch Deck Analyser", href: "/pitch-deck-analyser/new", icon: Presentation },
   { label: "E2 — Script Check", href: "/elevator-script/new", icon: MessageSquare },
-  { label: "E3 — Elevator Pitch Live", href: "/elevator-pitch-live/new", icon: Video },
+  { label: "E3 — Live Pitch", href: "/elevator-pitch-live/new", icon: Video },
   { label: "E4 — Full Pitch Session", href: "/coach/full/new", icon: TrendingUp },
   { label: "E5 — Founder Tools", href: "/founder", icon: UserCheck },
 ];

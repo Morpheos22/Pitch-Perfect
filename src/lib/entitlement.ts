@@ -335,7 +335,7 @@ export async function requireModuleAccess(
   const moduleNames: Record<CoachModule, string> = {
     e1: 'Pitch Deck Analyser',
     e2: 'Script Check',
-    e3: 'Live Elevator Pitch Coach',
+    e3: 'Live Pitch',
     e4: 'Full Pitch Session',
     e5: 'Founder Module',
   };

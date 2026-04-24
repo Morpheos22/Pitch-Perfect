@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/email";
 import { syncUserToCRM } from "@/lib/zoho-crm";
 import { isAdminEmail } from "@/lib/dev-auth";
+import { isBlockedEmail } from "@/lib/clerk-config";
 export const dynamic = 'force-dynamic';
 
 // Clerk webhook events we handle
@@ -116,6 +117,15 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
+  // ── Subdomain/Disposable email check ──
+  // Block users with subdomain or disposable email addresses
+  if (isBlockedEmail(email)) {
+    console.warn(`[Clerk Webhook] Blocked user with subdomain/disposable email: ${email}`);
+    // We can't prevent Clerk from creating the user, but we can refuse
+    // to create the database record. The user will see errors accessing
+    // any authenticated features since they have no DB record.
+    return;
+  }
 
   // Check if user already exists (idempotency)
   const existingUser = await prisma.user.findUnique({

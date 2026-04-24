@@ -45,6 +45,9 @@ model User {
   zohoContactId String? // Zoho CRM Contact ID
   zohoAccountId String? // Zoho CRM Account ID (for B2B)
 
+  // Chatbot
+  chatMessages ChatMessage[]
+
   // Timestamps
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -416,6 +419,8 @@ enum AnalysisStatus {
   PROCESSING
   COMPLETED
   FAILED
+  KAL_PENDING
+  KAL_FAILED
 }
 
 // ============================================
@@ -612,4 +617,34 @@ model ZohoSyncLog {
   @@index([userId])
   @@index([entityType])
   @@map("zoho_sync_logs")
+}
+
+// ============================================
+// CHATBOT MESSAGES
+// ============================================
+
+model ChatMessage {
+  id             String @id @default(cuid())
+  userId         String
+  conversationId String
+
+  // Message content
+  role    ChatRole
+  content String
+
+  // Timestamps
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, conversationId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("chat_messages")
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
 }

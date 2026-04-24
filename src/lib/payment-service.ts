@@ -1,6 +1,6 @@
 // Payment Service
 // Handles payment gateway routing, webhook verification, and checkout session creation
-// Supports: Paystack (SA), Zoho Billing (International), Stripe (Fallback), LemonSqueezy (MoR)
+// Supports: Paystack (SA), Zoho Billing (International), Stripe (Fallback)
 
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/db';
@@ -12,7 +12,7 @@ import { prisma } from '@/lib/db';
 export const PRODUCTS: Record<string, { name: string; description: string }> = {
   'pitch-deck': { name: 'Pitch Deck Analyzer', description: 'AI-powered pitch deck analysis' },
   'elevator-script': { name: 'Script Check', description: 'Script analysis and improvement' },
-  'elevator-live': { name: 'Live Elevator Pitch Coach', description: 'Video delivery analysis' },
+  'elevator-live': { name: 'Live Pitch', description: 'Video delivery analysis' },
   'pitch-deck-live': { name: 'Pitch Deck + Live Bundle', description: 'Combined deck and video analysis' },
   'master': { name: 'Master Plan', description: 'Full access to all modules' },
 };
@@ -63,7 +63,7 @@ export function determinePaymentGateway(country: string): string {
   if (AFRICAN_COUNTRIES_PAYSTACK.includes(code)) return 'paystack';
   if (process.env.ZOHO_BILLING_AUTH_TOKEN) return 'zoho';
   if (process.env.STRIPE_SECRET_KEY) return 'stripe';
-  return 'lemonsqueezy';
+  return 'stripe'; // Default fallback
 }
 
 /**
@@ -131,8 +131,6 @@ export async function createCheckoutSession(
       return createZohoSession(customer, productId, metadata);
     case 'stripe':
       return createStripeSession(customer, productId, metadata);
-    case 'lemonsqueezy':
-      return createLemonSqueezySession(customer, productId, metadata);
     default:
       throw new Error('No payment gateway available');
   }
@@ -242,57 +240,6 @@ async function createStripeSession(
   };
 }
 
-async function createLemonSqueezySession(
-  customer: CustomerInfo,
-  productId: string,
-  metadata: SessionMetadata
-): Promise<CheckoutSession> {
-  const variantMap: Record<string, string> = {
-    'pitch-deck': process.env.LEMONSQUEEZY_VARIANT_PITCH_DECK || '',
-    'elevator-script': process.env.LEMONSQUEEZY_VARIANT_ELEVATOR_SCRIPT || '',
-    'elevator-live': process.env.LEMONSQUEEZY_VARIANT_ELEVATOR_LIVE || '',
-    'pitch-deck-live': process.env.LEMONSQUEEZY_VARIANT_PITCH_DECK_LIVE || '',
-    'master': process.env.LEMONSQUEEZY_VARIANT_MASTER || '',
-  };
-
-  const variantId = variantMap[productId];
-  if (!variantId) throw new Error(`No LemonSqueezy variant configured for ${productId}`);
-
-  const response = await fetch('https://api.lemonsqueezy.com/v1/checkouts', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.LEMONSQUEEZY_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      data: {
-        type: 'checkouts',
-        attributes: {
-          checkout_data: {
-            email: customer.email,
-            name: customer.name,
-            custom: {
-              userId: metadata.userId,
-              productId,
-            },
-          },
-        },
-        relationships: {
-          variant: {
-            data: { type: 'variants', id: variantId },
-          },
-        },
-      },
-    }),
-  });
-
-  const data = await response.json();
-  return {
-    id: data.data?.id || `ls-${Date.now()}`,
-    checkoutUrl: data.data?.attributes?.url || '',
-  };
-}
-
 // ============================================
 // MODULE ACCESS CREATION (single source of truth)
 // ============================================
@@ -351,21 +298,6 @@ function verifyPaystackWebhook(signature: string, body: string): boolean {
 }
 
 /**
- * Verify LemonSqueezy webhook signature using timing-safe comparison.
- */
-function verifyLemonSqueezyWebhook(signature: string, body: string): boolean {
-  const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
-  if (!secret) return false;
-  const hash = createHmac('sha256', secret)
-    .update(body)
-    .digest('hex');
-  const hashBuf = Buffer.from(hash, 'hex');
-  const sigBuf = Buffer.from(signature, 'hex');
-  if (hashBuf.length !== sigBuf.length) return false;
-  return timingSafeEqual(hashBuf, sigBuf);
-}
-
-/**
  * Verify Zoho Billing webhook signature using timing-safe comparison.
  */
 export function verifyZohoWebhook(signature: string, body: string): boolean {
@@ -403,9 +335,6 @@ export function parseWebhookPayload(
   switch (provider) {
     case 'paystack':
       valid = verifyPaystackWebhook(signature, body);
-      break;
-    case 'lemonsqueezy':
-      valid = verifyLemonSqueezyWebhook(signature, body);
       break;
     case 'zoho':
       valid = verifyZohoWebhook(signature, body);
@@ -449,8 +378,6 @@ export async function verifyPayment(
   switch (provider) {
     case 'paystack':
       return verifyPaystackPayment(reference);
-    case 'lemonsqueezy':
-      return verifyLemonSqueezyPayment(reference);
     case 'stripe':
       return verifyStripePayment(reference);
     case 'zoho':
@@ -473,23 +400,6 @@ async function verifyPaystackPayment(reference: string): Promise<PaymentVerifica
     amount: data.data.amount / 100,
     currency: data.data.currency,
     reference: data.data.reference,
-  };
-}
-
-async function verifyLemonSqueezyPayment(orderId: string): Promise<PaymentVerificationResult> {
-  const response = await fetch(`https://api.lemonsqueezy.com/v1/orders/${orderId}`, {
-    headers: { 'Authorization': `Bearer ${process.env.LEMONSQUEEZY_API_KEY}` },
-  });
-  const data = await response.json();
-  const order = data.data?.attributes;
-  if (!order || order.status !== 'paid') {
-    return { success: false, amount: 0, currency: 'USD' };
-  }
-  return {
-    success: true,
-    amount: parseFloat(order.total) || 0,
-    currency: order.currency_code || 'USD',
-    reference: orderId,
   };
 }
 

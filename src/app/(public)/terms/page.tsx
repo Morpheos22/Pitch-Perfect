@@ -39,12 +39,12 @@ const serviceTiers = [
     description: "Deck analysis with 2 improvement cycles",
   },
   {
-    name: "Elevator Script Check",
+    name: "Script Check",
     code: "M2",
     description: "Script coaching with 2 improvement cycles",
   },
   {
-    name: "Elevator Pitch Live",
+    name: "Live Pitch",
     code: "M3",
     description: "Script coaching plus live recording practice (3 sessions)",
   },

@@ -189,7 +189,7 @@ export default function DashboardPage() {
     if (videos) {
       videos.slice(0, 2).forEach((v) => {
         recentSessions.push({
-          id: v.id, type: "Live Recording", label: "Elevator Pitch Live",
+          id: v.id, type: "Live Recording", label: "Live Pitch",
           name: `Video ${v.duration ? `${Math.round(v.duration / 60)}s` : ""}`, score: v.overallDeliveryScore,
           date: v.createdAt, href: `/elevator-pitch-live/live/session/${v.id}`,
           icon: Video, colorClass: "bg-orange-500/10 text-orange-500",
@@ -238,7 +238,7 @@ export default function DashboardPage() {
       status: limits.e2 > 0 ? ("active" as const) : ("upgrade" as const),
     },
     {
-      id: "m3", title: "Elevator Pitch Live",
+      id: "m3", title: "Live Pitch",
       description: "Script coaching plus live recording with delivery feedback",
       icon: Video, href: "/elevator-pitch-live/new",
       color: "bg-orange-500/10 text-orange-500",

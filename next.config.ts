@@ -10,6 +10,30 @@ const nextConfig: any = {
   // replaced with browser-compatible versions via the package's "browser" field.
   transpilePackages: ["@vercel/blob"],
 
+  // ── Redirects — Replacing dead page components with server-level redirects ──
+  // These replace the zombie /coach/deck, /coach/script, /coach/live pages
+  // that were redirect-only components. Server-level redirects are more efficient
+  // (no JS bundle parsed) and eliminate the dead page files.
+  async redirects() {
+    return [
+      {
+        source: '/coach/deck',
+        destination: '/pitch-deck-analyser/new',
+        permanent: true,
+      },
+      {
+        source: '/coach/script',
+        destination: '/elevator-script/new',
+        permanent: true,
+      },
+      {
+        source: '/coach/live',
+        destination: '/elevator-pitch-live/new',
+        permanent: true,
+      },
+    ];
+  },
+
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'blob.vercel-storage.com' },
@@ -48,6 +72,12 @@ const nextConfig: any = {
         source: '/(.*)',
         headers: [
           // Consolidated CSP — merged from both next.config.ts and vercel.json
+          // SECURITY NOTE: 'unsafe-eval' and 'unsafe-inline' in script-src are REQUIRED
+          // by Clerk's authentication SDK. Clerk injects inline scripts for FAPI
+          // communication and uses eval-like patterns for session management.
+          // Without these, Clerk auth breaks entirely on the client side.
+          // TODO: Investigate Clerk nonce-based CSP when available for hardening.
+          // Mitigation: All other security headers are strict (HSTS, X-Frame-Options, etc.)
           {
             key: 'Content-Security-Policy',
             value: [

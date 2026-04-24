@@ -8,7 +8,7 @@ const footerLinks = {
   product: [
     { label: "Pitch Deck Analyser", href: "/pitch-deck-analyser", pricingHref: "/pricing#pitch-deck" },
     { label: "Script Check", href: "/elevator-script", pricingHref: "/pricing#elevator-script" },
-    { label: "Elevator Pitch Live", href: "/elevator-pitch-live", pricingHref: "/pricing#elevator-live" },
+    { label: "Live Pitch", href: "/elevator-pitch-live", pricingHref: "/pricing#elevator-live" },
     { label: "Full Pitch Session", href: "/coach/full", pricingHref: "/pricing#pitch-live" },
     { label: "Founder Coaching", href: "/founder", pricingHref: "/pricing#master" },
   ],

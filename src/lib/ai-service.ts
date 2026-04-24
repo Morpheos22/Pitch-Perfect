@@ -508,6 +508,20 @@ export const MODULE_MODEL_MAP = {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
+  // CHATBOT — PitchCoach AI Assistant
+  // ═══════════════════════════════════════════════════════════════════════
+  // Cost-effective model for the embedded chatbot widget.
+  // Uses "glm-4-flash" label (same backend as glm-4-plus on gateway)
+  // for future cost tracking and differentiation.
+  // Max 512 tokens per response, 0.7 temperature for conversational tone.
+  CHATBOT: {
+    models: [AI_MODELS.GLM_FAST, AI_MODELS.FAILSAFE_TEXT],
+    temperature: 0.7,
+    method: 'chat' as const,
+    description: 'PitchCoach AI chatbot — pitch coaching guidance and platform navigation',
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
   // E5: PITCH FOUNDER — Conversion Layer to Automagikal Network
   // ═══════════════════════════════════════════════════════════════════════
   // The conversion layer where a founder stops being a user and starts

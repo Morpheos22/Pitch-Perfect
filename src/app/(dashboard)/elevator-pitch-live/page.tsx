@@ -77,7 +77,7 @@ export default function ElevatorPitchLivePage() {
           <div className="p-2 rounded-lg bg-orange-500/10">
             <Video className="w-6 h-6 text-orange-500" />
           </div>
-          Elevator Pitch Live
+          Live Pitch
         </h1>
         <p className="text-muted-foreground mt-1">
           Script coaching plus live recording with delivery feedback

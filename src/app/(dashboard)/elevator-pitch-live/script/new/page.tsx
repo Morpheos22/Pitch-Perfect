@@ -179,13 +179,13 @@ export default function ElevatorPitchLiveScriptNewPage() {
       {/* Breadcrumb */}
       <Button variant="ghost" size="sm" onClick={() => router.push("/elevator-pitch-live/new")} className="mb-2">
         <ChevronLeft className="h-4 w-4 mr-1" />
-        Back to Elevator Pitch Live
+        Back to Live Pitch
       </Button>
 
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Script Session</h1>
-        <p className="text-muted-foreground">Part of Elevator Pitch Live — M2 Script Coaching</p>
+        <p className="text-muted-foreground">Part of Live Pitch — M2 Script Coaching</p>
       </div>
 
       {/* Session Counter */}

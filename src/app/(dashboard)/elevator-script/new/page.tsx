@@ -74,7 +74,7 @@ export default function ElevatorScriptNewPage() {
       }
       // MIME type check: extension is already validated above.
       // Per file-validation.ts, MIME mismatches are warnings, not blockers.
-      // Browsers report incorrect MIME types for .md files (empty string or
+      // Browsers report incorrect MIME types for some files (empty string or
       // application/octet-stream), so we skip the MIME block for valid extensions.
       if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);

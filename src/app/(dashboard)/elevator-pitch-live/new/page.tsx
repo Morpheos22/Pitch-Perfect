@@ -151,7 +151,7 @@ export default function ElevatorPitchLiveNewPage() {
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Elevator Pitch Live</h1>
+        <h1 className="text-2xl font-bold">Live Pitch</h1>
         <p className="text-muted-foreground">Script coaching plus live delivery practice</p>
       </div>
 

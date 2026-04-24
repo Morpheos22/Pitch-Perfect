@@ -1,5 +1,5 @@
 // E2 Pipeline Diagnostic Endpoint
-// Tests each step of the Elevator Pitch Script analysis pipeline independently.
+// Tests each step of the Script Check analysis pipeline independently.
 // Requires authentication + admin access (dev emails only).
 //
 // GET /api/coach/diagnostic
