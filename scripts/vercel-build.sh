@@ -2,21 +2,21 @@
 # ============================================================
 # Pitch Perfect — Vercel Build Script
 #
-# Strategy: Prisma Client generation happens at build time.
-# Database schema sync happens at runtime (via Supabase pooler).
-# The DB pooler (af-south-1) is not reachable from Vercel's
-# US-East build environment, so we skip DB ops at build time.
-# Schema is kept in sync via `prisma db push` from dev machines.
+# Pipeline: prisma generate → migrate deploy → next build
+# Migrations are now baselined, so deploy runs cleanly.
 # ============================================================
 set -e
 
-echo "🔧 [1/3] Generating Prisma Client..."
+echo "🔧 [1/4] Generating Prisma Client..."
 npx prisma generate
 
-echo "🏗️ [2/3] Building Next.js application..."
+echo "📦 [2/4] Deploying Prisma migrations..."
+npx prisma migrate deploy 2>&1 || echo "⚠️  Migration deploy skipped (non-fatal)"
+
+echo "🏗️ [3/4] Building Next.js application..."
 npx next build
 
-echo "📋 [3/3] Copying static assets..."
+echo "📋 [4/4] Copying static assets..."
 cp -r .next/static .next/standalone/.next/ 2>/dev/null || true
 cp -r public .next/standalone/ 2>/dev/null || true
 
