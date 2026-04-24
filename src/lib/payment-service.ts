@@ -3,6 +3,7 @@
 // Supports: Paystack (SA), Zoho Billing (International), Stripe (Fallback), LemonSqueezy (MoR)
 
 import { createHmac, timingSafeEqual } from 'crypto';
+import { prisma } from '@/lib/db';
 
 // ============================================
 // PRODUCT DEFINITIONS
@@ -290,6 +291,44 @@ async function createLemonSqueezySession(
     id: data.data?.id || `ls-${Date.now()}`,
     checkoutUrl: data.data?.attributes?.url || '',
   };
+}
+
+// ============================================
+// MODULE ACCESS CREATION (single source of truth)
+// ============================================
+
+/**
+ * Create a ModuleAccess record for a transaction based on the product ID.
+ * Uses atomic upsert to prevent TOCTOU race conditions.
+ *
+ * This is the SINGLE source of truth for which products grant access to which modules,
+ * and what usage limits each product tier provides. All payment webhooks MUST call
+ * this function instead of inlining their own upsert logic.
+ *
+ * @param transactionId - The database transaction ID to link the module access to
+ * @param productId - The product identifier (e.g. 'pitch-deck', 'master')
+ */
+export async function createModuleAccess(
+  transactionId: string,
+  productId: string
+): Promise<void> {
+  await prisma.moduleAccess.upsert({
+    where: { transactionId },
+    create: {
+      transactionId,
+      e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
+      e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
+      e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
+      e4Access: ['pitch-deck-live', 'master'].includes(productId),
+      e5Access: ['founder', 'founder-readiness', 'master'].includes(productId),
+      e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
+      e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
+      e3Limit: productId === 'master' ? 30 : 3,
+      e4Limit: productId === 'master' ? 10 : 3,
+      e5Limit: productId === 'master' ? 20 : 5,
+    },
+    update: {}, // no-op if already exists (idempotent)
+  });
 }
 
 // ============================================

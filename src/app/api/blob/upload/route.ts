@@ -31,6 +31,7 @@ import {
   MAX_FILE_SIZES,
   type FileCategory,
 } from '@/lib/file-validation';
+import { isHostAllowed, ALLOWED_UPLOAD_HOSTS } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -187,26 +188,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   // ── Security: only allow deleting blobs from our own store ──
-  const allowedHosts = [
-    'blob.vercel-storage.com',
-    '.blob.vercel-storage.com',
-    '.public.blob.vercel-storage.com',
-  ];
-  let blobHost: string;
-  try {
-    blobHost = new URL(blobUrl).hostname;
-  } catch {
-    return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
-  }
-
-  const isAllowedHost = allowedHosts.some(host => {
-    if (host.startsWith('.')) {
-      return blobHost.endsWith(host) || blobHost === host.slice(1);
-    }
-    return blobHost === host;
-  });
-
-  if (!isAllowedHost) {
+  if (!isHostAllowed(blobUrl, ALLOWED_UPLOAD_HOSTS)) {
     return NextResponse.json(
       { error: 'Can only delete blobs from our own store' },
       { status: 403 }

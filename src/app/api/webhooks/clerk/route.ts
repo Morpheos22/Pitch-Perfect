@@ -3,6 +3,7 @@ import { Webhook } from "svix";
 import { prisma } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/email";
 import { syncUserToCRM } from "@/lib/zoho-crm";
+import { isAdminEmail } from "@/lib/dev-auth";
 export const dynamic = 'force-dynamic';
 
 // Clerk webhook events we handle
@@ -125,16 +126,8 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   if (existingUser) return;
 
 
-  // Developer emails for full access (configurable via env var)
-  // In production, DEVELOPER_EMAILS env var is REQUIRED — no hardcoded fallback.
-  // In development, a fallback is allowed for convenience.
-  const devEmailsRaw = process.env.DEVELOPER_EMAILS;
-  const DEVELOPER_EMAILS = (devEmailsRaw && devEmailsRaw.trim())
-    ? devEmailsRaw.split(',').map((e) => e.trim().toLowerCase())
-    : (process.env.NODE_ENV === 'production'
-        ? [] // No fallback in production
-        : ['helloautomagikal@gmail.com', 'morphylee22@gmail.com']); // Dev fallback
-  const isDeveloper = DEVELOPER_EMAILS.includes(email.toLowerCase());
+  // Check if developer email (single source of truth in dev-auth.ts)
+  const isDeveloper = isAdminEmail(email);
 
 
   // Check if email is already verified

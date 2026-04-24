@@ -5,7 +5,7 @@ import { uploadFile, isStorageConfigured, ALLOWED_VIDEO_HOSTS, isHostAllowed } f
 import { extractFileText, extractTextFromUrl } from '@/lib/file-parser';
 import { requireModuleAccess } from "@/lib/entitlement";
 import { fullPitchIterateSchema } from "@/lib/validation/schemas";
-import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { clampScore } from "@/lib/ai-utils";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
@@ -208,20 +208,14 @@ async function handlePost(request: NextRequest) {
 
 
     // Private blob URLs need conversion to data URI for AI gateway access
-    // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
     let aiVideoUrl = analysisVideoUrl;
-    try {
-      const parsedUrl = new URL(analysisVideoUrl);
-      const isPrivateBlob = (parsedUrl.hostname.endsWith('.blob.vercel-storage.com') || parsedUrl.hostname === 'blob.vercel-storage.com') &&
-        !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
-      if (isPrivateBlob) {
-        console.warn('[E4] Converting private blob URL to data URI for vision model');
-        const dataUri = await blobUrlToDataUri(analysisVideoUrl);
-        if (dataUri) {
-          aiVideoUrl = dataUri;
-        }
+    if (isPrivateBlobUrl(analysisVideoUrl)) {
+      console.warn('[E4] Converting private blob URL to data URI for vision model');
+      const dataUri = await blobUrlToDataUri(analysisVideoUrl);
+      if (dataUri) {
+        aiVideoUrl = dataUri;
       }
-    } catch { /* URL parse error, use as-is */ }
+    }
 
 
     let analysis: FullPitchAnalysisResult;
