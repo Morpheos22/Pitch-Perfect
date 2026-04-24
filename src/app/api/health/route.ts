@@ -3,7 +3,7 @@ import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { getVertexAIConfigStatus, isVertexAIConfigured } from '@/lib/vertex-ai';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
-import { isAdminEmail } from '@/lib/dev-auth';
+// isAdminEmail removed — not used in this route
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -109,16 +109,10 @@ export async function GET(request: NextRequest) {
 
   // Entitlement check — verify dev email system is working (without leaking specific emails)
   checks.entitlement = {
-    devEmailsConfigured: (() => {
-      // Check if any dev emails are configured without leaking which ones
-      try {
-        const { default: devAuth } = require('@/lib/dev-auth');
-        // Just check if the function is importable and env var is set
-        return !!(process.env.DEVELOPER_EMAILS && process.env.DEVELOPER_EMAILS.trim().length > 0);
-      } catch {
-        return false;
-      }
-    })(),
+    // Direct env check — no need to import dev-auth just to verify the var exists.
+    // This avoids the CJS require() interop issue and removes a dead import path
+    // (dev-auth has no default export, so the old require was partially broken).
+    devEmailsConfigured: !!(process.env.DEVELOPER_EMAILS && process.env.DEVELOPER_EMAILS.trim().length > 0),
   };
 
 

@@ -50,8 +50,17 @@ async function handlePost(request: NextRequest) {
       const blobFileName = formData.get("fileName") as string | null;
       sessionName = formData.get("sessionName") as string | null;
       targetAudience = (formData.get("targetAudience") as string) || undefined;
-      const rawDuration = formData.get("targetDuration") ? parseInt(formData.get("targetDuration") as string, 10) : undefined;
-      targetDuration = Number.isFinite(rawDuration) ? rawDuration : undefined;
+      const rawDurationStr = formData.get("targetDuration") as string | null;
+      const rawDuration = rawDurationStr ? parseInt(rawDurationStr, 10) : NaN;
+      // Clamp to Zod schema bounds (min 10, max 600) — parity with JSON path
+      if (Number.isFinite(rawDuration)) {
+        targetDuration = Math.max(10, Math.min(600, rawDuration));
+        if (rawDuration !== targetDuration) {
+          console.warn(`[E2] FormData targetDuration clamped: ${rawDuration} → ${targetDuration}`);
+        }
+      } else {
+        targetDuration = undefined;
+      }
 
 
       if (!file && !fileUrl) {
