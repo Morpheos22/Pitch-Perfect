@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { analyzePitchScript, ScriptAnalysisResult } from "@/lib/ai-service";
-import { analyzeWithVertexAI, isVertexAIConfigured } from "@/lib/vertex-ai";
+import { analyzeScriptWithFallback } from "@/lib/ai-service";
+import type { ScriptAnalysisResult } from "@/lib/ai-service";
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptInputSchema, scriptIterateSchema } from "@/lib/validation/schemas";
@@ -184,30 +184,8 @@ async function handlePost(request: NextRequest) {
     }
 
 
-    // Run AI analysis with priority strategy for E2 Script Check:
-    //   Strategy 1: Z.ai Gateway (PRIMARY — most capable GLM models)
-    //   Strategy 2: Google AI / Vertex AI (FALLBACK — Gemini)
-    let analysis: ScriptAnalysisResult | null = null;
-
-    // ── Strategy 1: Z.ai Gateway (PRIMARY for E2) ──
-    try {
-      console.log("[E2] Strategy 1: Analyzing with Z.ai Gateway (GLM)...");
-      analysis = await analyzePitchScript(script, targetAudience, targetDuration);
-      console.log("[E2] Z.ai analysis succeeded (Strategy 1), model:", analysis.modelUsed);
-    } catch (zaiError: any) {
-      console.error("[E2] Z.ai Gateway failed (Strategy 1):", zaiError?.message);
-    }
-
-    // ── Strategy 2: Google AI / Vertex AI (FALLBACK) ──
-    if (!analysis && isVertexAIConfigured()) {
-      try {
-        console.log("[E2] Strategy 2: Falling back to Google AI / Vertex AI...");
-        analysis = await analyzeWithVertexAI(script, targetAudience, targetDuration);
-        console.log("[E2] Google AI analysis succeeded (Strategy 2)");
-      } catch (vertexError: any) {
-        console.error("[E2] Google AI also failed (Strategy 2):", vertexError?.message);
-      }
-    }
+    // Run AI analysis with dual-strategy fallback (Z.ai → Vertex AI)
+    const analysis = await analyzeScriptWithFallback(script, targetAudience, targetDuration);
 
     if (!analysis) {
       return NextResponse.json(

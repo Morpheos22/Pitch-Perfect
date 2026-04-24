@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { analyzePitchScript } from "@/lib/ai-service";
+import { analyzeScriptWithFallback } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
@@ -119,13 +119,21 @@ async function handlePost(request: NextRequest) {
     } as any;
 
 
-    // Run AI analysis with iteration context
-    const analysis = await analyzePitchScript(
+    // Run AI analysis with dual-strategy fallback (Z.ai → Vertex AI)
+    const analysis = await analyzeScriptWithFallback(
       scriptText,
       parentScript.targetAudience || undefined,
       parentScript.pitchDuration || undefined,
-      previousAnalysis
+      previousAnalysis,
+      '[E2 Iterate]'
     );
+
+    if (!analysis) {
+      return NextResponse.json(
+        { error: "All AI providers failed. Please try again later." },
+        { status: 503 }
+      );
+    }
 
 
     // Determine version number — query DB for max existing version to prevent race conditions

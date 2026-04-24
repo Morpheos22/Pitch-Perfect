@@ -29,12 +29,12 @@ const nextConfig: any = {
 
   // ── Body size limits for large file uploads ──
   // proxyClientMaxBodySize handles proxy/middleware body size (replaces deprecated middlewareClientMaxBodySize).
-  // serverActions.bodySizeLimit covers Server Actions — placed under experimental in Next 16.
+  // serverActions.bodySizeLimit is a top-level config in Next.js 16+ (no longer under experimental).
   experimental: {
     proxyClientMaxBodySize: '50mb',
-    serverActions: {
-      bodySizeLimit: '35mb',
-    },
+  },
+  serverActions: {
+    bodySizeLimit: '35mb',
   },
 
   // ── Unified security headers ──

@@ -325,7 +325,7 @@ function parseGeminiResponse(
     ctaScore: clampScore(parsed.ctaScore),
     overallScore: clampScore(parsed.overallScore),
     wordCount: script.split(/\s+/).filter(Boolean).length,
-    estimatedDuration: parsed.estimatedDuration || Math.round(script.split(/\s+/).length * 0.4),
+    estimatedDuration: parsed.estimatedDuration || Math.round(script.split(/\s+/).filter(Boolean).length / 2.5),
     improvements: validateImprovements(parsed.improvements),
     rewrittenScript: parsed.rewrittenScript || '',
     alternativeHooks: validateStringArray(parsed.alternativeHooks),

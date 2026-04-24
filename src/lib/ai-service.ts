@@ -1278,6 +1278,67 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
 }
 
 // ============================================
+// DUAL-STRATEGY FALLBACK WRAPPER (E2)
+// ============================================
+
+/**
+ * Run script analysis with automatic dual-provider fallback:
+ *   Strategy 1: Z.ai Gateway (GLM) — PRIMARY
+ *   Strategy 2: Google AI / Vertex AI (Gemini) — FALLBACK
+ *
+ * Returns null (instead of throwing) when ALL providers fail,
+ * so callers can return a 503 response.
+ *
+ * This centralizes the try/catch fallback logic that was previously
+ * duplicated across POST /api/coach/script and POST /api/coach/script/iterate.
+ */
+export async function analyzeScriptWithFallback(
+  scriptText: string,
+  targetAudience?: string,
+  targetDuration?: number,
+  previousAnalysis?: {
+    overallScore: number;
+    hookScore?: number;
+    problemScore?: number;
+    solutionScore?: number;
+    credibilityScore?: number;
+    ctaScore?: number;
+    weaknesses?: string[];
+    improvements?: Record<string, string[]>;
+    rewrittenScript?: string;
+  },
+  logPrefix = '[E2]'
+): Promise<ScriptAnalysisResult | null> {
+  let analysis: ScriptAnalysisResult | null = null;
+
+  // ── Strategy 1: Z.ai Gateway (PRIMARY) ──
+  try {
+    console.log(`${logPrefix} Strategy 1: Analyzing with Z.ai Gateway (GLM)...`);
+    analysis = await analyzePitchScript(scriptText, targetAudience, targetDuration, previousAnalysis);
+    console.log(`${logPrefix} Z.ai analysis succeeded (Strategy 1), model:`, analysis.modelUsed);
+  } catch (zaiError: any) {
+    console.error(`${logPrefix} Z.ai Gateway failed (Strategy 1):`, zaiError?.message);
+  }
+
+  // ── Strategy 2: Google AI / Vertex AI (FALLBACK) ──
+  if (!analysis) {
+    // Dynamic import to avoid circular dependency at module level
+    const { analyzeWithVertexAI, isVertexAIConfigured } = await import('./vertex-ai');
+    if (isVertexAIConfigured()) {
+      try {
+        console.log(`${logPrefix} Strategy 2: Falling back to Google AI / Vertex AI...`);
+        analysis = await analyzeWithVertexAI(scriptText, targetAudience, targetDuration);
+        console.log(`${logPrefix} Google AI analysis succeeded (Strategy 2)`);
+      } catch (vertexError: any) {
+        console.error(`${logPrefix} Google AI also failed (Strategy 2):`, vertexError?.message);
+      }
+    }
+  }
+
+  return analysis;
+}
+
+// ============================================
 // VIDEO ANALYSIS (E3) - Short videos <3 min
 // ============================================
 

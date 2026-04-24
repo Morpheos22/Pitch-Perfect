@@ -53,6 +53,8 @@ type RedisClient = {
   zcard: (key: string) => Promise<number>;
   pexpireat: (key: string, ms: number) => Promise<boolean>;
   ping: () => Promise<string>;
+  del: (key: string) => Promise<number>;
+  keys: (pattern: string) => Promise<string[]>;
 };
 
 let _redis: RedisClient | null = null;
@@ -522,4 +524,46 @@ export function withRateLimit(
     // Attach rate limit headers to the successful response
     return setRateLimitHeaders(response, result);
   };
+}
+
+// ──────────────────────────────────────────────
+// Admin: Rate limit reset
+// ──────────────────────────────────────────────
+
+/**
+ * Reset rate limits for a specific identifier (user ID or IP).
+ * Intended for admin/support use — e.g., when a legitimate user gets locked out.
+ *
+ * @param identifier - The user ID or IP to reset. Prefix with "user:" or "ip:" to be explicit.
+ * @returns Number of rate limit keys deleted, or -1 if Redis is unavailable.
+ */
+export async function resetRateLimit(identifier: string): Promise<number> {
+  const redis = await getRedis();
+  if (!redis) {
+    console.warn("[RateLimit] resetRateLimit: Redis unavailable, cannot reset.");
+    return -1;
+  }
+
+  try {
+    // Match all rate limit keys for this identifier (across all tiers)
+    const pattern = `rl:${identifier}:*`;
+    const keys = await redis.keys(pattern);
+
+    if (keys.length === 0) {
+      return 0;
+    }
+
+    // Delete all matching keys
+    let deleted = 0;
+    for (const key of keys) {
+      const result = await redis.del(key);
+      deleted += result;
+    }
+
+    console.log(`[RateLimit] Reset ${deleted} rate limit key(s) for ${identifier}`);
+    return deleted;
+  } catch (err) {
+    console.error("[RateLimit] resetRateLimit error:", err);
+    return -1;
+  }
 }
