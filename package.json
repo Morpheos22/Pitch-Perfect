@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=1024' next dev -p 3000 2>&1 | tee dev.log",
     "dev:lowmem": "NODE_OPTIONS='--max-old-space-size=512' next dev -p 3000",
-    "build": "prisma generate && prisma migrate deploy && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "bash scripts/vercel-build.sh",
     "start": "NODE_ENV=production NODE_OPTIONS='--max-old-space-size=1024' node .next/standalone/server.js",
     "start:local": "NEXT_UNHANDLED_REJECTION_FILTER=silent NODE_OPTIONS='--max-old-space-size=1024' next start -H 0.0.0.0 -p 3000",
     "lint": "eslint .",
