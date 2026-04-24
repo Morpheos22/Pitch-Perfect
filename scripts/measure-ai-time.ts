@@ -51,7 +51,7 @@ async function main() {
     const httpStart = Date.now();
     try {
       const config = {
-        baseUrl: process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1',
+        baseUrl: process.env.ZAI_BASE_URL || (() => { throw new Error('ZAI_BASE_URL env var is required'); })(),
         apiKey: process.env.ZAI_API_KEY || '',
         token: process.env.ZAI_TOKEN || process.env.ZAI_API_KEY || '',
       };
@@ -131,7 +131,7 @@ SLIDE 9: Ask: $2M seed for market expansion
     try {
       const apiKey = process.env.ZAI_API_KEY || '';
       const token = process.env.ZAI_TOKEN || apiKey;
-      const baseUrl = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
+      const baseUrl = process.env.ZAI_BASE_URL || (() => { throw new Error('ZAI_BASE_URL env var is required'); })();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Z-AI-From': 'Z',

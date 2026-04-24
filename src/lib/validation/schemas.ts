@@ -114,7 +114,7 @@ export const createSessionSchema = z.object({
   modules: z.array(z.string().max(50)).max(10).optional(),
   successUrl: z.string().url().max(500).optional(),
   cancelUrl: z.string().url().max(500).optional(),
-  country: z.string().max(2).optional(),
+  country: z.string().regex(/^[A-Z]{2}$/, 'Must be a 2-letter ISO country code').optional(),
 });
 
 // ── User ──
@@ -125,7 +125,7 @@ export const changePasswordSchema = z.object({
 });
 
 export const onboardingSchema = z.object({
-  country: z.string().max(100).optional(),
+  country: z.string().regex(/^[A-Z]{2}$/, 'Must be a 2-letter ISO country code (e.g. NG, US, GB)').optional(),
   primaryUseCase: z.string().max(200).optional(),
   onboardingCompleted: z.boolean().optional(),
 });

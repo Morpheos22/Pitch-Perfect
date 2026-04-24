@@ -127,9 +127,14 @@ export async function createOrUpdateLead(lead: ZohoLead): Promise<{ id: string; 
   // Create new lead
   const result = await zohoApiRequest('/Leads', 'POST', {
     data: [lead],
-  }) as { data: Array<{ details: { id: string } }> };
+  }) as { data?: Array<{ details?: { id?: string } }> };
 
-  return { id: result.data[0].details.id, created: true };
+  // Null-safe access — Zoho API may return unexpected format
+  const leadId = result.data?.[0]?.details?.id;
+  if (!leadId) {
+    throw new Error(`Zoho CRM create lead returned unexpected format: ${JSON.stringify(result).slice(0, 200)}`);
+  }
+  return { id: leadId, created: true };
 }
 
 // ============================================

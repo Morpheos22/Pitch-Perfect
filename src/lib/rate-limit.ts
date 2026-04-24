@@ -523,27 +523,3 @@ export function withRateLimit(
     return setRateLimitHeaders(response, result);
   };
 }
-
-// ──────────────────────────────────────────────
-// Admin / debug helpers
-// ──────────────────────────────────────────────
-
-/**
- * Get rate limiter status (for debugging/admin).
- * Returns whether Redis is connected and configured.
- */
-async function getRateLimitStats(): Promise<{
-  redisConnected: boolean;
-  backend: "redis" | "fallback";
-}> {
-  const redis = await getRedis();
-  if (!redis) {
-    return { redisConnected: false, backend: "fallback" };
-  }
-  try {
-    await redis.ping();
-    return { redisConnected: true, backend: "redis" };
-  } catch {
-    return { redisConnected: false, backend: "fallback" };
-  }
-}

@@ -63,6 +63,17 @@ export async function POST(request: NextRequest) {
     const gateway = determinePaymentGateway(userCountry);
     const { amount, currency } = getPriceForCountry(productId, userCountry);
 
+    // SECURITY: Validate gateway against allowed providers before Prisma write
+    const ALLOWED_GATEWAYS = ['PAYSTACK', 'STRIPE', 'LEMONSQUEEZY', 'ZOHO'] as const;
+    const gatewayUpper = gateway.toUpperCase();
+    if (!ALLOWED_GATEWAYS.includes(gatewayUpper as any)) {
+      console.error(`[Payment] Invalid gateway: ${gateway}`);
+      return NextResponse.json(
+        { error: 'Payment gateway not available. Please try again later.' },
+        { status: 503 }
+      );
+    }
+
 
     // Sync user to CRM (ensures lead exists)
     await syncUserToCRM({
@@ -99,7 +110,7 @@ export async function POST(request: NextRequest) {
         type: 'SUBSCRIPTION',
         amount: Math.round(amount * 100), // Store in smallest currency unit
         currency: currency.toLowerCase(),
-        provider: gateway.toUpperCase() as 'PAYSTACK' | 'STRIPE' | 'LEMONSQUEEZY' | 'ZOHO',
+        provider: gatewayUpper as 'PAYSTACK' | 'STRIPE' | 'LEMONSQUEEZY' | 'ZOHO',
         providerReference: session.id,
         providerAccessCode: productId, // Store product ID for webhook reconciliation
       },

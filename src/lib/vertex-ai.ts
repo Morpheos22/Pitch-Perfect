@@ -23,7 +23,7 @@
 //     → https://console.developers.google.com/billing/enable?project={PROJECT}
 
 import type { ScriptAnalysisResult } from './ai-service';
-import { clampScore, validateStringArray, extractJsonFromContent } from './ai-utils';
+import { clampScore, validateStringArray, extractJsonFromContent, repairJson } from './ai-utils';
 
 // ============================================
 // CONFIGURATION
@@ -309,7 +309,6 @@ function parseGeminiResponse(
     parsed = JSON.parse(jsonStr);
   } catch {
     // Try repair (unescaped newlines, trailing commas)
-    const { repairJson } = require('./ai-utils');
     try {
       parsed = JSON.parse(repairJson(jsonStr));
     } catch {

@@ -287,31 +287,6 @@ export function getWorkDriveFileUrl(fileId: string): string {
   return `https://workdrive.zoho.com/api/v1/download/${fileId}`;
 }
 
-/**
- * Delete a file from Zoho WorkDrive.
- * @param fileId - The WorkDrive file ID to delete
- */
-async function deleteWorkDriveFile(fileId: string): Promise<void> {
-  const accessToken = await getWorkDriveAccessToken();
-
-  const response = await fetch(
-    `https://workdrive.zoho.com/api/v1/files/${fileId}`,
-    {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Zoho-oauthtoken ${accessToken}`,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Zoho WorkDrive delete failed: ${response.status} ${errorBody}`
-    );
-  }
-}
-
 // ============================================
 // MAIN UPLOAD FUNCTION
 // ============================================
