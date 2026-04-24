@@ -15,6 +15,8 @@ const nextConfig: any = {
       { protocol: 'https', hostname: 'blob.vercel-storage.com' },
       { protocol: 'https', hostname: 'public.blob.vercel-storage.com' },
       { protocol: 'https', hostname: 'workdrive.zoho.com' },
+      { protocol: 'https', hostname: 'clerk.pitchcoachai.tech' },
+      { protocol: 'https', hostname: 'img.clerk.com' },
     ],
   },
 
@@ -50,10 +52,10 @@ const nextConfig: any = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Script sources: Clerk auth, Cloudflare challenges, analytics
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.accounts.dev https://cdn.clerk.com https://challenges.cloudflare.com https://static.cloudflareinsights.com",
+              // Script sources: Clerk auth (custom FAPI domain + standard), Cloudflare challenges, analytics
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.accounts.dev https://cdn.clerk.com https://clerk.pitchcoachai.tech https://challenges.cloudflare.com https://static.cloudflareinsights.com",
               // Style sources: Google Fonts, Clerk
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.clerk.accounts.dev",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.clerk.accounts.dev https://clerk.pitchcoachai.tech",
               // Font sources
               "font-src 'self' https://fonts.gstatic.com",
               // Image sources: blobs, data URIs, any HTTPS (for deck screenshots)
@@ -67,6 +69,7 @@ const nextConfig: any = {
                 'https://api.clerk.com',
                 'https://*.clerk.com',
                 'https://*.clerk.accounts.dev',
+                'https://clerk.pitchcoachai.tech',
                 'https://clerk.telemetry.cloudflare.com',
                 'https://clerk.com',
                 'https://z.ai',
@@ -80,8 +83,8 @@ const nextConfig: any = {
                 'https://*.zoho.com',
                 'https://resend.com',
               ].filter(Boolean).join(' '),
-              // Frame sources: Clerk auth iframe, Cloudflare challenge
-              "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev",
+              // Frame sources: Clerk auth iframe (custom FAPI domain + standard), Cloudflare challenge
+              "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev https://clerk.pitchcoachai.tech",
               // Media sources: audio/video playback for TTS and video analysis
               "media-src 'self' blob:",
               // Worker sources: blob workers for client-side processing
