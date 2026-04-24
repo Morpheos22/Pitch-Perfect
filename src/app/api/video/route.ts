@@ -7,11 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma as db } from '@/lib/db';
 import { videoNotesSchema } from '@/lib/validation/schemas';
 import {
-  isWorkDriveConfigured,
-  uploadToWorkDrive,
+  uploadFile,
   getWorkDriveFileUrl,
-  generateFileKey,
-  isVercelBlobConfigured,
 } from '@/lib/storage';
 import {
   validateFileTypeByCategory,
@@ -19,6 +16,7 @@ import {
 } from '@/lib/file-validation';
 import { requireModuleAccess } from '@/lib/entitlement';
 import { requireAuth } from '@/lib/with-auth';
+import { isBlobUrl } from '@/lib/blob-signature';
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
@@ -101,67 +99,28 @@ export async function POST(request: NextRequest) {
     // Determine video type for storage path
     const videoType = type === 'full' ? 'full' : 'live';
 
-
-    const arrayBuffer = await videoFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-
-    let downloadUrl: string | undefined;
-    let fileId: string | undefined;
-
-
-    // ── STRATEGY 1: Vercel Blob (PRIMARY — reliable, no external credentials) ──
-    if (isVercelBlobConfigured()) {
-      try {
-        const { put } = await import('@vercel/blob');
-        const blob = new Blob([buffer], { type: videoFile.type });
-        const blobResult = await put(generateFileKey(user.id, 'video', videoFile.name), blob, {
-          access: 'public',  // Store is public — 'private' would fail
-          addRandomSuffix: true,
-        });
-        downloadUrl = blobResult.url;
-        fileId = blobResult.pathname;
-      } catch (blobErr) {
-        console.error('[Video] Vercel Blob upload failed, trying WorkDrive fallback:', blobErr);
-        // Fall through to WorkDrive
-      }
-    }
-
-    // ── STRATEGY 2: Zoho WorkDrive (secondary — requires external OAuth) ──
-    if (!downloadUrl && isWorkDriveConfigured()) {
-      const folderId = process.env.ZOHO_WORKDRIVE_FOLDER_ID;
-      if (!folderId) {
-        return NextResponse.json({ error: "Zoho WorkDrive folder not configured" }, { status: 500 });
-      }
-      const uploadResult = await uploadToWorkDrive(
-        buffer,
-        videoFile.name,
-        folderId
-      );
-      downloadUrl = uploadResult.downloadUrl;
-      fileId = uploadResult.fileId;
-    }
-
-    // ── STRATEGY 3: No storage available ──
-    if (!downloadUrl) {
+    // Upload via centralized storage chain (Blob → WorkDrive → mock)
+    // This fixes the previous bug where generateFileKey() was called twice
+    // producing different keys, and ensures mock fallback works in dev.
+    let uploadResult;
+    try {
+      uploadResult = await uploadFile(videoFile, user.id, 'video', videoFile.name, videoFile.type);
+    } catch (uploadErr: any) {
+      console.error('[Video] Upload failed:', uploadErr);
       return NextResponse.json(
-        { error: 'Video storage not configured. Please contact support.' },
+        { error: uploadErr.message || 'Video storage upload failed' },
         { status: 503 }
       );
     }
-
-
-    const key = generateFileKey(user.id, 'video', videoFile.name);
-
 
     // Create a pending video record in database
     const video = await db.pitchVideo.create({
       data: {
         userId: user.id,
         fileName: videoFile.name,
-        videoUrl: downloadUrl,
+        videoUrl: uploadResult.url,
         videoId: `video-${Date.now()}`,
-        r2Key: key,
+        r2Key: uploadResult.key,
         duration: 0, // Will be updated after upload confirmation
         status: 'PENDING',
         type: videoType.toUpperCase(),
@@ -171,9 +130,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       videoId: video.id,
-      fileId,
-      key,
-      downloadUrl,
+      fileId: uploadResult.fileId,
+      key: uploadResult.key,
+      downloadUrl: uploadResult.url,
       fileName: videoFile.name,
     });
   } catch (error) {
@@ -230,12 +189,7 @@ export async function GET(request: NextRequest) {
       // For WorkDrive files, generate the WorkDrive download URL.
       // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
       let downloadUrl: string;
-      let isBlobVideo = false;
-      try {
-        const parsedVideoUrl = new URL(video.videoUrl || '');
-        isBlobVideo = parsedVideoUrl.hostname.endsWith('.blob.vercel-storage.com') ||
-          parsedVideoUrl.hostname === 'blob.vercel-storage.com';
-      } catch { /* not a valid URL */ }
+      const isBlobVideo = isBlobUrl(video.videoUrl || '');
 
 
       if (video.videoUrl && (isBlobVideo || !video.videoUrl.includes('workdrive.zoho.com'))) {

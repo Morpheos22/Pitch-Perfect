@@ -40,6 +40,7 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { extractJsonFromContent, clampScore, validateStringArray, repairJson, parseJsonResponse, validateSchema } from './ai-utils';
+import { isHostAllowed, ALLOWED_UPLOAD_HOSTS } from './storage';
 
 // ============================================
 // DIRECT HTTP FALLBACK CONFIGURATION
@@ -1017,12 +1018,9 @@ export async function analyzeDeckVisual(
 ): Promise<VisualAuditResult | null> {
   try {
     // SSRF prevention: validate URL before passing to AI
-    const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
     try {
-      const parsedUrl = new URL(fileUrl);
-      const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-      if (!isAllowed) {
-        throw new Error(`Invalid file URL host: ${parsedUrl.hostname}`);
+      if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
+        throw new Error(`Invalid file URL host: ${new URL(fileUrl).hostname}`);
       }
     } catch (err) {
       if (err instanceof TypeError) throw new Error('Invalid file URL format');
@@ -1312,12 +1310,9 @@ export async function analyzePitchVideo(
   duration: number
 ): Promise<VideoAnalysisResult> {
   // SSRF prevention: validate URL before passing to AI
-  const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
   try {
-    const parsedUrl = new URL(videoUrl);
-    const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-    if (!isAllowed) {
-      throw new Error(`Invalid video URL host: ${parsedUrl.hostname}`);
+    if (!isHostAllowed(videoUrl, ALLOWED_UPLOAD_HOSTS)) {
+      throw new Error(`Invalid video URL host: ${new URL(videoUrl).hostname}`);
     }
   } catch (err) {
     if (err instanceof TypeError) throw new Error('Invalid video URL format');
@@ -1481,12 +1476,9 @@ export async function analyzeFullPitchSession(
   }
 ): Promise<FullPitchAnalysisResult> {
   // SSRF prevention: validate URL before passing to AI
-  const ALLOWED_VISUAL_HOSTS = ['blob.vercel-storage.com', 'public.blob.vercel-storage.com', 'workdrive.zoho.com', 'zoho.com'];
   try {
-    const parsedUrl = new URL(videoUrl);
-    const isAllowed = ALLOWED_VISUAL_HOSTS.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith('.' + h));
-    if (!isAllowed) {
-      throw new Error(`Invalid video URL host: ${parsedUrl.hostname}`);
+    if (!isHostAllowed(videoUrl, ALLOWED_UPLOAD_HOSTS)) {
+      throw new Error(`Invalid video URL host: ${new URL(videoUrl).hostname}`);
     }
   } catch (err) {
     if (err instanceof TypeError) throw new Error('Invalid video URL format');

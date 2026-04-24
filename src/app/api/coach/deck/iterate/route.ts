@@ -4,7 +4,7 @@ import { analyzePitchDeck, analyzeDeckVisual } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
-import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { ALLOWED_UPLOAD_HOSTS, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
@@ -172,10 +172,7 @@ async function handlePost(request: NextRequest) {
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (!['pptx', 'ppt'].includes(ext)) {
             // Private blob URLs need conversion to data URI for AI access
-            // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
-            const isPrivateBlob = (parsedUrl.hostname.endsWith('.blob.vercel-storage.com') || parsedUrl.hostname === 'blob.vercel-storage.com') &&
-              !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
-            if (isPrivateBlob) {
+            if (isPrivateBlobUrl(fileUrl)) {
               console.warn('[Deck Iterate] Converting private blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               safeVisualUrl = dataUri || fileUrl;

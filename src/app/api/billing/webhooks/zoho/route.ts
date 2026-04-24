@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { verifyZohoWebhook, parseWebhookPayload } from '@/lib/payment-service';
+import { verifyZohoWebhook, parseWebhookPayload, createModuleAccess } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -79,6 +79,37 @@ export async function POST(request: NextRequest) {
                 }),
               },
             });
+
+            // Create module access for the Zoho plan
+            // Map Zoho plan_code to our productId format for module access
+            const productId = mapZohoPlanToProductId(plan_code);
+            if (productId) {
+              // Find or create a transaction record to link module access
+              let txId: string;
+              const existingTx = await prisma.transaction.findFirst({
+                where: {
+                  providerReference: subscription_id,
+                  provider: 'ZOHO',
+                },
+              });
+              if (existingTx) {
+                txId = existingTx.id;
+              } else {
+                const newTx = await prisma.transaction.create({
+                  data: {
+                    userId: user.id,
+                    type: 'SUBSCRIPTION',
+                    amount: 0, // Will be updated when payment info available
+                    currency: 'usd',
+                    provider: 'ZOHO',
+                    providerReference: subscription_id,
+                    providerAccessCode: productId,
+                  },
+                });
+                txId = newTx.id;
+              }
+              await createModuleAccess(txId, productId);
+            }
           }
         }
 
@@ -203,4 +234,17 @@ function mapZohoPlanToPlanType(planCode: string): 'STARTER' | 'PROFESSIONAL' | '
   if (code.includes('enterprise') || code.includes('corp')) return 'ENTERPRISE';
   if (code.includes('pro') || code.includes('professional') || code.includes('business')) return 'PROFESSIONAL';
   return 'STARTER';
+}
+
+// Map Zoho Billing plan codes to product IDs for module access creation
+// This bridges Zoho's plan naming to our productId format used by createModuleAccess()
+function mapZohoPlanToProductId(planCode: string): string {
+  const code = planCode.toLowerCase();
+  if (code.includes('enterprise') || code.includes('corp') || code.includes('master')) return 'master';
+  if (code.includes('deck-live') || code.includes('bundle')) return 'pitch-deck-live';
+  if (code.includes('live') || code.includes('elevator-live') || code.includes('video')) return 'elevator-live';
+  if (code.includes('deck') || code.includes('pitch')) return 'pitch-deck';
+  if (code.includes('script') || code.includes('elevator-script')) return 'elevator-script';
+  // Default: pitch-deck (STARTER tier)
+  return 'pitch-deck';
 }

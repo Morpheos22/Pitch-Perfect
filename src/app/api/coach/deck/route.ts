@@ -4,7 +4,7 @@ import { analyzePitchDeck, analyzeDeckVisual, DeckAnalysisResult } from "@/lib/a
 import { extractFileText, extractTextFromUrl } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { deckIterateSchema } from "@/lib/validation/schemas";
-import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { blobUrlToDataUri, isBlobUrl } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
@@ -160,10 +160,7 @@ async function handlePost(request: NextRequest) {
             // Blob URLs — the store is public so URLs are directly accessible.
             // For vision model access, convert to data URI for reliability
             // since the AI gateway might not be able to fetch external URLs directly.
-            const isBlobUrl = parsedUrl.hostname.endsWith('.blob.vercel-storage.com') ||
-              parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com') ||
-              parsedUrl.hostname === 'blob.vercel-storage.com';
-            if (isBlobUrl) {
+            if (isBlobUrl(fileUrl)) {
               console.warn('[E1] Converting blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               visualUrl = dataUri || fileUrl; // Fallback to raw URL (may fail, but will degrade gracefully)

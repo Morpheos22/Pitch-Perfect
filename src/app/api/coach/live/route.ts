@@ -4,7 +4,7 @@ import { analyzePitchVideo, VideoAnalysisResult } from "@/lib/ai-service";
 import { uploadFile, isStorageConfigured, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { liveNotesSchema } from "@/lib/validation/schemas";
-import { blobUrlToDataUri } from "@/lib/blob-signature";
+import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 export const dynamic = 'force-dynamic';
@@ -115,20 +115,14 @@ async function handlePost(request: NextRequest) {
 
     // Private blob URLs need conversion to data URI for AI gateway access
     // Note: Video data URIs can be large, but the AI gateway cannot fetch private blobs
-    // CRITICAL: Vercel Blob URLs use subdomain format (e.g. mystore.blob.vercel-storage.com)
     let aiVideoUrl = analysisVideoUrl;
-    try {
-      const parsedUrl = new URL(analysisVideoUrl);
-      const isPrivateBlob = (parsedUrl.hostname.endsWith('.blob.vercel-storage.com') || parsedUrl.hostname === 'blob.vercel-storage.com') &&
-        !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com');
-      if (isPrivateBlob) {
-        console.warn('[E3] Converting private blob URL to data URI for vision model');
-        const dataUri = await blobUrlToDataUri(analysisVideoUrl);
-        if (dataUri) {
-          aiVideoUrl = dataUri;
-        }
+    if (isPrivateBlobUrl(analysisVideoUrl)) {
+      console.warn('[E3] Converting private blob URL to data URI for vision model');
+      const dataUri = await blobUrlToDataUri(analysisVideoUrl);
+      if (dataUri) {
+        aiVideoUrl = dataUri;
       }
-    } catch { /* URL parse error, use as-is */ }
+    }
 
 
     let analysis: VideoAnalysisResult;

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { prisma } from '@/lib/db';
-import { getPlanFromProduct } from '@/lib/payment-service';
+import { getPlanFromProduct, createModuleAccess } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -68,26 +68,10 @@ export async function POST(request: NextRequest) {
           });
 
 
-          // Create module access (atomic upsert to prevent TOCTOU race condition)
+          // Create module access (single source of truth in payment-service)
           const productId = sessionData.metadata?.product_id || transaction.providerAccessCode;
           if (productId) {
-            await prisma.moduleAccess.upsert({
-              where: { transactionId: transaction.id },
-              create: {
-                transactionId: transaction.id,
-                e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-                e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-                e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-                e4Access: ['pitch-deck-live', 'master'].includes(productId),
-                e5Access: ['founder', 'founder-readiness', 'master'].includes(productId),
-                e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-                e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-                e3Limit: productId === 'master' ? 30 : 3,
-                e4Limit: productId === 'master' ? 10 : 3,
-                e5Limit: productId === 'master' ? 20 : 5,
-              },
-              update: {}, // no-op if already exists
-            });
+            await createModuleAccess(transaction.id, productId);
           }
 
 

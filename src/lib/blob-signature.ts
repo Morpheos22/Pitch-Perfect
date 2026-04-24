@@ -94,13 +94,36 @@ export async function fetchBlob(blobUrlOrPathname: string): Promise<Buffer> {
  * Check if a URL is a Vercel Blob URL.
  * Handles subdomain format: https://<store-slug>.blob.vercel-storage.com/...
  * and https://<store-slug>.public.blob.vercel-storage.com/...
+ *
+ * This is the SINGLE source of truth for blob URL detection.
+ * All routes should import this instead of inlining their own checks.
  */
-function isBlobUrl(url: string): boolean {
+export function isBlobUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     return (
       parsed.hostname.endsWith('.blob.vercel-storage.com') ||
       parsed.hostname === 'blob.vercel-storage.com'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a URL is a PRIVATE Vercel Blob URL (non-public).
+ * Private blob URLs end with .blob.vercel-storage.com but NOT .public.blob.vercel-storage.com
+ *
+ * This is the SINGLE source of truth for private blob detection.
+ * Coach routes should import this instead of inlining their own checks.
+ */
+export function isPrivateBlobUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.hostname.endsWith('.blob.vercel-storage.com') ||
+        parsed.hostname === 'blob.vercel-storage.com') &&
+      !parsed.hostname.endsWith('.public.blob.vercel-storage.com')
     );
   } catch {
     return false;

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
-import { getPlanFromProduct, getModuleCycles } from '@/lib/payment-service';
+import { getPlanFromProduct, getModuleCycles, createModuleAccess } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -55,24 +55,8 @@ export async function POST(request: NextRequest) {
       const productId = transaction.providerAccessCode || '';
 
 
-      // Create module access based on product (atomic upsert to prevent TOCTOU race condition)
-      await prisma.moduleAccess.upsert({
-        where: { transactionId: transaction.id },
-        create: {
-          transactionId: transaction.id,
-          e1Access: ['pitch-deck', 'pitch-deck-live', 'master'].includes(productId),
-          e2Access: ['elevator-script', 'elevator-live', 'master'].includes(productId),
-          e3Access: ['elevator-live', 'pitch-deck-live', 'master'].includes(productId),
-          e4Access: ['pitch-deck-live', 'master'].includes(productId),
-          e5Access: ['founder', 'founder-readiness', 'master'].includes(productId),
-          e1Limit: productId === 'master' ? 20 : productId === 'pitch-deck-live' ? 5 : 2,
-          e2Limit: productId === 'master' ? 50 : productId === 'elevator-live' ? 10 : 2,
-          e3Limit: productId === 'master' ? 30 : 3,
-          e4Limit: productId === 'master' ? 10 : 3,
-          e5Limit: productId === 'master' ? 20 : 5,
-        },
-        update: {}, // no-op if already exists
-      });
+      // Create module access (single source of truth in payment-service)
+      await createModuleAccess(transaction.id, productId);
 
 
       // Update user subscription
