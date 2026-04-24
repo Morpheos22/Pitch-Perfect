@@ -59,7 +59,27 @@ const nextConfig: any = {
               // Image sources: blobs, data URIs, any HTTPS (for deck screenshots)
               "img-src 'self' data: https: blob:",
               // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho, Resend
-              "connect-src 'self' http://172.25.136.193:8080 https://api.clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk.telemetry.cloudflare.com https://clerk.com https://z.ai https://blob.vercel-storage.com https://*.blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://*.vercel-storage.com https://generativelanguage.googleapis.com https://*.aiplatform.googleapis.com https://api.upstash.com https://*.zoho.com https://resend.com",
+              // SECURITY: Internal IP (172.25.x.x) only included in development.
+              // Production uses ZAI_BASE_URL env var — never expose private IPs in CSP.
+              [
+                "'self'",
+                process.env.NODE_ENV === 'development' && process.env.ZAI_BASE_URL?.startsWith('http://') ? process.env.ZAI_BASE_URL : '',
+                'https://api.clerk.com',
+                'https://*.clerk.com',
+                'https://*.clerk.accounts.dev',
+                'https://clerk.telemetry.cloudflare.com',
+                'https://clerk.com',
+                'https://z.ai',
+                'https://blob.vercel-storage.com',
+                'https://*.blob.vercel-storage.com',
+                'https://*.public.blob.vercel-storage.com',
+                'https://*.vercel-storage.com',
+                'https://generativelanguage.googleapis.com',
+                'https://*.aiplatform.googleapis.com',
+                'https://api.upstash.com',
+                'https://*.zoho.com',
+                'https://resend.com',
+              ].filter(Boolean).join(' '),
               // Frame sources: Clerk auth iframe, Cloudflare challenge
               "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev",
               // Media sources: audio/video playback for TTS and video analysis

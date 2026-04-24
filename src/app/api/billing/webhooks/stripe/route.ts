@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { prisma } from '@/lib/db';
-import { getPlanFromProduct, createModuleAccess } from '@/lib/payment-service';
+import { getPlanFromProduct, createModuleAccess, PRODUCTS } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -19,7 +19,12 @@ export async function POST(request: NextRequest) {
     const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!stripeSecret) {
       console.error('STRIPE_WEBHOOK_SECRET not configured');
-      return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+      // Return 501 Not Implemented instead of 500 — Stripe payments are not
+      // set up yet. This avoids triggering Stripe's retry logic (which 500 does).
+      return NextResponse.json(
+        { error: 'Stripe payments not configured. Set STRIPE_WEBHOOK_SECRET to enable.' },
+        { status: 501 }
+      );
     }
 
 
@@ -70,8 +75,12 @@ export async function POST(request: NextRequest) {
 
           // Create module access (single source of truth in payment-service)
           const productId = sessionData.metadata?.product_id || transaction.providerAccessCode;
-          if (productId) {
+          // SECURITY: Validate productId against server-side allowlist
+          // metadata is client-influenced — validate before granting entitlement
+          if (productId && PRODUCTS[productId]) {
             await createModuleAccess(transaction.id, productId);
+          } else if (productId) {
+            console.error('[Stripe] Rejected unknown productId:', productId);
           }
 
 

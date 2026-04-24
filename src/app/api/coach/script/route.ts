@@ -178,7 +178,7 @@ async function handlePost(request: NextRequest) {
     // Run AI analysis with priority strategy for E2 Script Check:
     //   Strategy 1: Z.ai Gateway (PRIMARY — most capable GLM models)
     //   Strategy 2: Google AI / Vertex AI (FALLBACK — Gemini)
-    let analysis: ScriptAnalysisResult;
+    let analysis: ScriptAnalysisResult | null = null;
 
     // ── Strategy 1: Z.ai Gateway (PRIMARY for E2) ──
     try {
@@ -187,7 +187,6 @@ async function handlePost(request: NextRequest) {
       console.log("[E2] Z.ai analysis succeeded (Strategy 1), model:", analysis.modelUsed);
     } catch (zaiError: any) {
       console.error("[E2] Z.ai Gateway failed (Strategy 1):", zaiError?.message);
-      analysis = null as any;
     }
 
     // ── Strategy 2: Google AI / Vertex AI (FALLBACK) ──

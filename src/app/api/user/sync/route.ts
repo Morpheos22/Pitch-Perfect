@@ -116,7 +116,20 @@ export async function POST(request: NextRequest) {
     }
 
 
-    return NextResponse.json({ success: true, user });
+    // SECURITY: Return only safe fields — never expose internal IDs
+    // (zohoContactId, zohoAccountId, clerkId) to the client
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
+        onboardingCompleted: user.onboardingCompleted,
+        lastActiveAt: user.lastActiveAt,
+      },
+    });
   } catch (error) {
     console.error("User sync error:", error);
     return NextResponse.json(

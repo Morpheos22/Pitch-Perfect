@@ -32,6 +32,7 @@ import {
   type FileCategory,
 } from '@/lib/file-validation';
 import { isHostAllowed, ALLOWED_UPLOAD_HOSTS } from '@/lib/storage';
+import { isAdminEmail } from '@/lib/dev-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,8 +137,10 @@ export async function POST(request: NextRequest) {
  * orphaned blob in Vercel Blob storage, costing money.
  */
 export async function DELETE(request: NextRequest) {
-  // ── Authentication ──
-  const { user, error: authError } = await requireAuth();
+  // ── Authentication (include email for admin check) ──
+  const { user, error: authError } = await requireAuth<{ id: string; clerkId: string; email: string | null }>({
+    select: { id: true, clerkId: true, email: true },
+  });
   if (authError) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -155,6 +158,9 @@ export async function DELETE(request: NextRequest) {
   // ── Security: verify the user owns this blob ──
   // Check if this blob URL is associated with any of the user's records.
   // This prevents any authenticated user from deleting another user's blobs.
+  // Orphan blobs (no DB record) can only be deleted by admin users.
+  let isOwner = false;
+  let isOrphan = false;
   try {
     const { prisma } = await import('@/lib/db');
     const pathname = new URL(blobUrl).pathname;
@@ -171,20 +177,28 @@ export async function DELETE(request: NextRequest) {
       }).catch(() => null),
     ]);
 
-    // Allow deletion if:
-    // 1. User owns a record with this blob, OR
-    // 2. No record exists yet (orphan from failed upload — the main use case)
-    // This is intentional: orphan blobs from failed uploads won't have a DB
-    // record, so we allow deletion as long as the user is authenticated.
-    // The host check below provides an additional layer of security.
     if (ownedScript || ownedDeck) {
+      isOwner = true;
       console.log('[BlobUpload] Delete authorized: user owns record with this blob');
+    } else {
+      // No record found — this is an orphan blob
+      isOrphan = true;
     }
-    // If no record found, it's likely an orphan — allow deletion (auth is sufficient)
   } catch (ownershipErr: any) {
-    // Non-fatal: if ownership check fails (e.g., DB unavailable), proceed with
-    // just auth + host check. Better to allow cleanup than leak orphaned blobs.
+    // Non-fatal: if ownership check fails (e.g., DB unavailable), only admin can proceed
     console.warn('[BlobUpload] Ownership check skipped (non-fatal):', ownershipErr?.message);
+    isOrphan = true;
+  }
+
+  // SECURITY: Orphan blobs (no DB record) can only be deleted by admin users.
+  // Regular users can only delete blobs they own (have a DB record for).
+  // This prevents any authenticated user from deleting any unclaimed blob.
+  if (isOrphan && !isAdminEmail(user.email || '')) {
+    console.warn('[BlobUpload] Orphan blob delete denied for non-admin user:', user.email);
+    return NextResponse.json(
+      { error: 'Only administrators can delete unclaimed files. If this is your file, contact support.' },
+      { status: 403 }
+    );
   }
 
   // ── Security: only allow deleting blobs from our own store ──

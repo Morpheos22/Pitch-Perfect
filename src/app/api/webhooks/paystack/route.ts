@@ -4,7 +4,7 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseWebhookPayload, verifyPayment } from '@/lib/payment-service';
+import { parseWebhookPayload, verifyPayment, PRODUCTS } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
 import { getPlanFromProduct, getModuleCycles, createModuleAccess } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
@@ -55,8 +55,17 @@ export async function POST(request: NextRequest) {
       const productId = transaction.providerAccessCode || '';
 
 
+      // SECURITY: Validate productId against server-side allowlist before granting entitlement
+      if (productId && !PRODUCTS[productId]) {
+        console.error('[Paystack] Rejected unknown productId:', productId);
+        return NextResponse.json({ error: 'Invalid product ID' }, { status: 400 });
+      }
+
+
       // Create module access (single source of truth in payment-service)
-      await createModuleAccess(transaction.id, productId);
+      if (productId) {
+        await createModuleAccess(transaction.id, productId);
+      }
 
 
       // Update user subscription
