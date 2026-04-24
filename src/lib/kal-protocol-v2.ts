@@ -7,6 +7,20 @@
 // while the module processes, drawing insights through structured
 // questioning before delivering the final analysis.
 //
+// ARCHITECTURE (Hybrid — Scenario C):
+//   ┌────────────────────────────────────────────────────────────┐
+//   │  E1-E5 ANALYSIS PATH (Z.ai direct — NO middleware hop)    │
+//   │  User submits → executeWithFallback() → Z.ai → scores     │
+//   │  Fast path. No extra latency. Structured output required.  │
+//   └────────────────────────────────────────────────────────────┘
+//   ┌────────────────────────────────────────────────────────────┐
+//   │  KAL V2 CHAT PATH (Adaptive middleware — PRIMARY)          │
+//   │  Analysis fails → Kal activates → Adaptive agent handles   │
+//   │  the 10-question contextual chat natively. Better at       │
+//   │  adaptive conversation than scripted Z.ai prompts.         │
+//   │  Falls back to local Z.ai if middleware is unreachable.    │
+//   └────────────────────────────────────────────────────────────┘
+//
 // DESIGN PRINCIPLES (inspired by agentic-coding critical-thinking):
 //   1. Charitable interpretation — assume the user's pitch has merit
 //   2. Structured analysis — 8-step critical thinking framework
@@ -21,11 +35,11 @@
 //       → Return full analysis immediately
 //     FAILURE (error / timeout):
 //       → Activate Kal Protocol 2.0 placeholder scenario
-//       → Redirect to special chatbot scenario
-//       → Kal asks 10 contextual questions to gather more info
+//       → Redirect to adaptive middleware for contextual chat
+//       → Middleware asks 10 contextual questions (adaptive, not scripted)
 //       → 2 fallback responses when user doesn't engage
 //       → When 10 questions answered:
-//         → Kal gives summary + quick improvement feedback
+//         → Middleware generates summary + quick improvement feedback
 //         → Then delivers final decision (success/failure from module)
 //       → Background: Kal 1.0 retry engine still runs
 //       → If retry succeeds: merge into chatbot response
@@ -38,7 +52,13 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { prisma } from '@/lib/db';
-import { executeWithFallback, MODULE_MODEL_MAP, AI_MODELS } from './ai-service';
+import { executeWithFallback, AI_MODELS } from './ai-service';
+import {
+  kalMiddlewareAnalyze,
+  kalMiddlewareSummary,
+  type KalMiddlewareAnalyzeRequest,
+  type KalMiddlewareSummaryRequest,
+} from './kal-middleware-client';
 
 // ============================================
 // TYPES
@@ -86,6 +106,10 @@ export interface KalV2Trigger {
 //
 // The questions are ordered from broad to specific, following the
 // principle: understand the argument before critiquing it.
+//
+// NOTE: These remain as the canonical question set. The adaptive
+// middleware receives them as context but may adapt delivery order
+// or phrasing based on the user's engagement pattern.
 
 export const KAL_QUESTIONS: Array<{
   id: number;
@@ -173,6 +197,10 @@ export const KAL_QUESTIONS: Array<{
 // a one-word answer, or is inactive for 30+ seconds), Kal
 // uses these fallback scripts to keep the conversation flowing
 // and still extract useful signal.
+//
+// NOTE: These are also provided to the adaptive middleware as
+// part of the handoff context. The middleware may use them
+// directly or generate adaptive equivalents.
 
 export const KAL_FALLBACK_RESPONSES = [
   {
@@ -195,6 +223,11 @@ export const KAL_FALLBACK_RESPONSES = [
 // This is the behavioral script/template that governs how Kal 2.0
 // interacts with users. It incorporates the critical-thinking framework
 // and prevents the model from going rogue or hallucinating.
+//
+// NOTE: This prompt is used ONLY by the local Z.ai fallback path.
+// The adaptive middleware has its own system prompt (delivered via
+// the handoff document). This prompt is kept for when the middleware
+// is unreachable and we fall back to Z.ai for chat.
 
 export const KAL_V2_SYSTEM_PROMPT = `You are Kal, the AI pitch coach for Pitch Perfect by AutomagiKal. You are currently in "Contextual Chat" mode — a special scenario that activates when the script analysis module needs more time.
 
@@ -249,6 +282,10 @@ IMPORTANT:
  * The Z.ai API is already called (active but resting) when the user
  * entered the module. When the user interacts with the chatbot,
  * Kal "wakes up" and begins the contextual chat.
+ *
+ * FLOW: Database session is created locally, then the adaptive middleware
+ * is notified of the new session for warm-up. Chat interactions are
+ * routed through the middleware (primary) with Z.ai as fallback.
  */
 export async function activateKalV2(trigger: KalV2Trigger): Promise<{
   chatSessionId: string;
@@ -266,12 +303,28 @@ export async function activateKalV2(trigger: KalV2Trigger): Promise<{
       messages: KAL_QUESTIONS.map((q, idx) => ({
         questionIndex: q.id,
         question: q.question,
-        askedAt: idx === 0 ? new Date() : new Date(Date.now() + idx), // First question asked now
+        askedAt: idx === 0 ? new Date() : new Date(Date.now() + idx),
         answer: undefined,
         answeredAt: undefined,
       })),
-      inputSummary: trigger.inputPayload.substring(0, 500), // Store first 500 chars for context
+      inputSummary: trigger.inputPayload.substring(0, 500),
     },
+  });
+
+  // ── Notify adaptive middleware (fire-and-forget, non-blocking) ──
+  // This gives the middleware a heads-up that a Kal session is starting,
+  // allowing it to pre-load context and warm up its conversation model.
+  kalMiddlewareAnalyze({
+    script: trigger.inputPayload,
+    moduleType: trigger.module,
+    targetAudience: trigger.targetAudience,
+    targetDuration: trigger.targetDuration,
+    chatSessionId: chatSession.id,
+    userName: trigger.userName,
+    userEmail: trigger.userEmail,
+  }).catch((err) => {
+    // Non-blocking — if middleware warm-up fails, local path still works
+    console.warn('[KalV2] Middleware warm-up failed (non-fatal):', err?.message);
   });
 
   return {
@@ -289,6 +342,10 @@ export async function activateKalV2(trigger: KalV2Trigger): Promise<{
 /**
  * Process a user's answer to a Kal 2.0 question.
  *
+ * HYBRID STRATEGY (Scenario C):
+ *   1. PRIMARY: Route through adaptive middleware (better at adaptive conversation)
+ *   2. FALLBACK: If middleware fails, use local Z.ai-based processing
+ *
  * Returns the next question, a fallback response, or the final summary
  * if all questions have been answered.
  */
@@ -305,6 +362,7 @@ export async function processKalV2Answer(params: {
   finalDecision?: 'SUCCESS' | 'FAILURE' | 'PENDING';
   questionsRemaining: number;
   isComplete: boolean;
+  source?: 'middleware' | 'local';
 }> {
   const { chatSessionId, answer, questionIndex, userId } = params;
 
@@ -342,10 +400,111 @@ export async function processKalV2Answer(params: {
   const isShortAnswer = answer.trim().split(/\s+/).length < 10;
   const isSkip = answer.trim().toLowerCase() === 'skip' || answer.trim().toLowerCase() === 'next';
 
+  // ── STRATEGY 1: Try adaptive middleware (PRIMARY) ──
+  try {
+    const middlewareResult = await kalMiddlewareAnalyze({
+      script: session.inputSummary || '',
+      moduleType: session.module as 'e1' | 'e2' | 'e3' | 'e4' | 'e5',
+      chatSessionId,
+      questionIndex,
+      answer,
+      isSkip,
+    });
+
+    if (middlewareResult.success) {
+      // Middleware succeeded — use its response
+      // Update session in database
+      await prisma.kalChatSession.update({
+        where: { id: chatSessionId },
+        data: { messages: updatedMessages as unknown as any[] },
+      });
+
+      // Handle completion
+      if (middlewareResult.isComplete && middlewareResult.summary) {
+        await prisma.kalChatSession.update({
+          where: { id: chatSessionId },
+          data: {
+            status: 'COMPLETED',
+            messages: updatedMessages as unknown as any[],
+            summary: middlewareResult.summary ?? undefined,
+            quickFeedback: middlewareResult.quickFeedback ?? undefined,
+            finalDecision: 'PENDING',
+          },
+        });
+
+        return {
+          summary: middlewareResult.summary ?? undefined,
+          quickFeedback: middlewareResult.quickFeedback ?? undefined,
+          finalDecision: 'PENDING',
+          questionsRemaining: 0,
+          isComplete: true,
+          source: 'middleware',
+        };
+      }
+
+      return {
+        nextQuestion: middlewareResult.nextQuestion || undefined,
+        fallbackResponse: middlewareResult.fallbackResponse || undefined,
+        questionsRemaining: middlewareResult.questionsRemaining ?? questionsRemaining,
+        isComplete: false,
+        source: 'middleware',
+      };
+    }
+  } catch (err: any) {
+    console.warn('[KalV2] Middleware failed, falling back to local:', err?.message);
+  }
+
+  // ── STRATEGY 2: Local Z.ai fallback ──
+  return processKalV2AnswerLocal({
+    chatSessionId,
+    updatedMessages,
+    questionsRemaining,
+    answeredCount,
+    isShortAnswer,
+    isSkip,
+    questionIndex,
+    inputSummary: session.inputSummary || '',
+  });
+}
+
+/**
+ * Local Z.ai-based answer processing.
+ * Used as fallback when the adaptive middleware is unreachable.
+ */
+async function processKalV2AnswerLocal(params: {
+  chatSessionId: string;
+  updatedMessages: KalChatMessage[];
+  questionsRemaining: number;
+  answeredCount: number;
+  isShortAnswer: boolean;
+  isSkip: boolean;
+  questionIndex: number;
+  inputSummary: string;
+}): Promise<{
+  nextQuestion?: string;
+  fallbackResponse?: string;
+  summary?: string;
+  quickFeedback?: string;
+  finalDecision?: 'SUCCESS' | 'FAILURE' | 'PENDING';
+  questionsRemaining: number;
+  isComplete: boolean;
+  source: 'local';
+}> {
+  const {
+    chatSessionId,
+    updatedMessages,
+    questionsRemaining,
+    answeredCount,
+    isShortAnswer,
+    isSkip,
+    questionIndex,
+    inputSummary,
+  } = params;
+
   // Determine next step
   if (questionsRemaining === 0 || answeredCount >= KAL_QUESTIONS.length) {
     // ── ALL QUESTIONS ANSWERED — Generate summary ──
-    const summaryResult = await generateKalSummary(updatedMessages, session.inputSummary || '');
+    const summaryResult = await generateKalSummary(updatedMessages, inputSummary);
 
     // Update session with summary
     await prisma.kalChatSession.update({
@@ -365,11 +524,11 @@ export async function processKalV2Answer(params: {
       finalDecision: 'PENDING',
       questionsRemaining: 0,
       isComplete: true,
+      source: 'local',
     };
   }
 
   // ── NEXT QUESTION OR FALLBACK ──
-  const nextQuestionIdx = questionIndex; // Current question was just answered
   const nextQ = KAL_QUESTIONS.find((q) => q.id === questionIndex + 1);
 
   // Update session with new messages
@@ -379,22 +538,22 @@ export async function processKalV2Answer(params: {
   });
 
   if (isSkip) {
-    // Use fallback-1 (reframe as story prompt)
     return {
       fallbackResponse: KAL_FALLBACK_RESPONSES[0].response,
       nextQuestion: nextQ?.question,
       questionsRemaining,
       isComplete: false,
+      source: 'local',
     };
   }
 
   if (isShortAnswer) {
-    // Use fallback-2 (provide template)
     return {
       fallbackResponse: KAL_FALLBACK_RESPONSES[1].response,
       nextQuestion: nextQ?.question,
       questionsRemaining,
       isComplete: false,
+      source: 'local',
     };
   }
 
@@ -403,6 +562,7 @@ export async function processKalV2Answer(params: {
     nextQuestion: nextQ?.question,
     questionsRemaining,
     isComplete: false,
+    source: 'local',
   };
 }
 
@@ -412,7 +572,10 @@ export async function processKalV2Answer(params: {
 
 /**
  * Generate a critical-thinking summary after all 10 questions are answered.
- * Uses Z.ai to synthesize the answers into a structured assessment.
+ *
+ * HYBRID STRATEGY:
+ *   1. Try adaptive middleware (better at synthesising adaptive conversations)
+ *   2. Fall back to local Z.ai if middleware is down
  */
 async function generateKalSummary(
   messages: KalChatMessage[],
@@ -420,6 +583,30 @@ async function generateKalSummary(
 ): Promise<{ summary: string; quickFeedback: string }> {
   const answeredMessages = messages.filter((m) => m.answer);
 
+  // ── STRATEGY 1: Try adaptive middleware ──
+  try {
+    const middlewareResult = await kalMiddlewareSummary({
+      messages: answeredMessages.map((m) => ({
+        questionIndex: m.questionIndex,
+        question: m.question,
+        answer: m.answer,
+      })),
+      inputSummary,
+      moduleType: 'e2', // Default to E2 — could be made dynamic
+      chatSessionId: 'summary-gen', // No specific session for summary gen
+    });
+
+    if (middlewareResult.success && middlewareResult.summary) {
+      return {
+        summary: middlewareResult.summary,
+        quickFeedback: middlewareResult.quickFeedback || 'Review your pitch for clarity, evidence, and a strong call-to-action.',
+      };
+    }
+  } catch (err: any) {
+    console.warn('[KalV2] Middleware summary failed, using Z.ai fallback:', err?.message);
+  }
+
+  // ── STRATEGY 2: Local Z.ai fallback ──
   const userAnswers = answeredMessages
     .map((m) => `Q${m.questionIndex}: ${m.question}\nA: ${m.answer}`)
     .join('\n\n');
