@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { verifyZohoWebhook, parseWebhookPayload, createModuleAccess, PRODUCTS } from '@/lib/payment-service';
+import { parseWebhookPayload, createModuleAccess, PRODUCTS } from '@/lib/payment-service';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -14,15 +14,10 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
 
 
-    // Verify webhook signature
-    if (!verifyZohoWebhook(signature, body)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-    }
-
-
+    // Parse and verify webhook (parseWebhookPayload verifies signature internally)
     const parsed = parseWebhookPayload('zoho', body, signature);
     if (!parsed.valid || !parsed.event) {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid signature or payload' }, { status: 401 });
     }
 
 

@@ -9,7 +9,7 @@
  * This utility safely handles both JSON and non-JSON error responses.
  */
 
-class FetchError extends Error {
+export class FetchError extends Error {
   /** HTTP status code */
   status: number;
   /** Parsed error data if response was JSON, null otherwise */
