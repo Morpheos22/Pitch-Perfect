@@ -36,6 +36,7 @@
 //   ✅ Image Gen        → E5 network visuals, report covers
 //   ✅ Video Gen        → E5 marketing demos, pathway explainer videos
 
+import { readFileSync } from 'fs';
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -119,12 +120,10 @@ function getResolvedConfig(): ResolvedConfig {
 
     for (const p of readPaths) {
       try {
-        // Use require() for sync read during cold start — this only runs
-        // once per function instance lifecycle, not per request.
-        // Async readFile would require making getResolvedConfig() async,
-        // which would cascade through every caller.
-        const { readFileSync: syncRead } = require('fs');
-        const raw = syncRead(p, 'utf-8');
+        // readFileSync is imported at the top of the file.
+        // This only runs once per cold start (when cache is empty and
+        // env vars are missing), not per request.
+        const raw = readFileSync(p, 'utf-8');
         fileConfig = JSON.parse(raw);
         configSource = p;
         break;
