@@ -3,13 +3,14 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrCreateUser } from '@/lib/db-operations';
+import { requireAuth } from '@/lib/with-auth';
 import { prisma } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getOrCreateUser();
+    const { user, error: authError } = await requireAuth();
+    if (authError) return authError;
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as 'deck' | 'script' | 'video' | 'full' | null;
     let limit = parseInt(searchParams.get('limit') || '20', 10);
@@ -130,11 +131,6 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('History API error:', error);
-    
-    if (error instanceof Error && error.message === 'Unauthorized') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
     return NextResponse.json(
       { error: 'Failed to fetch history' },
       { status: 500 }

@@ -31,7 +31,17 @@ export async function GET(request: NextRequest) {
     // Stripe Customer Portal
     if (sub.stripeCustomerId && process.env.STRIPE_SECRET_KEY) {
       // Create a Stripe Billing Portal session
-      const domain = process.env.NEXT_PUBLIC_APP_URL || 'https://localhost:3000';
+      // Return URL after billing portal — MUST be our production domain.
+      // NEXT_PUBLIC_APP_URL is required in production; fail explicitly if unset
+      // rather than silently redirecting users to localhost.
+      const domain = process.env.NEXT_PUBLIC_APP_URL;
+      if (!domain) {
+        console.error('[Billing Portal] NEXT_PUBLIC_APP_URL not configured — cannot create portal session');
+        return NextResponse.json(
+          { error: 'Billing portal configuration error. Please contact support.' },
+          { status: 500 }
+        );
+      }
 
 
       const response = await fetch(
