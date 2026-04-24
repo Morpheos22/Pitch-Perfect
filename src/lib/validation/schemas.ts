@@ -26,7 +26,7 @@ export const deckIterateSchema = z.object({
 // ── E2: Script Coach ──
 
 export const scriptInputSchema = z.object({
-  content: z.string().min(10).max(50000).optional(),
+  content: z.string().min(20).max(50000).optional(),
   inputType: z.enum(['text', 'pdf', 'docx']).optional(),
   targetAudience: z.string().max(100).optional(),
   pitchDuration: z.number().int().min(10).max(600).optional(),
