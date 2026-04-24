@@ -48,6 +48,9 @@ model User {
   // Chatbot
   chatMessages ChatMessage[]
 
+  // Kal Protocol 2.0
+  kalChatSessions KalChatSession[]
+
   // Timestamps
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -553,7 +556,6 @@ enum TransactionType {
 enum PaymentProvider {
   PAYSTACK
   STRIPE
-  LEMONSQUEEZY
   ZOHO
 }
 
@@ -647,4 +649,41 @@ model ChatMessage {
 enum ChatRole {
   USER
   ASSISTANT
+}
+
+// ============================================
+// KAL PROTOCOL 2.0 — CHAT SESSIONS
+// ============================================
+
+model KalChatSession {
+  id                String @id @default(cuid())
+  userId            String
+  scriptSessionId   String // Links to PitchScript or other module session
+  module            String // e1, e2, e3, e4, e5
+
+  // Session state
+  status            String @default("ACTIVE") // ACTIVE, COMPLETED, EXPIRED
+
+  // Chat messages (stored as JSON array of KalChatMessage)
+  messages          Json
+
+  // Original input summary (first 500 chars of the pitch)
+  inputSummary      String?
+
+  // Generated summary after all 10 questions answered
+  summary           String?
+  quickFeedback     String?
+  finalDecision     String? // SUCCESS, FAILURE, PENDING
+
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([scriptSessionId])
+  @@index([status])
+  @@map("kal_chat_sessions")
 }

@@ -37,6 +37,34 @@ import { isAdminEmail } from '@/lib/dev-auth';
 export const dynamic = 'force-dynamic';
 
 /**
+ * OPTIONS /api/blob/upload
+ * CORS preflight handler — required for @vercel/blob/client SDK.
+ *
+ * The SDK's upload() function makes cross-origin requests when the
+ * browser POSTs here for a signed token. On .tech domains + Vercel,
+ * the browser may send a preflight OPTIONS request. Without this
+ * handler, the preflight returns 405 Method Not Allowed, and the
+ * actual POST never fires — causing silent upload failures.
+ *
+ * NOTE: Clerk middleware already skips /api routes for onboarding
+ * checks, and the isPublicRoute matcher does NOT include /api/blob
+ * (so auth.protect() runs). This is correct — the POST handler
+ * validates auth via requireAuth(). The OPTIONS handler must NOT
+ * require auth (CORS spec: preflight never carries credentials).
+ */
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      'Access-Control-Max-Age': '86400', // 24h cache
+    },
+  });
+}
+
+/**
  * POST /api/blob/upload
  * Generate a client token for browser-side Vercel Blob uploads.
  *
@@ -71,6 +99,15 @@ export async function POST(request: NextRequest) {
     } catch {
       // If we can't parse the payload, use default category
     }
+  }
+
+  // ── Validate BLOB_READ_WRITE_TOKEN exists ──
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.error('[BlobUpload] BLOB_READ_WRITE_TOKEN not configured');
+    return NextResponse.json(
+      { error: 'File storage not configured. Please contact support.' },
+      { status: 503 }
+    );
   }
 
   // ── Build constraints from file-validation.ts (single source of truth) ──
@@ -108,9 +145,13 @@ export async function POST(request: NextRequest) {
 
     // handleUpload() returns a special response object for the @vercel/blob SDK.
     // We must wrap it in a NextResponse for Next.js route handler compatibility.
+    // Include CORS headers for cross-origin compatibility (.tech domain + Vercel).
     return new NextResponse(JSON.stringify(result), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
     });
   } catch (error: any) {
     const msg = error?.message || String(error);

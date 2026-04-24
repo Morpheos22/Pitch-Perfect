@@ -9,6 +9,7 @@ import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { activateKalProtocol, KAL_PLACEHOLDER_MESSAGE } from "@/lib/kal-protocol";
+import { activateKalV2, KAL_V2_PLACEHOLDER_MESSAGE } from "@/lib/kal-protocol-v2";
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -234,11 +235,39 @@ async function handlePost(request: NextRequest) {
         console.error('[E2] Kal Protocol activation failed:', kalErr);
       });
 
+      // ── Kal Protocol 2.0: Activate contextual chatbot ──
+      // Instead of just showing a "check dashboard" message, redirect the user
+      // to a special chatbot scenario where Kal draws more information from them
+      // through structured questioning. This gives the module time to deliver
+      // while still providing the user with an engaging experience.
+      let kalV2SessionId: string | null = null;
+      let kalV2FirstQuestion: string | null = null;
+      try {
+        const kalV2 = await activateKalV2({
+          userId: user.id,
+          scriptSessionId: savedKalSession.id,
+          module: 'e2',
+          error: 'All AI providers failed during initial request',
+          inputPayload: script,
+          userEmail: (user as any).email || '',
+          userName: (user as any).firstName || undefined,
+          targetAudience,
+          targetDuration,
+        });
+        kalV2SessionId = kalV2.chatSessionId;
+        kalV2FirstQuestion = kalV2.firstQuestion;
+      } catch (kalV2Err) {
+        console.error('[E2] Kal V2 activation failed (non-blocking):', kalV2Err);
+      }
+
       return NextResponse.json({
         success: true,
         kalProtocol: true,
+        kalV2Active: !!kalV2SessionId,
+        kalV2SessionId,
+        kalV2FirstQuestion,
         id: savedKalSession.id,
-        message: KAL_PLACEHOLDER_MESSAGE,
+        message: kalV2FirstQuestion || KAL_PLACEHOLDER_MESSAGE,
       });
     }
 

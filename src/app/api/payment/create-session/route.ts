@@ -64,7 +64,8 @@ export async function POST(request: NextRequest) {
     const { amount, currency } = getPriceForCountry(productId, userCountry);
 
     // SECURITY: Validate gateway against allowed providers before Prisma write
-    const ALLOWED_GATEWAYS = ['PAYSTACK', 'STRIPE', 'LEMONSQUEEZY', 'ZOHO'] as const;
+    // NOTE: LEMONSQUEEZY removed — Paystack/Stripe/Zoho only
+    const ALLOWED_GATEWAYS = ['PAYSTACK', 'STRIPE', 'ZOHO'] as const;
     const gatewayUpper = gateway.toUpperCase();
     if (!ALLOWED_GATEWAYS.includes(gatewayUpper as any)) {
       console.error(`[Payment] Invalid gateway: ${gateway}`);
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
         type: 'SUBSCRIPTION',
         amount: Math.round(amount * 100), // Store in smallest currency unit
         currency: currency.toLowerCase(),
-        provider: gatewayUpper as 'PAYSTACK' | 'STRIPE' | 'LEMONSQUEEZY' | 'ZOHO',
+        provider: gatewayUpper as 'PAYSTACK' | 'STRIPE' | 'ZOHO',
         providerReference: session.id,
         providerAccessCode: productId, // Store product ID for webhook reconciliation
       },
