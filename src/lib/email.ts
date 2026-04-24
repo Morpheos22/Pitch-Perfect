@@ -17,6 +17,35 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+// ============================================
+// GENERIC EMAIL SENDER
+// ============================================
+
+/**
+ * Send a generic email using Resend.
+ * Used by Kal Protocol for completion/failure notifications.
+ */
+export async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }) {
+  try {
+    const { data, error } = await getResend().emails.send({
+      from: 'PitchCoach AI <noreply@pitchcoachai.tech>',
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error('Failed to send email:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return { success: false, error };
+  }
+}
+
 interface WelcomeEmailProps {
   email: string;
   firstName?: string;

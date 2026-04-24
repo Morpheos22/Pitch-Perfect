@@ -83,6 +83,7 @@ export default clerkMiddleware(async (auth, request) => {
     '/api/coach/drills',
     '/api/coach/founder',
     '/api/coach/diagnostic',
+    '/api/kal/',
   ];
   const hasOwnRateLimit = routesWithOwnRateLimit.some(r => pathname === r || pathname.startsWith(r + '/'));
 

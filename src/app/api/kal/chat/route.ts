@@ -240,4 +240,9 @@ export const PATCH = withRateLimit(handlePatch, {
   name: 'Kal V2 Answer',
 });
 
-export const GET = handleGet;
+export const GET = withRateLimit(handleGet, {
+  limit: 20,
+  windowMs: 60_000,
+  identifierType: 'both',
+  name: 'Kal V2 Poll',
+});

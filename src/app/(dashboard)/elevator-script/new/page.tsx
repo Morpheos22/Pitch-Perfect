@@ -42,6 +42,7 @@ export default function ElevatorScriptNewPage() {
   const [usedCount, setUsedCount] = useState<number | null>(null);
   const [limitCount, setLimitCount] = useState<number | null>(null);
   const [isEnterprise, setIsEnterprise] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
 
   const fetchUsage = useCallback(async () => {
     try {
@@ -61,7 +62,28 @@ export default function ElevatorScriptNewPage() {
     }
   }, []);
 
-  useEffect(() => { fetchUsage(); }, [fetchUsage]);
+  // ── Pre-warm Z.ai API on module entry (Kal active but resting) ──
+  // Per Kal Protocol 2.0 spec: "Z.ai API called the moment user enters
+  // script check module." This initializes the SDK and sends a lightweight
+  // ping to warm the gateway connection, reducing first-analysis latency.
+  const prewarmAI = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kal/prewarm", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setAiReady(data.success && data.gatewayReady);
+        console.log("[E2] AI pre-warm result:", data.message);
+      }
+    } catch {
+      // Non-critical — analysis will still work, just potentially slower
+      console.warn("[E2] AI pre-warm failed (non-critical)");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsage();
+    prewarmAI();
+  }, [fetchUsage, prewarmAI]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -137,6 +159,26 @@ export default function ElevatorScriptNewPage() {
 
       const data = await safeJson(response);
 
+      // ── Handle Kal Protocol 2.0 redirect ──
+      // When all AI providers fail, the server activates Kal Protocol V2,
+      // which creates a contextual chatbot session. Instead of showing
+      // a generic error, redirect the user to the Kal chat page where
+      // they can answer structured questions while the analysis retries.
+      if (data.kalProtocol && data.kalV2Active && data.kalV2SessionId) {
+        toast.info("Analysis is taking longer — let's chat while we process it.");
+        const kalChatUrl = `/elevator-script/kal-chat?session=${encodeURIComponent(data.kalV2SessionId)}&script=${encodeURIComponent(data.id)}&q=${encodeURIComponent(data.kalV2FirstQuestion || data.message || "")}`;
+        router.push(kalChatUrl);
+        return;
+      }
+
+      // ── Handle Kal Protocol V1 (no V2 chat) ──
+      if (data.kalProtocol) {
+        toast.info("Analysis is being processed. Check your dashboard in a few minutes.");
+        router.push("/dashboard");
+        return;
+      }
+
+      // ── Normal success flow ──
       toast.success("Analysis complete!");
       router.push(`/elevator-script/session/${data.id}`);
       

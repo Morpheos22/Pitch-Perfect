@@ -322,7 +322,7 @@ export async function processKalV2Answer(params: {
   }
 
   // Update the answer in the messages array
-  const messages = session.messages as KalChatMessage[];
+  const messages = session.messages as unknown as KalChatMessage[];
   const updatedMessages = messages.map((msg) => {
     if (msg.questionIndex === questionIndex) {
       return {
@@ -352,7 +352,7 @@ export async function processKalV2Answer(params: {
       where: { id: chatSessionId },
       data: {
         status: 'COMPLETED',
-        messages: updatedMessages,
+        messages: updatedMessages as unknown as any[],
         summary: summaryResult.summary,
         quickFeedback: summaryResult.quickFeedback,
         finalDecision: 'PENDING', // Will be updated when module finishes
@@ -375,7 +375,7 @@ export async function processKalV2Answer(params: {
   // Update session with new messages
   await prisma.kalChatSession.update({
     where: { id: chatSessionId },
-    data: { messages: updatedMessages },
+    data: { messages: updatedMessages as unknown as any[] },
   });
 
   if (isSkip) {
@@ -451,8 +451,8 @@ Also provide QUICK_FEEDBACK: [3-5 bullet points of the most impactful improvemen
     const content = response.choices?.[0]?.message?.content || '';
 
     // Parse the structured response
-    const summaryMatch = content.match(/SUMMARY:\s*(.+?)(?=KEY_ISSUES:|$)/s);
-    const feedbackMatch = content.match(/QUICK_FEEDBACK:\s*(.+?)$/s);
+    const summaryMatch = content.match(/SUMMARY:\s*([\s\S]+?)(?=KEY_ISSUES:|$)/);
+    const feedbackMatch = content.match(/QUICK_FEEDBACK:\s*([\s\S]+?)$/);
 
     return {
       summary: summaryMatch?.[1]?.trim() || 'Assessment complete. Your analysis is being processed.',

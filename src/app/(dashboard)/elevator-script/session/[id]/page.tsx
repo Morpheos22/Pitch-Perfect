@@ -322,6 +322,48 @@ export default function ElevatorScriptSessionPage() {
   }
 
   if (!data || !data.analysis) {
+    // ── Handle KAL_PENDING status — show recovery message with option to chat ──
+    if (data?.status === 'KAL_PENDING') {
+      return (
+        <div className="max-w-4xl mx-auto text-center py-20">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Analysis In Progress</h2>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            Your script is being processed with our recovery system. This usually
+            completes within 5-10 minutes. A PDF copy will be sent to your email.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button onClick={() => router.push("/dashboard")} variant="outline">
+              Go to Dashboard
+            </Button>
+            <Button onClick={() => { fetchSessionData(); }} className="bg-primary hover:bg-primary/90">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Check Again
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Handle KAL_FAILED status ──
+    if (data?.status === 'KAL_FAILED') {
+      return (
+        <div className="max-w-4xl mx-auto text-center py-20">
+          <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Analysis Could Not Be Completed</h2>
+          <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+            We were unable to complete your analysis after multiple attempts.
+            An apology email has been sent. Please try submitting again.
+          </p>
+          <Button onClick={() => router.push("/elevator-script/new")} className="bg-primary hover:bg-primary/90">
+            Start New Analysis
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-4xl mx-auto text-center py-20">
         <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />

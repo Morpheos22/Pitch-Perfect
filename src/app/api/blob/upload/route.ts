@@ -53,10 +53,12 @@ export const dynamic = 'force-dynamic';
  * require auth (CORS spec: preflight never carries credentials).
  */
 export async function OPTIONS() {
+  // Determine allowed origin from environment or default
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || 'https://pitchcoachai.tech';
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
       'Access-Control-Max-Age': '86400', // 24h cache
@@ -146,11 +148,12 @@ export async function POST(request: NextRequest) {
     // handleUpload() returns a special response object for the @vercel/blob SDK.
     // We must wrap it in a NextResponse for Next.js route handler compatibility.
     // Include CORS headers for cross-origin compatibility (.tech domain + Vercel).
+    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || 'https://pitchcoachai.tech';
     return new NextResponse(JSON.stringify(result), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
       },
     });
   } catch (error: any) {
