@@ -255,8 +255,14 @@ export default function ElevatorScriptSessionPage() {
       });
       if (res.ok) {
         const result = await res.json();
-        toast.success("New version created! Comparing with previous analysis...");
-        router.push(`/elevator-script/session/${encodeURIComponent(result.id)}`);
+        // Handle Kal Protocol response — iteration went to background
+        if (result.kalProtocol) {
+          toast.info("Analysis is being processed. Check your dashboard in a few minutes.");
+          router.push("/dashboard");
+        } else {
+          toast.success("New version created! Comparing with previous analysis...");
+          router.push(`/elevator-script/session/${encodeURIComponent(result.id)}`);
+        }
       } else {
         toast.error("Failed to create new version");
       }

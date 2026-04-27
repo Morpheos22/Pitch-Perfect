@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
+import { Upload, FileText, ChevronDown, ChevronUp, CheckCircle, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
@@ -31,12 +35,32 @@ const frameworkElements = [
   { name: "The Ask", description: "States clearly what you want from this conversation" },
 ];
 
+const AUDIENCE_OPTIONS = [
+  { value: "investors", label: "Investors" },
+  { value: "customers", label: "Customers" },
+  { value: "partners", label: "Partners" },
+  { value: "media", label: "Media / Press" },
+  { value: "general", label: "General Audience" },
+];
+
+const DURATION_OPTIONS = [
+  { value: "30", label: "30 seconds (micro-pitch)" },
+  { value: "60", label: "60 seconds (standard elevator)" },
+  { value: "90", label: "90 seconds (extended)" },
+  { value: "120", label: "2 minutes (detailed)" },
+];
+
 export default function ElevatorScriptNewPage() {
   const router = useRouter();
   const [sessionName, setSessionName] = useState("");
+  const [inputMode, setInputMode] = useState<"file" | "text">("file");
   const [file, setFile] = useState<File | null>(null);
+  const [scriptText, setScriptText] = useState("");
+  const [targetAudience, setTargetAudience] = useState("investors");
+  const [targetDuration, setTargetDuration] = useState("60");
   const [frameworkExpanded, setFrameworkExpanded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Session counter state
   const [usedCount, setUsedCount] = useState<number | null>(null);
@@ -63,9 +87,6 @@ export default function ElevatorScriptNewPage() {
   }, []);
 
   // ── Pre-warm Z.ai API on module entry (Kal active but resting) ──
-  // Per Kal Protocol 2.0 spec: "Z.ai API called the moment user enters
-  // script check module." This initializes the SDK and sends a lightweight
-  // ping to warm the gateway connection, reducing first-analysis latency.
   const prewarmAI = useCallback(async () => {
     try {
       const res = await fetch("/api/kal/prewarm", { method: "POST" });
@@ -75,7 +96,6 @@ export default function ElevatorScriptNewPage() {
         console.log("[E2] AI pre-warm result:", data.message);
       }
     } catch {
-      // Non-critical — analysis will still work, just potentially slower
       console.warn("[E2] AI pre-warm failed (non-critical)");
     }
   }, []);
@@ -94,10 +114,6 @@ export default function ElevatorScriptNewPage() {
         toast.error(`Unsupported file format. Only DOCX, DOC, and TXT files are accepted.`);
         return;
       }
-      // MIME type check: extension is already validated above.
-      // Per file-validation.ts, MIME mismatches are warnings, not blockers.
-      // Browsers report incorrect MIME types for some files (empty string or
-      // application/octet-stream), so we skip the MIME block for valid extensions.
       if (selectedFile.size > SCRIPT_MAX_SIZE) {
         toast.error(`File is too large. Maximum size is 10MB.`);
         return;
@@ -111,14 +127,25 @@ export default function ElevatorScriptNewPage() {
       toast.error("Please enter a session name");
       return;
     }
-    if (!file) {
+
+    // Validate input based on mode
+    if (inputMode === "file" && !file) {
       toast.error("Please upload a script file");
       return;
     }
+    if (inputMode === "text" && !scriptText.trim()) {
+      toast.error("Please enter your script text");
+      return;
+    }
+    if (inputMode === "text") {
+      const wordCount = scriptText.trim().split(/\s+/).filter(Boolean).length;
+      if (wordCount < 30) {
+        toast.error("Script must be at least 30 words for meaningful analysis.");
+        return;
+      }
+    }
 
-    // ── Pre-check entitlement BEFORE blob upload to prevent orphaned blobs ──
-    // The server route also checks, but this avoids wasting blob storage if
-    // the user has no access.
+    // ── Pre-check entitlement BEFORE blob upload ──
     if (usedCount !== null && limitCount !== null && !isEnterprise && usedCount >= limitCount) {
       toast.error("Usage limit reached. Please upgrade your plan.");
       router.push("/elevator-script/upgrade");
@@ -126,73 +153,67 @@ export default function ElevatorScriptNewPage() {
     }
 
     setSubmitting(true);
+    setUploadProgress(null);
 
     let blobUrl: string | undefined;
 
     try {
-      // ── ALWAYS use blob upload ──
-      // This bypasses Vercel's 4.5MB serverless body limit entirely.
-      // The file goes directly from the browser to Vercel Blob storage.
-      try {
-        const blobResult = await uploadFileToBlob(file, "script");
-        blobUrl = blobResult.url;
-        console.log("[E2] Blob upload succeeded:", blobUrl);
-      } catch (blobError: any) {
-        console.error("[E2] Blob upload failed:", blobError);
-        toast.error(blobError?.message || "File upload failed. Please try again.");
-        return;
+      // ── PATH A: File upload mode — use blob upload ──
+      if (inputMode === "file" && file) {
+        try {
+          setUploadProgress(0);
+          const blobResult = await uploadFileToBlob(file, "script", (progress) => {
+            setUploadProgress(progress.percentage);
+          });
+          blobUrl = blobResult.url;
+          setUploadProgress(100);
+          console.log("[E2] Blob upload succeeded:", blobUrl);
+        } catch (blobError: any) {
+          console.error("[E2] Blob upload failed:", blobError);
+          setUploadProgress(null);
+          toast.error(blobError?.message || "File upload failed. Please try again.");
+          return;
+        }
+
+        // ── Send blob URL to coach API ──
+        const formData = new FormData();
+        formData.append("fileUrl", blobUrl);
+        formData.append("fileName", file.name);
+        formData.append("sessionName", sessionName);
+        formData.append("targetAudience", targetAudience);
+        formData.append("targetDuration", targetDuration);
+
+        const response = await fetch("/api/coach/script", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await safeJson(response);
+        return handleResponse(data, blobUrl);
       }
 
-      // ── Send blob URL to coach API for analysis ──
-      // Only the URL is sent — tiny payload, no body limit concerns
-      const formData = new FormData();
-      formData.append("fileUrl", blobUrl);
-      formData.append("fileName", file.name);
-      formData.append("sessionName", sessionName);
-      formData.append("targetAudience", "investors");
-      formData.append("targetDuration", "60");
+      // ── PATH B: Text input mode — send as JSON ──
+      if (inputMode === "text") {
+        const response = await fetch("/api/coach/script", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: scriptText,
+            sessionName,
+            targetAudience,
+            targetDuration: parseInt(targetDuration),
+          }),
+        });
 
-      const response = await fetch("/api/coach/script", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await safeJson(response);
-
-      // ── Handle Kal Protocol 2.0 redirect ──
-      // When all AI providers fail, the server activates Kal Protocol V2,
-      // which creates a contextual chatbot session. Instead of showing
-      // a generic error, redirect the user to the Kal chat page where
-      // they can answer structured questions while the analysis retries.
-      if (data.kalProtocol && data.kalV2Active && data.kalV2SessionId) {
-        toast.info("Analysis is taking longer — let's chat while we process it.");
-        const kalChatUrl = `/elevator-script/kal-chat?session=${encodeURIComponent(data.kalV2SessionId)}&script=${encodeURIComponent(data.id)}&q=${encodeURIComponent(data.kalV2FirstQuestion || data.message || "")}`;
-        router.push(kalChatUrl);
-        return;
+        const data = await safeJson(response);
+        return handleResponse(data);
       }
-
-      // ── Handle Kal Protocol V1 (no V2 chat) ──
-      if (data.kalProtocol) {
-        toast.info("Analysis is being processed. Check your dashboard in a few minutes.");
-        router.push("/dashboard");
-        return;
-      }
-
-      // ── Normal success flow ──
-      toast.success("Analysis complete!");
-      router.push(`/elevator-script/session/${data.id}`);
-      
     } catch (error: any) {
       console.error("[E2] Upload/analysis error:", error);
 
       // ── Clean up orphaned blob if analysis was rejected ──
-      // The blob was already uploaded, but if the coach API rejected the request
-      // (e.g., entitlement denied, analysis failure), the blob is orphaned.
-      // Fire-and-forget cleanup — don't await, don't block the error flow.
       if (blobUrl) {
-        fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {
-          // Cleanup is best-effort — don't surface cleanup failures to the user
-        });
+        fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {});
       }
 
       if (error?.status === 413) {
@@ -209,7 +230,6 @@ export default function ElevatorScriptNewPage() {
         router.push("/sign-in");
         return;
       }
-      // Surface the ACTUAL server error message
       const serverMessage = error?.message || error?.data?.error;
       if (serverMessage && serverMessage !== "Request failed (500)") {
         toast.error(serverMessage);
@@ -218,8 +238,31 @@ export default function ElevatorScriptNewPage() {
       }
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   };
+
+  // Shared response handler for both file and text paths
+  function handleResponse(data: any, blobUrlForCleanup?: string) {
+    // ── Handle Kal Protocol 2.0 redirect ──
+    if (data.kalProtocol && data.kalV2Active && data.kalV2SessionId) {
+      toast.info("Analysis is taking longer — let's chat while we process it.");
+      const kalChatUrl = `/elevator-script/kal-chat?session=${encodeURIComponent(data.kalV2SessionId)}&script=${encodeURIComponent(data.id)}&q=${encodeURIComponent(data.kalV2FirstQuestion || data.message || "")}`;
+      router.push(kalChatUrl);
+      return;
+    }
+
+    // ── Handle Kal Protocol V1 ──
+    if (data.kalProtocol) {
+      toast.info("Analysis is being processed. Check your dashboard in a few minutes.");
+      router.push("/dashboard");
+      return;
+    }
+
+    // ── Normal success flow ──
+    toast.success("Analysis complete!");
+    router.push(`/elevator-script/session/${data.id}`);
+  }
 
   // Session counter display
   const sessionLabel = isEnterprise
@@ -233,6 +276,8 @@ export default function ElevatorScriptNewPage() {
     : usedCount !== null && limitCount !== null
       ? `${Math.max(0, limitCount - usedCount)} remaining`
       : "—";
+
+  const wordCount = scriptText.trim().split(/\s+/).filter(Boolean).length;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -250,7 +295,14 @@ export default function ElevatorScriptNewPage() {
               <p className="text-sm text-muted-foreground">Session</p>
               <p className="font-semibold">{sessionLabel}</p>
             </div>
-            <Badge variant="secondary">{remainingLabel}</Badge>
+            <div className="flex items-center gap-2">
+              {aiReady && (
+                <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-xs">
+                  AI Ready
+                </Badge>
+              )}
+              <Badge variant="secondary">{remainingLabel}</Badge>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -306,66 +358,169 @@ export default function ElevatorScriptNewPage() {
         </CardContent>
       </Card>
 
-      {/* File Upload */}
+      {/* Target Audience & Duration */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Upload Your Script</CardTitle>
-          <CardDescription>Upload a file containing your elevator pitch script</CardDescription>
+          <CardTitle className="text-lg">Target Audience & Duration</CardTitle>
+          <CardDescription>Tailor the analysis to your specific pitch scenario</CardDescription>
         </CardHeader>
         <CardContent>
-          {!file ? (
-            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-              <input
-                type="file"
-                accept=".docx,.doc,.txt"
-                onChange={handleFileChange}
-                className="hidden"
-                id="file-upload"
-              />
-              <label htmlFor="file-upload" className="cursor-pointer">
-                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="font-medium">Drag your script here, or click to browse</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  DOCX, DOC, or TXT — up to 10MB
-                </p>
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="audience">Who is this pitch for?</Label>
+              <Select value={targetAudience} onValueChange={setTargetAudience}>
+                <SelectTrigger id="audience">
+                  <SelectValue placeholder="Select audience" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUDIENCE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ) : (
-            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-primary" />
+            <div className="space-y-2">
+              <Label htmlFor="duration">Target duration</Label>
+              <Select value={targetDuration} onValueChange={setTargetDuration}>
+                <SelectTrigger id="duration">
+                  <SelectValue placeholder="Select duration" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DURATION_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Script Input — File Upload or Text Entry */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Your Script</CardTitle>
+          <CardDescription>Upload a file or paste your script directly</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "file" | "text")}>
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="file" className="flex items-center gap-2">
+                <Upload className="h-4 w-4" />
+                Upload File
+              </TabsTrigger>
+              <TabsTrigger value="text" className="flex items-center gap-2">
+                <Type className="h-4 w-4" />
+                Type / Paste
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="file">
+              {!file ? (
+                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".docx,.doc,.txt"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="font-medium">Drag your script here, or click to browse</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      DOCX, DOC, or TXT — up to 10MB
+                    </p>
+                  </label>
                 </div>
-                <div>
-                  <p className="font-medium">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              ) : (
+                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{file.name}</p>
+                      <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-secondary" />
+                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload progress bar */}
+              {uploadProgress !== null && submitting && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Uploading file...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-secondary rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="text">
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="Paste your elevator pitch script here...&#10;&#10;Example: &quot;Did you know that 90% of startups fail because they can't articulate their value? At PitchCoach, we've built an AI that analyzes your pitch and gives you element-by-element feedback in seconds. We've already helped 500+ founders improve their pitch scores by an average of 40%. I'd love to show you a demo — do you have 5 minutes this week?&quot;"
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  rows={8}
+                  className="resize-y min-h-[200px]"
+                  maxLength={5000}
+                />
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>
+                    {wordCount} word{wordCount !== 1 ? "s" : ""} 
+                    {wordCount > 0 && wordCount < 30 && (
+                      <span className="text-amber-500 ml-1">(minimum 30)</span>
+                    )}
+                    {wordCount > 1000 && (
+                      <span className="text-destructive ml-1">(maximum 1000)</span>
+                    )}
+                  </span>
+                  <span>~{Math.round(wordCount / 2.5)}s estimated duration</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-secondary" />
-                <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-                  Remove
-                </Button>
-              </div>
-            </div>
-          )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
       {/* Submit */}
       <div className="flex justify-end gap-3">
         <Button variant="outline" onClick={() => router.back()}>
-          Back to Dashboard
+          Back
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!sessionName.trim() || !file || submitting}
+          disabled={
+            submitting ||
+            !sessionName.trim() ||
+            (inputMode === "file" && !file) ||
+            (inputMode === "text" && scriptText.trim().length < 30)
+          }
           className="bg-primary hover:bg-primary/90"
         >
           {submitting ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-              Submitting...
+              {uploadProgress !== null ? "Uploading..." : "Analysing..."}
             </>
           ) : (
             "Analyse Script"

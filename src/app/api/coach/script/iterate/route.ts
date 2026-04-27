@@ -7,6 +7,7 @@ import { scriptIterateSchema } from "@/lib/validation/schemas";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { activateKalProtocol } from "@/lib/kal-protocol";
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -119,6 +120,14 @@ async function handlePost(request: NextRequest) {
     } as any;
 
 
+    // Determine version number — query DB for max existing version to prevent race conditions
+    const latestVersion = await prisma.pitchScript.findFirst({
+      where: { parentScriptId: parentId, userId: user.id },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const nextVersion = (latestVersion?.version || parentScript.version || 1) + 1;
+
     // Run AI analysis with dual-strategy fallback (Z.ai → Vertex AI)
     const analysis = await analyzeScriptWithFallback(
       scriptText,
@@ -129,20 +138,59 @@ async function handlePost(request: NextRequest) {
     );
 
     if (!analysis) {
-      return NextResponse.json(
-        { error: "All AI providers failed. Please try again later." },
-        { status: 503 }
-      );
+      // ── Kal Protocol: graceful degradation on iterate failure ──
+      // Instead of returning a raw 503, activate Kal Protocol V1 which
+      // marks the session as KAL_PENDING, fires a background retry,
+      // and emails the user when results are ready.
+      const savedKalIteration = await prisma.pitchScript.create({
+        data: {
+          userId: user.id,
+          fileName: fileName || parentScript.fileName || "iteration",
+          inputType: detectedInputType,
+          inputText: scriptText,
+          inputFileUrl: fileUrl || parentScript.inputFileUrl,
+          targetAudience: parentScript.targetAudience || "investor",
+          pitchDuration: parentScript.pitchDuration || 60,
+          status: "KAL_PENDING" as any,
+          hookScore: 0,
+          problemScore: 0,
+          solutionScore: 0,
+          credibilityScore: 0,
+          ctaScore: 0,
+          overallScore: 0,
+          wordCount: wordCount,
+          estimatedDuration: Math.round(wordCount / 2.5),
+          improvements: { hook: [], problem: [], solution: [], credibility: [], cta: [] },
+          rewrittenScript: "",
+          alternativeHooks: [],
+          version: nextVersion,
+          parentScriptId: parentId,
+          notes: "Kal Protocol: Iteration analysis in progress. Results will appear shortly.",
+        },
+      });
+
+      // Fire Kal Protocol (non-blocking)
+      activateKalProtocol({
+        userId: user.id,
+        sessionId: savedKalIteration.id,
+        module: 'e2',
+        model: 'glm-4-plus',
+        error: 'All AI providers failed during iteration',
+        inputPayload: scriptText,
+        userEmail: (user as Record<string, unknown>).email as string || '',
+        userName: (user as Record<string, unknown>).firstName as string || undefined,
+        targetAudience: parentScript.targetAudience || undefined,
+        targetDuration: parentScript.pitchDuration || undefined,
+      }).catch((kalErr) => {
+        console.error('[E2 Iterate] Kal Protocol activation failed:', kalErr);
+      });
+
+      return NextResponse.json({
+        kalProtocol: true,
+        id: savedKalIteration.id,
+        message: "Analysis is being processed in the background. Check your dashboard in a few minutes.",
+      });
     }
-
-
-    // Determine version number — query DB for max existing version to prevent race conditions
-    const latestVersion = await prisma.pitchScript.findFirst({
-      where: { parentScriptId: parentId, userId: user.id },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (latestVersion?.version || parentScript.version || 1) + 1;
 
 
     // Store as new script with parent reference

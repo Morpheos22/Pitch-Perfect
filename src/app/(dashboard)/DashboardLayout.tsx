@@ -28,7 +28,6 @@ import {
   History,
   Shield,
   Rocket,
-  PresentationIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";

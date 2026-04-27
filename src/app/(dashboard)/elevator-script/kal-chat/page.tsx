@@ -96,7 +96,8 @@ function KalChatContent() {
             firstQuestion={firstQuestion}
             scriptSessionId={scriptSessionId}
             onComplete={(_summary, _feedback) => {
-              // Chat completed — user will be redirected to results
+              // Chat completed — redirect to the script session results page
+              router.push(`/elevator-script/session/${scriptSessionId}`);
             }}
           />
         </CardContent>

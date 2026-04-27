@@ -24,6 +24,13 @@ export interface BlobUploadResult {
   pathname: string;  // Blob pathname for reference
 }
 
+/** Progress event from the upload() function */
+export interface UploadProgressEvent {
+  loaded: number;     // Bytes uploaded so far
+  total: number;      // Total bytes to upload
+  percentage: number; // Upload progress as a percentage (0-100)
+}
+
 /**
  * Upload a file to Vercel Blob storage using client-side direct upload.
  *
@@ -33,11 +40,13 @@ export interface BlobUploadResult {
  *
  * @param file - The File object to upload
  * @param category - Upload category: "deck", "script", or "video"
+ * @param onUploadProgress - Optional callback for upload progress tracking
  * @returns Promise with blob URL and pathname
  */
 export async function uploadFileToBlob(
   file: File,
   category: FileCategory,
+  onUploadProgress?: (progress: UploadProgressEvent) => void,
 ): Promise<BlobUploadResult> {
   // Validate file format before uploading (uses single source of truth)
   validateFileFormat(file, category);
@@ -60,6 +69,8 @@ export async function uploadFileToBlob(
       clientPayload: JSON.stringify({ category }),
       // Use multipart for files > 10MB for better reliability
       multipart: file.size > 10 * 1024 * 1024,
+      // Pass through progress callback for UI feedback
+      onUploadProgress: onUploadProgress,
     });
 
     return {
