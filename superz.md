@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 5 — 2026-04-27
+> **Last Updated:** Session 6 — 2026-04-28
 
 ---
 
@@ -55,7 +55,8 @@
 - **Dual-backend client:** `src/lib/kal-middleware-client.ts` auto-selects Agent vs Middleware based on env vars
 - **Agent auth:** `x-kal-api-key` header sent when `KAL_AGENT_URL` is configured
 - **Endpoint mapping:** Agent uses `/api/rpc/analyzeScript` vs Middleware `/api/rpc/analyzeKalScript`
-- **Files:** `src/lib/kal-protocol-v2.ts` (702 lines), `src/lib/kal-middleware-client.ts` (~330 lines)
+- **Full endpoint set (Agent):** analyzeScript, runTenQuestions, generateSummary, coachingChat, health
+- **Files:** `src/lib/kal-protocol-v2.ts` (702 lines), `src/lib/kal-middleware-client.ts` (~550 lines)
 - **API:** `src/app/api/kal/chat/route.ts`, `src/app/api/kal/prewarm/route.ts`
 - **UI:** `src/components/kal/kal-chat-widget.tsx` (544 lines)
 
@@ -102,7 +103,7 @@
 
 ---
 
-## Service Handshake Status (Session 5)
+## Service Handshake Status (Session 6)
 
 All 8 services verified reachable. The `/api/health?full=true` endpoint now checks all of these:
 
@@ -110,7 +111,7 @@ All 8 services verified reachable. The `/api/health?full=true` endpoint now chec
 |---|---------|-----------------|--------|
 | 1 | **Supabase REST API** | `GET /rest/v1/` with apikey header | ✅ ACTIVE |
 | 2 | **Supabase DB** | `prisma.$queryRaw\`SELECT 1\`` | ✅ ACTIVE |
-| 3 | **Kal Agent** | `POST /api/rpc/health` with x-kal-api-key | ✅ ACTIVE (bridgeStatus=ok) |
+| 3 | **Kal Agent** | `POST /api/rpc/health` with x-kal-api-key | ✅ ACTIVE (bridgeStatus=ok, all 5 RPC endpoints verified) |
 | 4 | **Z.ai Gateway** | SDK chat.completions + HTTP fallback | ✅ ACTIVE |
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
@@ -270,7 +271,7 @@ All 8 services verified reachable. The `/api/health?full=true` endpoint now chec
 - [x] 5 coaching modules (E1-E5) with AI analysis
 - [x] Kal Protocol 2.0 — full implementation (protocol + API + agent + chat widget)
 - [x] Kal Protocol 2.0 handoff document (DOCX at `/download/Kal_Protocol_2_Handoff_Prompt.docx`)
-- [x] Kal Agent authenticated RPC client (dual-backend: Agent + Middleware)
+- [x] Kal Agent authenticated RPC client (dual-backend: Agent + Middleware, all 5 endpoints: analyzeScript, runTenQuestions, generateSummary, coachingChat, health)
 - [x] Prisma schema (17 models, 9 enums) with single baseline migration
 - [x] Clerk authentication (publishable + secret keys set)
 - [x] Z.ai AI Gateway (SDK + HTTP fallback, TTS + Web Search)
@@ -336,7 +337,7 @@ All 8 services verified reachable. The `/api/health?full=true` endpoint now chec
 - **TypeScript:** Zero errors on `tsc --noEmit` and `tsc --noEmit --strict`
 - **Tests:** 40/40 passing
 
-### Session 5 (Current)
+### Session 5
 - **Kal Agent integration:**
   - Verified Kal Agent health: POST /api/rpc/health with x-kal-api-key → 200 OK, bridgeStatus=ok
   - Rewrote `kal-middleware-client.ts` with dual-backend: KAL_AGENT_URL (PRIMARY) + KAL_MIDDLEWARE_URL (LEGACY)
@@ -359,6 +360,25 @@ All 8 services verified reachable. The `/api/health?full=true` endpoint now chec
 - **Vercel redeploy triggered** with all updated env vars
 - **HEAD:** `9b9ad1d` on `main`
 
+### Session 6 (Current)
+- **Kal Agent full endpoint verification:**
+  - health: POST /api/rpc/health → 200 OK, bridgeStatus=ok, protocol="Kal Protocol 2.0"
+  - analyzeScript: POST /api/rpc/analyzeScript → 200 OK, full script analysis with scores, improvements, rewrite
+  - runTenQuestions: POST /api/rpc/runTenQuestions → 200 OK, 10-question flow with session state
+  - coachingChat: POST /api/rpc/coachingChat → 200 OK, freeform coaching with session state
+  - generateSummary: POST /api/rpc/generateSummary → 200 OK, SUMMARY + KEY_ISSUES + BOTTOM_LINE + QUICK_FEEDBACK
+- **Extended `kal-middleware-client.ts`** with:
+  - KalRunTenQuestionsRequest/Response types
+  - KalCoachingChatRequest/Response types
+  - `runTenQuestions` and `coachingChat` in ENDPOINT_MAP
+  - `kalRunTenQuestions()` and `kalCoachingChat()` public functions
+  - Middleware fallback: maps both to analyzeKalScript (no dedicated endpoints)
+- **Verified .env.local** already has KAL_AGENT_URL and KAL_API_KEY
+- **Verified Vercel env vars** already has all 5 previously missing vars (pushed in Session 5)
+- **TypeScript:** Zero errors on tsc --noEmit
+- **1 commit pushed:** `2e4fa57` ("feat: add runTenQuestions + coachingChat endpoints to Kal Agent client")
+- **HEAD:** `2e4fa57` on `main`
+
 ---
 
 ## File Map (Key Files)
@@ -370,7 +390,7 @@ All 8 services verified reachable. The `/api/health?full=true` endpoint now chec
 | `scripts/vercel-build.sh` | Build pipeline: prisma generate → migrate deploy → next build |
 | `src/lib/ai-service.ts` | Core AI service — Z.ai SDK init + HTTP fallback (~1760 lines) |
 | `src/lib/kal-protocol-v2.ts` | Kal Protocol 2.0 — 10 questions, critical thinking, middleware (702 lines) |
-| `src/lib/kal-middleware-client.ts` | Dual-backend RPC client — Kal Agent (PRIMARY) + Middleware (LEGACY) (~330 lines) |
+| `src/lib/kal-middleware-client.ts` | Dual-backend RPC client — Kal Agent (PRIMARY) + Middleware (LEGACY), all 5 endpoints (~550 lines) |
 | `src/lib/vertex-ai.ts` | Google AI / Vertex AI fallback for E2 script check (~354 lines) |
 | `src/lib/db.ts` | Prisma client (lazy singleton, defers validation to first access) |
 | `src/lib/logger.ts` | Structured logger — createLogger(module), debug gated in prod |
