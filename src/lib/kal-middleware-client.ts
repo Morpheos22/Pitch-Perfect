@@ -29,9 +29,11 @@
 //         └── Fallback: If agent/middleware is down, falls back to
 //             local Z.ai-based Kal V2 (original code path)
 //
-// RPC ENDPOINTS — Kal Agent (authenticated):
-//   POST /api/rpc/analyzeScript     — Start / continue Kal chat
-//   POST /api/rpc/generateSummary   — Generate final summary
+// RPC ENDPOINTS — Kal Agent (authenticated, Protocol 2.0):
+//   POST /api/rpc/analyzeScript     — Script analysis (scores, improvements, rewrite)
+//   POST /api/rpc/runTenQuestions   — 10-question contextual chat flow
+//   POST /api/rpc/generateSummary   — Generate final summary (SUMMARY, KEY_ISSUES, BOTTOM_LINE)
+//   POST /api/rpc/coachingChat      — Freeform coaching conversation with session state
 //   POST /api/rpc/health            — Health check (authenticated)
 //
 // RPC ENDPOINTS — Kal Middleware (legacy, no auth):
@@ -86,19 +88,23 @@ function getActiveBackend(): { url: string; mode: 'agent' | 'middleware' } {
 const ENDPOINT_MAP = {
   agent: {
     analyzeScript: '/api/rpc/analyzeScript',
+    runTenQuestions: '/api/rpc/runTenQuestions',
     generateSummary: '/api/rpc/generateSummary',
+    coachingChat: '/api/rpc/coachingChat',
     health: '/api/rpc/health',
   },
   middleware: {
     analyzeScript: '/api/rpc/analyzeKalScript',
+    runTenQuestions: '/api/rpc/analyzeKalScript', // Middleware has no dedicated 10Q endpoint
     generateSummary: '/api/rpc/generateKalSummary',
+    coachingChat: '/api/rpc/analyzeKalScript',    // Middleware has no dedicated chat endpoint
     health: '/api/rpc/health',
   },
 } as const;
 
-function getEndpoint(
-  name: 'analyzeScript' | 'generateSummary' | 'health',
-): string {
+type KalEndpointName = 'analyzeScript' | 'runTenQuestions' | 'generateSummary' | 'coachingChat' | 'health';
+
+function getEndpoint(name: KalEndpointName): string {
   const { mode } = getActiveBackend();
   return ENDPOINT_MAP[mode][name];
 }
@@ -175,6 +181,72 @@ export interface KalMiddlewareSummaryResponse {
   summary?: string;
   quickFeedback?: string;
   error?: string;
+}
+
+// ============================================
+// Kal Agent Protocol 2.0 — Additional Types
+// ============================================
+
+export interface KalRunTenQuestionsRequest {
+  /** Session ID for the 10-question flow */
+  sessionId: string;
+  /** Current question number (1-10) */
+  currentQuestion: number;
+  /** Module type */
+  moduleType: 'e1' | 'e2' | 'e3' | 'e4' | 'e5';
+  /** User's answer to the current question (for continuation) */
+  userAnswer?: string;
+  /** Script context for the questions */
+  scriptContext?: string;
+  /** Session history of previous Q&A pairs */
+  sessionHistory?: Array<{ question: string; answer: string }>;
+}
+
+export interface KalRunTenQuestionsResponse {
+  /** The next question to ask, or null if complete */
+  nextQuestion: string | null;
+  /** Whether a fallback was triggered (short/vague answer) */
+  fallbackTriggered: boolean;
+  /** Type of fallback used */
+  fallbackType: string | null;
+  /** Fallback response text */
+  fallbackResponse?: string | null;
+  /** Current session state */
+  sessionState: {
+    sessionId: string;
+    moduleType: string;
+    currentQuestion: number;
+    answeredCount: number;
+    questionsRemaining: number;
+    status: 'ACTIVE' | 'COMPLETED';
+  };
+}
+
+export interface KalCoachingChatRequest {
+  /** Session ID for chat continuity */
+  sessionId: string;
+  /** User's message to the coaching chat */
+  userMessage: string;
+  /** Module type */
+  moduleType: 'e1' | 'e2' | 'e3' | 'e4' | 'e5';
+  /** Script context for coaching */
+  scriptContext?: string;
+  /** Session history for conversation continuity */
+  sessionHistory?: Array<{ question: string; answer: string }>;
+}
+
+export interface KalCoachingChatResponse {
+  /** The coach's reply */
+  reply: string;
+  /** Current session state */
+  sessionState: {
+    sessionId: string;
+    moduleType: string;
+    currentQuestion: number;
+    answeredCount: number;
+    questionsRemaining: number;
+    status: 'ACTIVE' | 'COMPLETED';
+  };
 }
 
 // ============================================
@@ -396,6 +468,78 @@ export async function isKalMiddlewareReady(): Promise<{
       latencyMs: Date.now() - start,
       mode,
       error: error.message,
+    };
+  }
+}
+
+/**
+ * Run the 10-question contextual chat flow via the Kal Agent.
+ *
+ * This endpoint handles the structured 10-question flow where each
+ * question maps to the 5-element framework (hook, problem, solution,
+ * credibility, CTA). The agent adapts question delivery based on
+ * user engagement and triggers fallbacks for short/vague answers.
+ *
+ * ONLY available on Kal Agent — middleware falls back to analyzeScript.
+ */
+export async function kalRunTenQuestions(
+  request: KalRunTenQuestionsRequest,
+): Promise<KalRunTenQuestionsResponse> {
+  try {
+    return await kalRpc<KalRunTenQuestionsRequest, KalRunTenQuestionsResponse>(
+      getEndpoint('runTenQuestions'),
+      request,
+      15_000,
+    );
+  } catch (error: any) {
+    console.warn(`[KalClient] runTenQuestions failed: ${error.message}.`);
+    return {
+      nextQuestion: null,
+      fallbackTriggered: false,
+      fallbackType: null,
+      sessionState: {
+        sessionId: request.sessionId,
+        moduleType: request.moduleType,
+        currentQuestion: request.currentQuestion,
+        answeredCount: 0,
+        questionsRemaining: 10,
+        status: 'ACTIVE',
+      },
+    };
+  }
+}
+
+/**
+ * Freeform coaching conversation via the Kal Agent.
+ *
+ * Unlike the structured 10-question flow, this endpoint allows
+ * open-ended coaching conversation. The agent applies the
+ * critical thinking framework to provide feedback and guide
+ * the founder toward improving their pitch.
+ *
+ * ONLY available on Kal Agent — middleware falls back to analyzeScript.
+ */
+export async function kalCoachingChat(
+  request: KalCoachingChatRequest,
+): Promise<KalCoachingChatResponse> {
+  try {
+    return await kalRpc<KalCoachingChatRequest, KalCoachingChatResponse>(
+      getEndpoint('coachingChat'),
+      request,
+      15_000,
+    );
+  } catch (error: any) {
+    console.warn(`[KalClient] coachingChat failed: ${error.message}.`);
+    return {
+      reply: 'I\'m having trouble connecting right now. Please try again in a moment.',
+      sessionState: {
+        sessionId: request.sessionId,
+        moduleType: request.moduleType,
+        currentQuestion: 0,
+        answeredCount: 0,
+        questionsRemaining: 10,
+        status: 'ACTIVE',
+      },
     };
   }
 }
