@@ -65,12 +65,69 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+// ── Orphaned session cache ──
+// Key: clerkUserId, Value: true = orphaned (deleted from Clerk), false = valid
+const orphanSessionCache = new Map<string, boolean>();
+const ORPHAN_CACHE_TTL_MS = 300_000; // 5 minutes — re-validate periodically
+
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
 
   // ── Auth: call ONCE and reuse result ──
   const authResult = await auth();
   const userId = authResult.userId;
+
+  // ── Stale/orphaned session detection ──
+  // If Clerk returns a userId from a cookie but the user no longer exists in Clerk
+  // (e.g., user was deleted from Clerk Dashboard but cookie remains), the browser
+  // enters a half-auth limbo: SignedIn/SignedOut components both malfunction.
+  // Fix: validate the session against Clerk API and force sign-in if orphaned.
+  if (userId && !pathname.startsWith("/sign-in") && !pathname.startsWith("/sign-up") && !pathname.startsWith("/api/")) {
+    // Check cache first to avoid hitting Clerk API on every request
+    const cachedStatus = orphanSessionCache.get(userId);
+    if (cachedStatus === true) {
+      // Known orphaned — redirect to sign-in with session clear
+      const url = new URL("/sign-in?reason=session_expired", request.url);
+      const response = NextResponse.redirect(url);
+      // Clear Clerk session cookies
+      response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
+      return response;
+    }
+
+    // Only validate once per TTL window (not on every request)
+    if (cachedStatus === undefined) {
+      try {
+        const client = await clerkClient();
+        await withTimeout(client.users.getUser(userId), 3000);
+        // User exists — mark as valid (no cache entry means valid)
+        orphanSessionCache.set(userId, false); // false = not orphaned
+      } catch {
+        // User NOT found or API error — could be orphaned
+        // Only mark as orphaned if it's a 404 (user not found), not a timeout
+        try {
+          const client = await clerkClient();
+          const user = await withTimeout(client.users.getUser(userId), 3000);
+          // If we get here, user exists after all
+          orphanSessionCache.set(userId, false);
+        } catch (err: unknown) {
+          // Genuine orphan or API unreachable — mark as potentially orphaned
+          // but only force logout if we're confident the user is deleted
+          // (not just a transient network error)
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+            console.warn(`[middleware] Orphaned session detected: userId=${userId} not found in Clerk. Clearing session.`);
+            orphanSessionCache.set(userId, true);
+            const url = new URL("/sign-in?reason=session_expired", request.url);
+            const response = NextResponse.redirect(url);
+            response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
+            return response;
+          }
+          // Network error — fail open, don't force logout
+          console.warn(`[middleware] Clerk API unreachable during orphan check for ${userId}:`, errorMessage);
+        }
+      }
+    }
+  }
 
   // ── Rate Limiting (API routes only) ──
   // Skip middleware rate limiting for routes that have their own withRateLimit()
