@@ -140,7 +140,7 @@ export function isBlockedEmail(email: string): boolean {
 //   Navigate to: User & Authentication → Email → Password Settings
 //
 // SETTINGS:
-//   - Minimum length: 10 characters
+//   - Minimum length: 6 characters
 //   - Require uppercase: Yes
 //   - Require lowercase: Yes
 //   - Require numbers: Yes
@@ -153,14 +153,14 @@ export function isBlockedEmail(email: string): boolean {
 //   Our /api/user/change-password endpoint also enforces these rules
 //   via the changePasswordSchema in validation/schemas.ts.
 //   The Zod schema validates:
-//     - min(10): At least 10 characters
+//     - min(6): At least 6 characters
 //     - max(128): No more than 128 characters
 //
 //   We also need to add a custom `.refine()` to the password schema
 //   to enforce uppercase, lowercase, number, and special character.
 
 export const PASSWORD_REQUIREMENTS = {
-  minLength: 10,
+  minLength: 6,
   maxLength: 128,
   requireUppercase: true,
   requireLowercase: true,

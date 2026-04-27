@@ -37,9 +37,9 @@ async function handleChangePassword(request: NextRequest) {
     }
 
 
-    if (newPassword.length < 8) {
+    if (newPassword.length < 6) {
       return NextResponse.json(
-        { error: "New password must be at least 8 characters." },
+        { error: "New password must be at least 6 characters." },
         { status: 400 }
       );
     }

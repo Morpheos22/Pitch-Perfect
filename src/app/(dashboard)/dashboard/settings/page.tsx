@@ -142,8 +142,18 @@ export default function SettingsPage() {
       setPwMessage({ type: "error", text: "All password fields are required." });
       return;
     }
-    if (pwForm.newPassword.length < 8) {
-      setPwMessage({ type: "error", text: "New password must be at least 8 characters." });
+    if (pwForm.newPassword.length < 6) {
+      setPwMessage({ type: "error", text: "New password must be at least 6 characters." });
+      return;
+    }
+    // Validate password complexity
+    const pwErrors: string[] = [];
+    if (!/[A-Z]/.test(pwForm.newPassword)) pwErrors.push('an uppercase letter');
+    if (!/[a-z]/.test(pwForm.newPassword)) pwErrors.push('a lowercase letter');
+    if (!/[0-9]/.test(pwForm.newPassword)) pwErrors.push('a number');
+    if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(pwForm.newPassword)) pwErrors.push('a special character');
+    if (pwErrors.length > 0) {
+      setPwMessage({ type: "error", text: `Password must contain at least: ${pwErrors.join(', ')}.` });
       return;
     }
     if (pwForm.newPassword !== pwForm.confirm) {
@@ -356,11 +366,11 @@ export default function SettingsPage() {
               <div className="relative">
                 <Input
                   type={showPw.newPassword ? "text" : "password"}
-                  placeholder="At least 8 characters"
+                  placeholder="Min 6 chars: uppercase, lowercase, number, special"
                   value={pwForm.newPassword}
                   onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
                   disabled={pwSaving}
-                  minLength={8}
+                  minLength={6}
                 />
                 <button
                   type="button"
@@ -380,7 +390,7 @@ export default function SettingsPage() {
                   value={pwForm.confirm}
                   onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
                   disabled={pwSaving}
-                  minLength={8}
+                  minLength={6}
                 />
                 <button
                   type="button"
@@ -403,7 +413,7 @@ export default function SettingsPage() {
             {pwSaving ? "Changing..." : "Change Password"}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Your password is stored securely by Clerk and never exposed to our servers. We never see or store your password in plaintext.
+            Password requirements: minimum 6 characters with at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&* etc.).
           </p>
         </CardContent>
       </Card>
