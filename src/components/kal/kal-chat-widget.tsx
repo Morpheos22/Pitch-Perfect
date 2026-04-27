@@ -92,6 +92,9 @@ export function KalChatWidget({
   const [scriptAnalysisStatus, setScriptAnalysisStatus] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Stabilize onComplete callback to avoid re-triggering the polling interval
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   // ── Initialize with greeting + first question ──
   useEffect(() => {
@@ -179,7 +182,7 @@ export function KalChatWidget({
           };
           setMessages((prev) => [...prev, decisionMsg]);
 
-          onComplete?.(data.summary, data.quickFeedback);
+          onCompleteRef.current?.(data.summary, data.quickFeedback);
         }
       } catch {
         // Polling is best-effort
@@ -187,7 +190,7 @@ export function KalChatWidget({
     }, 10000); // Poll every 10 seconds
 
     return () => clearInterval(pollInterval);
-  }, [sessionId, isComplete, onComplete]);
+  }, [sessionId, isComplete]);
 
   // ── Submit answer ──
   const handleSubmitAnswer = useCallback(async () => {
@@ -265,7 +268,7 @@ export function KalChatWidget({
         };
         setMessages((prev) => [...prev, decisionMsg]);
 
-        onComplete?.(data.summary, data.quickFeedback || "");
+        onCompleteRef.current?.(data.summary, data.quickFeedback || "");
       } else {
         // Add Kal's next response
         if (data.fallbackResponse) {

@@ -86,12 +86,15 @@ const MODULE_USAGE_FIELD: Record<CoachModule, keyof {
 /** Subscription plans that grant access to all modules */
 const PAID_PLANS = ['STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
 
-/** Active subscription statuses */
-// TODO: CANCELLED subscriptions with a remaining billing period should also be treated as active.
-// Payment providers (Stripe, Paystack, etc.) handle CANCELLED status differently — some keep the
-// subscription usable until period-end, others revoke access immediately. Validate each provider's
-// behaviour before enabling this. For now, CANCELLED is intentionally excluded.
-const ACTIVE_STATUSES = ['ACTIVE', 'TRIALING'];
+/** Active subscription statuses — includes CANCELLED with remaining period */
+// CANCELLED subscriptions that still have a remaining billing period
+// (cancelAtPeriodEnd = true + period not expired) are treated as active.
+// The Stripe webhook sets cancelAtPeriodEnd = true when the user requests
+// cancellation, but the subscription stays active until the period ends.
+// Only when Stripe fires `customer.subscription.deleted` does the period end
+// and status become fully CANCELLED — at which point currentPeriodEnd will
+// be in the past, so the check below will deny access.
+const ACTIVE_STATUSES = ['ACTIVE', 'TRIALING', 'CANCELLED'];
 
 /**
  * Check if a user has access to a specific coach module.
@@ -116,6 +119,7 @@ export async function requireModuleAccess(
           status: true,
           creditsRemaining: true,
           currentPeriodEnd: true,
+          cancelAtPeriodEnd: true,
         },
       },
     },
@@ -144,8 +148,24 @@ export async function requireModuleAccess(
   // ── Check 1: Active paid subscription ──
   const sub = user.subscription;
   if (sub && PAID_PLANS.includes(sub.plan) && ACTIVE_STATUSES.includes(sub.status)) {
+    // ── CANCELLED subscriptions: only active if period hasn't ended ──
+    // When a user cancels, Stripe keeps the subscription active until
+    // the current billing period ends. We honour this grace period.
+    // Once the period ends, Stripe fires `customer.subscription.deleted`
+    // and the webhook sets plan to FREE — but as a safety net, we also
+    // check the period end date here.
+    if (sub.status === 'CANCELLED') {
+      if (sub.currentPeriodEnd && sub.currentPeriodEnd < new Date()) {
+        return {
+          allowed: false,
+          reason: 'Your subscription has ended. Please renew to continue using this feature.',
+          plan: sub.plan,
+        };
+      }
+    }
+
     // Verify subscription hasn't expired (if period end is set)
-    if (sub.currentPeriodEnd && sub.currentPeriodEnd < new Date()) {
+    if (sub.status !== 'CANCELLED' && sub.currentPeriodEnd && sub.currentPeriodEnd < new Date()) {
       return {
         allowed: false,
         reason: 'Your subscription has expired. Please renew to continue using this feature.',

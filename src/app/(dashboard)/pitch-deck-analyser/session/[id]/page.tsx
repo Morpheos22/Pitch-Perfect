@@ -131,31 +131,7 @@ export default function PitchDeckSessionPage() {
   // Delete
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    fetchSessionData();
-  }, [params.id]);
-
-  // Load notes from session data when it arrives
-  useEffect(() => {
-    if (data?.notes) {
-      setNotes(data.notes);
-    }
-  }, [data]);
-
-  // beforeunload handler for unsaved notes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges.current) {
-        e.preventDefault();
-        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
-        return e.returnValue;
-      }
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
-
-  const fetchSessionData = async () => {
+  const fetchSessionData = useCallback(async () => {
     try {
       const response = await fetch(`/api/coach/deck?id=${encodeURIComponent(String(params.id))}`);
       
@@ -179,7 +155,31 @@ export default function PitchDeckSessionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [params.id, router]);
+
+  useEffect(() => {
+    fetchSessionData();
+  }, [fetchSessionData]);
+
+  // Load notes from session data when it arrives
+  useEffect(() => {
+    if (data?.notes) {
+      setNotes(data.notes);
+    }
+  }, [data]);
+
+  // beforeunload handler for unsaved notes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges.current) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // Notes auto-save with debounce
   const handleNotesChange = useCallback((value: string) => {

@@ -9,6 +9,8 @@ import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { activateKalProtocol, KAL_PLACEHOLDER_MESSAGE } from "@/lib/kal-protocol";
+import { createLogger } from '@/lib/logger';
+const log = createLogger('E2');
 import { activateKalV2, KAL_V2_PLACEHOLDER_MESSAGE } from "@/lib/kal-protocol-v2";
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +60,7 @@ async function handlePost(request: NextRequest) {
       if (Number.isFinite(rawDuration)) {
         targetDuration = Math.max(10, Math.min(600, rawDuration));
         if (rawDuration !== targetDuration) {
-          console.warn(`[E2] FormData targetDuration clamped: ${rawDuration} → ${targetDuration}`);
+          log.debug('FormData targetDuration clamped:', rawDuration, '→', targetDuration);
         }
       } else {
         targetDuration = undefined;
@@ -66,7 +68,7 @@ async function handlePost(request: NextRequest) {
 
 
       if (!file && !fileUrl) {
-        console.error("[E2] No file or fileUrl received in FormData");
+        log.error('No file or fileUrl received in FormData');
         return NextResponse.json(
           { error: "File or fileUrl is required" },
           { status: 400 }
@@ -78,7 +80,7 @@ async function handlePost(request: NextRequest) {
       if (fileUrl && blobFileName) {
         // ── SSRF protection: validate the URL host ──
         if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
-          console.error("[E2] Rejected fileUrl — host not in allowlist:", fileUrl);
+          log.error('Rejected fileUrl — host not in allowlist:', fileUrl);
           return NextResponse.json(
             { error: "File URL not allowed. Please upload files through the app." },
             { status: 400 }
@@ -89,12 +91,12 @@ async function handlePost(request: NextRequest) {
         const ext = blobFileName.toLowerCase().split('.').pop();
         if (ext === 'pdf') detectedInputType = 'PDF';
         else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
-        console.warn("[E2] Extracting text from Blob URL:", { fileUrl, fileName: blobFileName, inputType: detectedInputType });
+        log.debug('Extracting text from Blob URL:', { fileUrl, fileName: blobFileName, inputType: detectedInputType });
         try {
           script = await extractTextFromUrl(fileUrl, blobFileName);
-          console.warn("[E2] Text extracted from Blob URL, length:", script.length);
+          log.debug('Text extracted from Blob URL, length:', script.length);
         } catch (e) {
-          console.error("[E2] Failed to extract from Blob URL:", e);
+          log.error('Failed to extract from Blob URL:', e);
           return NextResponse.json(
             { error: "Could not extract text from uploaded file. Please try uploading a different file format." },
             { status: 400 }
@@ -105,7 +107,7 @@ async function handlePost(request: NextRequest) {
         const ext = file.name.toLowerCase().split('.').pop();
         if (ext === 'pdf') detectedInputType = 'PDF';
         else if (ext === 'docx' || ext === 'doc') detectedInputType = 'DOCX';
-        console.warn("[E2] File received:", { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
+        log.debug('File received:', { name: file.name, size: file.size, type: file.type, inputType: detectedInputType });
 
 
         // Server-side body size guard (legacy path only)
@@ -120,9 +122,9 @@ async function handlePost(request: NextRequest) {
         // Extract text from file using unified parser
         try {
           script = await extractFileText(file);
-          console.warn("[E2] Text extracted successfully, length:", script.length);
+          log.debug('Text extracted successfully, length:', script.length);
         } catch (e) {
-          console.error("[E2] Failed to extract file text:", e);
+          log.error('Failed to extract file text:', e);
           return NextResponse.json(
             { error: "Could not extract text from file. Please try uploading a different file format." },
             { status: 400 }
@@ -232,7 +234,7 @@ async function handlePost(request: NextRequest) {
         targetAudience,
         targetDuration,
       }).catch((kalErr) => {
-        console.error('[E2] Kal Protocol activation failed:', kalErr);
+        log.error('Kal Protocol activation failed:', kalErr);
       });
 
       // ── Kal Protocol 2.0: Activate contextual chatbot ──
@@ -257,7 +259,7 @@ async function handlePost(request: NextRequest) {
         kalV2SessionId = kalV2.chatSessionId;
         kalV2FirstQuestion = kalV2.firstQuestion;
       } catch (kalV2Err) {
-        console.error('[E2] Kal V2 activation failed (non-blocking):', kalV2Err);
+        log.error('Kal V2 activation failed (non-blocking):', kalV2Err);
       }
 
       return NextResponse.json({
@@ -322,11 +324,9 @@ async function handlePost(request: NextRequest) {
       id: savedScript.id,
       modelUsed: analysis.modelUsed,
     });
-  } catch (error: any) {
-    console.error("[E2] SCRIPT ANALYSIS FAILED — Full error:", error);
-    const msg = error?.message || String(error);
-    console.error(`[E2] Error message: ${msg}`);
-    console.error(`[E2] Error stack:`, error?.stack?.substring(0, 500));
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error('SCRIPT ANALYSIS FAILED:', msg, error instanceof Error ? error.stack?.substring(0, 500) : '');
 
 
     if (msg.includes("BLOB_READ_WRITE_TOKEN") || msg.includes("Blob not found") || msg.includes("Blob returned")) {
@@ -387,7 +387,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, notes: updated.notes });
   } catch (error) {
-    console.error("PATCH script error:", error);
+    log.error('PATCH script error:', error);
     return NextResponse.json({ error: "Failed to update script" }, { status: 500 });
   }
 }
@@ -415,7 +415,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("DELETE script error:", error);
+    log.error('DELETE script error:', error);
     return NextResponse.json({ error: "Failed to delete script" }, { status: 500 });
   }
 }
@@ -518,7 +518,7 @@ export async function GET(request: NextRequest) {
       data: scripts,
     });
   } catch (error) {
-    console.error("Get script history error:", error);
+    log.error('Get script history error:', error);
     return NextResponse.json(
       { error: "Failed to get script history" },
       { status: 500 }

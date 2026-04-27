@@ -8,6 +8,8 @@ import { blobUrlToDataUri, isBlobUrl } from "@/lib/blob-signature";
 import { withRateLimit } from "@/lib/rate-limit";
 import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
+import { createLogger } from '@/lib/logger';
+const log = createLogger('E1');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -39,7 +41,7 @@ async function handlePost(request: NextRequest) {
     const fileSizeStr = formData.get("fileSize") as string | null;
 
 
-    console.log("[E1] Request received:", {
+    log.debug('Request received:', {
       hasFile: !!file,
       fileUrl: fileUrl ? fileUrl.substring(0, 80) + "..." : null,
       fileName,
@@ -94,12 +96,12 @@ async function handlePost(request: NextRequest) {
       if (!isHostAllowed(fileUrl, ALLOWED_UPLOAD_HOSTS)) {
         return NextResponse.json({ error: 'Invalid file source.' }, { status: 400 });
       }
-      console.log("[E1] Extracting text from Blob URL:", { fileUrl: fileUrl.substring(0, 80), fileName });
+      log.debug('Extracting text from Blob URL:', { fileUrl: fileUrl.substring(0, 80), fileName });
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
-        console.log("[E1] Text extracted from Blob URL, length:", analysisContent.length);
+        log.debug('Text extracted from Blob URL, length:', analysisContent.length);
       } catch (e) {
-        console.error("[E1] Failed to extract from Blob URL:", e);
+        log.error('Failed to extract from Blob URL:', e);
         return NextResponse.json(
           { error: "Failed to process uploaded file. Please try uploading a different file format." },
           { status: 400 }
@@ -110,13 +112,14 @@ async function handlePost(request: NextRequest) {
 
     if (!analysisContent && file && !deckContent) {
       // LEGACY: Direct file upload (for backward compat / small files)
-      console.warn("[E1] Extracting text from file:", { name: file.name, size: file.size, type: file.type });
+      log.debug('Extracting text from file:', { name: file.name, size: file.size, type: file.type });
       try {
         analysisContent = await extractFileText(file);
-        console.warn("[E1] Text extracted, length:", analysisContent.length);
-      } catch (e: any) {
-        console.error("[E1] Failed to extract file content:", e);
-        const hint = e?.message?.includes("PDF")
+        log.debug('Text extracted, length:', analysisContent.length);
+      } catch (e: unknown) {
+        log.error('Failed to extract file content:', e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        const hint = errMsg.includes("PDF")
           ? " This PDF may be password-protected, scanned (image-only), or corrupted. Please upload a text-based PDF."
           : "";
         return NextResponse.json(
@@ -135,7 +138,7 @@ async function handlePost(request: NextRequest) {
 
 
     if (!analysisContent || analysisContent.length < 50) {
-      console.error("[E1] Insufficient content:", { length: analysisContent.length, source: fileUrl ? 'blob' : file ? 'direct' : 'content' });
+      log.error('Insufficient content:', { length: analysisContent.length, source: fileUrl ? 'blob' : file ? 'direct' : 'content' });
       return NextResponse.json(
         { error: "Insufficient content for analysis. Could not extract enough text — the file may be image-based or empty. Please upload a text-based file." },
         { status: 400 }
@@ -155,13 +158,13 @@ async function handlePost(request: NextRequest) {
           // PPTX files cannot be visually analyzed — the vision model expects image/PDF formats.
           const ext = (fileName || parsedUrl.pathname).toLowerCase().split('.').pop() || '';
           if (['pptx', 'ppt'].includes(ext)) {
-            console.warn('[E1] Visual audit skipped — PPTX format not supported by vision model');
+            log.debug('Visual audit skipped — PPTX format not supported by vision model');
           } else {
             // Blob URLs — the store is public so URLs are directly accessible.
             // For vision model access, convert to data URI for reliability
             // since the AI gateway might not be able to fetch external URLs directly.
             if (isBlobUrl(fileUrl)) {
-              console.warn('[E1] Converting blob URL to data URI for vision model');
+              log.debug('Converting blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               visualUrl = dataUri || fileUrl; // Fallback to raw URL (may fail, but will degrade gracefully)
             } else {
@@ -169,16 +172,16 @@ async function handlePost(request: NextRequest) {
             }
           }
         } else {
-          console.warn('[E1] Visual audit skipped — URL host not in allowlist:', parsedUrl.hostname);
+          log.warn('Visual audit skipped — URL host not in allowlist:', parsedUrl.hostname);
         }
       } catch {
-        console.warn('[E1] Visual audit skipped — invalid URL:', fileUrl);
+        log.warn('Visual audit skipped — invalid URL:', fileUrl);
       }
     }
     const hasVisualInput = !!visualUrl;
 
 
-    console.log("[E1] Starting AI analysis:", { contentLength: analysisContent.length, hasVisualInput, visualSource: visualUrl ? 'provided' : 'none' });
+    log.debug('Starting AI analysis:', { contentLength: analysisContent.length, hasVisualInput, visualSource: visualUrl ? 'provided' : 'none' });
 
 
     let analysis: DeckAnalysisResult;
@@ -216,14 +219,14 @@ async function handlePost(request: NextRequest) {
         }
 
 
-        console.warn("[E1] Visual audit merged from vision model");
+        log.debug('Visual audit merged from vision model');
       } else if (visualResult.status === 'rejected') {
-        console.warn("[E1] Visual audit skipped — vision model unavailable, using content-only visual scores");
+        log.warn('Visual audit skipped — vision model unavailable, using content-only visual scores');
       }
-    } catch (aiError: any) {
-      console.error("[E1] AI deck analysis FAILED:", aiError);
-      const msg = aiError?.message || String(aiError);
-      console.error(`[E1] Full error:`, msg);
+    } catch (aiError: unknown) {
+      log.error('AI deck analysis FAILED:', aiError);
+      const msg = aiError instanceof Error ? aiError.message : String(aiError);
+      log.error('Full error:', msg);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       // Full error already logged server-side above; do not expose details to client
       return NextResponse.json(
@@ -295,12 +298,12 @@ async function handlePost(request: NextRequest) {
       id: savedDeck.id,
       modelUsed: analysis.modelUsed,
     });
-  } catch (error: any) {
-    console.error("[E1] DECK ANALYSIS FAILED — Full error:", error);
+  } catch (error: unknown) {
+    log.error('DECK ANALYSIS FAILED — Full error:', error);
     // Provide specific error messages for common failure modes
-    const msg = error?.message || String(error);
-    console.error(`[E1] Error message: ${msg}`);
-    console.error(`[E1] Error stack:`, error?.stack?.substring(0, 500));
+    const msg = error instanceof Error ? error.message : String(error);
+    log.error(`Error message: ${msg}`);
+    log.error('Error stack:', error instanceof Error ? error.stack?.substring(0, 500) : undefined);
 
 
     if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("timeout")) {
@@ -379,9 +382,9 @@ export async function PATCH(request: NextRequest) {
 
 
     return NextResponse.json({ success: true, notes: updated.notes });
-  } catch (error: any) {
-    console.error("PATCH deck error:", error);
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    log.error('PATCH deck error:', error);
+    if (error instanceof Error && 'code' in error && (error as any).code === 'P2025') {
       return NextResponse.json({ error: "Deck not found" }, { status: 404 });
     }
     return NextResponse.json({ error: "Failed to update deck" }, { status: 500 });
@@ -410,9 +413,9 @@ export async function DELETE(request: NextRequest) {
 
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error("DELETE deck error:", error);
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    log.error('DELETE deck error:', error);
+    if (error instanceof Error && 'code' in error && (error as any).code === 'P2025') {
       return NextResponse.json({ error: "Deck not found" }, { status: 404 });
     }
     return NextResponse.json({ error: "Failed to delete deck" }, { status: 500 });
@@ -510,8 +513,8 @@ export async function GET(request: NextRequest) {
       success: true,
       data: decks,
     });
-  } catch (error) {
-    console.error("Get deck history error:", error);
+  } catch (error: unknown) {
+    log.error('Get deck history error:', error);
     return NextResponse.json(
       { error: "Failed to get deck history" },
       { status: 500 }

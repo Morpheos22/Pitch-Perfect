@@ -47,8 +47,8 @@ interface RateLimitResult {
 // ──────────────────────────────────────────────
 
 type RedisClient = {
-  zadd: (key: string, ...args: any[]) => Promise<any>;
-  zrangebyscore: (key: string, min: number | string, max: number | string, ...args: any[]) => Promise<string[]>;
+  zadd: (key: string, ...args: (string | number | { score: number; member: string })[]) => Promise<string>;
+  zrangebyscore: (key: string, min: number | string, max: number | string, ...args: string[]) => Promise<string[]>;
   zremrangebyscore: (key: string, min: number | string, max: number | string) => Promise<number>;
   zcard: (key: string) => Promise<number>;
   pexpireat: (key: string, ms: number) => Promise<boolean>;
@@ -59,9 +59,15 @@ type RedisClient = {
 
 let _redis: RedisClient | null = null;
 let _redisInitFailed = false;
+let _redisRetryAfter = 0; // Timestamp after which we should retry Redis init
 
 async function getRedis(): Promise<RedisClient | null> {
-  if (_redisInitFailed) return null;
+  // If init previously failed, check if we're past the retry cooldown
+  if (_redisInitFailed) {
+    if (Date.now() < _redisRetryAfter) return null;
+    // Cooldown expired — retry init (clear the flag first)
+    _redisInitFailed = false;
+  }
   if (_redis) return _redis;
 
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -69,16 +75,22 @@ async function getRedis(): Promise<RedisClient | null> {
 
   if (!url || !token) {
     _redisInitFailed = true;
+    // No retry for missing credentials — they won't magically appear
+    _redisRetryAfter = Infinity;
     return null;
   }
 
   try {
     const { Redis } = await import("@upstash/redis");
     _redis = new Redis({ url, token }) as unknown as RedisClient;
+    // Verify connection with a ping
+    await _redis.ping();
     return _redis;
   } catch (err) {
     console.warn("[RateLimit] Failed to initialize Upstash Redis:", err);
     _redisInitFailed = true;
+    // Exponential backoff: retry after 30s, 60s, 120s, capped at 5min
+    _redisRetryAfter = Date.now() + 30_000;
     return null;
   }
 }
@@ -338,8 +350,13 @@ async function checkRateLimitRedis(
       retryAfter: Math.max(1, Math.ceil((windowEnd - now) / 1000)),
     };
   } catch (err) {
-    // Redis error — allow request (fail-open) to avoid blocking users during Redis outages
-    console.error("[RateLimit] Redis error (fail-open):", err);
+    // Redis error — allow request (fail-open) to avoid blocking users during Redis outages.
+    // Reset the cached connection so the next request will re-initialize.
+    // This ensures we recover automatically when Redis comes back online.
+    _redis = null;
+    _redisInitFailed = true;
+    _redisRetryAfter = Date.now() + 30_000;
+    console.error("[RateLimit] Redis error (fail-open, will retry in 30s):", err);
     return {
       allowed: true,
       remaining: config.limit - 1,
