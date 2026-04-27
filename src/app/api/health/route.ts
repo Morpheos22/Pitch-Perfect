@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
   // Full health check — includes diagnostic details
   const startTime = Date.now();
 
+  const warnings: string[] = [];
+
 
   interface FullHealthResponse {
     status: string;
@@ -57,12 +59,60 @@ export async function GET(request: NextRequest) {
   };
 
 
-  // Database check
+  // Database check — Supabase PostgreSQL via Prisma
   try {
     await prisma.$queryRaw`SELECT 1`;
     checks.database = { status: 'ok' };
   } catch {
     checks.database = { status: 'unhealthy' };
+  }
+
+  // Supabase REST API check — verify Supabase project is reachable
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  let supabaseRestOk = false;
+  let supabaseRestLatency = 0;
+  let supabaseRestError: string | undefined;
+
+  if (supabaseUrl) {
+    const supaStart = Date.now();
+    try {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseAnonKey}`, {
+        method: 'GET',
+        headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : {},
+        signal: AbortSignal.timeout(5_000),
+      });
+      supabaseRestLatency = Date.now() - supaStart;
+      // 200 or 401 both prove Supabase is reachable; 401 just means no table at root
+      supabaseRestOk = resp.ok || resp.status === 401 || resp.status === 404;
+      if (!supabaseRestOk) {
+        supabaseRestError = `HTTP ${resp.status}`;
+      }
+    } catch (err: any) {
+      supabaseRestLatency = Date.now() - supaStart;
+      supabaseRestError = err.message;
+    }
+  }
+
+  (checks as any).supabase = {
+    status: supabaseUrl
+      ? (supabaseRestOk ? 'ok' : (checks.database.status === 'ok' ? 'degraded' : 'unhealthy'))
+      : 'not_configured',
+    url: supabaseUrl || undefined,
+    restApiReachable: supabaseRestOk || undefined,
+    restApiLatencyMs: supabaseRestLatency || undefined,
+    hasAnonKey: !!supabaseAnonKey,
+    hasServiceRoleKey: !!supabaseServiceKey,
+    dbUrl: checks.database.status === 'ok' ? 'connected' : 'disconnected',
+    error: supabaseRestError,
+  };
+  if (!supabaseUrl) {
+    warnings.push('NEXT_PUBLIC_SUPABASE_URL not set — Supabase REST API handshake unavailable');
+  } else if (!supabaseRestOk && checks.database.status === 'ok') {
+    warnings.push('Supabase REST API unreachable but DB connection works — REST handshake degraded');
+  } else if (!supabaseRestOk) {
+    warnings.push('Supabase unreachable — both REST API and DB connection failed');
   }
 
 
@@ -120,7 +170,6 @@ export async function GET(request: NextRequest) {
   const allHealthy = checks.database.status === 'ok' && checks.ai.status === 'ok';
 
 
-  const warnings: string[] = [];
   if (!configStatus.hasApiKey && !configStatus.hasToken) warnings.push('AI API key/token not configured');
   if (!configStatus.hasUserId) warnings.push('AI User ID not configured');
   if (!isStorageConfigured()) warnings.push('No persistent storage configured');
