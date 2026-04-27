@@ -203,12 +203,8 @@ function shouldSkipRateLimit(pathname: string): boolean {
     return true;
   }
 
-  // Clerk's own webhook/user sync
-  if (
-    pathname === "/api/user/sync"
-  ) {
-    return true;
-  }
+  // Note: /api/user/sync was previously skipped but is now rate-limited
+  // at the general tier (30/min) to prevent abuse via excessive Clerk API calls.
 
   return false;
 }

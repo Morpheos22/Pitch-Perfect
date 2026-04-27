@@ -441,7 +441,14 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
       /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
       hostname.startsWith('169.254.') ||
       hostname === '0.0.0.0' ||
-      hostname === '::1'
+      hostname === '::1' ||
+      // IPv6-mapped IPv4 — attackers can use these to bypass IPv4 checks
+      hostname === '::ffff:127.0.0.1' ||
+      /^::ffff:10\./.test(hostname) ||
+      /^::ffff:192\.168\./.test(hostname) ||
+      /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+      /^::ffff:169\.254\./.test(hostname) ||
+      hostname === '::ffff:0.0.0.0'
     ) {
       throw new Error('Access to private/internal URLs is blocked');
     }
@@ -516,7 +523,15 @@ export async function getFileContent(fileUrl: string): Promise<Buffer> {
     return Buffer.from(arrayBuffer);
   }
 
-  // Generic URL fetch (now SSRF-protected by the check above)
+  // Generic URL fetch — enforce host allowlist to prevent SSRF
+  // Only Vercel Blob and Zoho WorkDrive URLs should reach this point.
+  // Any other host is blocked unless explicitly in the allowlist.
+  if (!isHostAllowed(fileUrl, [...ALLOWED_UPLOAD_HOSTS, ...ALLOWED_VIDEO_HOSTS])) {
+    throw new Error(
+      `URL host not in allowed list. Only Vercel Blob and Zoho WorkDrive URLs are permitted.`
+    );
+  }
+
   const response = await fetch(fileUrl);
   if (!response.ok) {
     throw new Error(

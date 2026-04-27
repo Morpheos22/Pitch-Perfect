@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { changePasswordSchema } from '@/lib/validation/schemas';
+import { withRateLimit } from '@/lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 // POST /api/user/change-password
-// Proxies password change to Clerk Backend API to avoid CORS issues
-// TODO: Add rate limiting (e.g., 5 attempts per 15 minutes per user)
-// Clerk provides some client-side protection, but server-side rate limiting is recommended
-export async function POST(request: NextRequest) {
+// Proxies password change to Clerk Backend API to avoid CORS issues.
+// Rate limited to 5 attempts per 15 minutes per user to prevent brute-force attacks.
+async function handleChangePassword(request: NextRequest) {
   try {
     const { userId: clerkId } = await auth();
 
@@ -102,3 +102,13 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// Apply rate limiting: 5 attempts per 15 minutes per user
+// This is stricter than the general 30/min tier because password changes
+// are a sensitive operation that should not be spammed.
+export const POST = withRateLimit(handleChangePassword, {
+  limit: 5,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  identifierType: "user",
+  name: "Password Change",
+});
