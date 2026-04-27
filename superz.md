@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 3 — 2026-04-27
+> **Last Updated:** Session 4 — 2026-04-27
 
 ---
 
@@ -14,7 +14,7 @@
 | **Owner** | Automagikal / Morpheos22 |
 | **Domain** | [pitchcoachai.tech](https://pitchcoachai.tech) |
 | **GitHub** | `Morpheos22/Pitch-Perfect` |
-| **Vercel Project** | `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3` |
+| **Vercel Project** | `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3` (**ONLY project — do NOT create new ones without explicit user consent**) |
 | **Framework** | Next.js 16 (App Router) + React 19 + Prisma 6 + Tailwind CSS 4 |
 
 ---
@@ -32,7 +32,8 @@
 - **Storage:** Vercel Blob (client-side direct upload)
 - **Billing:** Stripe (international) + Paystack (African markets) + Zoho CRM
 - **Email:** Resend
-- **Cache/Rate Limiting:** Upstash Redis
+- **Cache/Rate Limiting:** Upstash Redis (with circuit breaker fallback)
+- **Logging:** Structured logger (`src/lib/logger.ts`) — debug/info gated behind NODE_ENV=development
 - **Hosting:** Vercel (serverless functions, auto-deploy from GitHub `main` branch)
 
 ### 5 Coaching Modules
@@ -66,8 +67,6 @@
 | Service | Env Var Name | Where Set |
 |---------|-------------|-----------|
 | Supabase DB | `DATABASE_URL`, `DIRECT_URL` | `.env.local` + Vercel env |
-| Supabase Anon | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` + Vercel env |
-| Supabase Service | `SUPABASE_SERVICE_ROLE_KEY` | `.env.local` + Vercel env |
 | Clerk Publishable | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `.env.local` + Vercel env |
 | Clerk Secret | `CLERK_SECRET_KEY` | `.env.local` + Vercel env |
 | Clerk Webhook | `CLERK_WEBHOOK_SECRET` | `.env.local` + Vercel env (MUST SET) |
@@ -75,8 +74,8 @@
 | Z.ai Base URL | `ZAI_BASE_URL` | `.env.local` + Vercel env |
 | Z.ai User | `ZAI_USER_ID` | `.env.local` + Vercel env |
 | Kal Middleware | `KAL_MIDDLEWARE_URL` | `.env.local` + Vercel env |
-| Vercel Blob | `BLOB_READ_WRITE_TOKEN` | Vercel env (auto-injected) |
-| GitHub PAT | Embedded in git remote URL | `origin` remote |
+| Vercel Blob | `BLOB_READ_WRITE_TOKEN` | `.env.local` + Vercel env |
+| Vercel Project ID | `VERCEL_PROJECT_ID` | `.env.local` (informational only) |
 
 ### Vercel Deploy Hook
 `https://api.vercel.com/v1/integrations/deploy/prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3/LGBDEY1mZs`
@@ -103,11 +102,11 @@
    - New user sign-ups will NOT create DB records → users get errors on authenticated pages
    - Webhook endpoint: `https://pitchcoachai.tech/api/webhooks/clerk`
    - Events to subscribe: `user.created`, `user.updated`
+   - **Status:** Set in `.env.local` but NOT yet in Vercel env vars (API token lost scope — set manually in Vercel Dashboard)
 
-4. **Supabase service role key is NOT a JWT**
-   - The `sbp_*` key is a Supabase platform API key, not a `service_role` JWT
-   - It won't work for REST API calls that need `service_role` access
-   - The actual service_role JWT was never provided by the user
+4. **Only ONE Vercel project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`**
+   - Do NOT create additional Vercel projects without explicit user consent
+   - Both "pitchcoach-ai" and "my-project" deployments seen in GitHub are linked to this single project
 
 ### 🟡 BE AWARE — May Cause Confusion
 
@@ -119,7 +118,61 @@
 
 8. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet.
 
-9. **Vercel API token (`vcp_`) has limited scope** — it works for deploy hooks and was previously able to manage env vars, but the scope was lost mid-session. If env var management fails with 403, the user must set vars manually in Vercel Dashboard or provide a fresh token with full project scope.
+9. **Vercel API token (`vcp_`) has limited scope** — it works for deploy hooks but CANNOT manage env vars (403 forbidden). If env var management is needed, the user must set vars manually in Vercel Dashboard or provide a fresh token with full project scope.
+
+10. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
+
+11. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
+
+---
+
+## Codebase Sweep Status (Session 4)
+
+### Batch 1 — Critical Infrastructure ✅
+- Created missing `/api/blob/upload/route.ts` — handleUpload() with Clerk auth, category validation, DELETE handler
+- Deleted `analyze_screenshots.mjs` — contained hardcoded JWT
+- Enforced host allowlist in `storage.ts` (SSRF protection)
+- Added IPv6 private IP bypass to block list
+- Removed 5 unused Supabase vars from `.env.local`
+- Fixed stale Stripe vars in `.env.example`
+
+### Batch 2 — Error Handling & Rate Limiting ✅
+- Created `src/app/error.tsx` — root error boundary
+- Created `src/app/(dashboard)/error.tsx` — dashboard error boundary
+- Added rate limiting to change-password route (5 req/15min/user)
+- Removed `/api/user/sync` from rate-limit skip list
+- Fixed downstream: DELETE handler for blob cleanup, PutBlobResult type, handleUpload body type
+
+### Batch 3 — Script Check E2E ✅
+- Added text input tab to elevator-script/new page
+- Made targetAudience and targetDuration user-selectable
+- Added Kal Protocol activation on iterate failure
+- Added onUploadProgress callback + upload progress bar
+- E2E smoke test passed
+
+### Batch 4 — Dead Code Cleanup ✅
+- Deleted dead compare route, unused dialog.tsx component
+- Removed `@radix-ui/react-dialog` from package.json
+- Removed unused PresentationIcon import
+- Extracted `plan-config.ts` (shared PLAN_LIMITS, formatPlanName, getScoreColor)
+- Extracted `useUnsavedChangesWarning()` hook
+- Removed dead onComplete no-op from kal-chat
+
+### Batch 5 — Anti-Pattern Remediation ✅
+- 5A: Fixed useEffect dependency arrays (useCallback wrappers, ref pattern for callbacks)
+- 5B: Created `src/lib/logger.ts` — structured debug logger; applied to E1/E2 coach routes
+- 5C: Fixed `any` types in Stripe webhook (unknown + instanceof, typed intersection)
+- 5D: Added cancelled subscription grace period (CANCELLED in ACTIVE_STATUSES, currentPeriodEnd check)
+- 5D: Fixed cancelAtPeriodEnd bug (now uses Stripe's cancel_at_period_end field directly)
+- 5D: Fixed stripeSubscriptionId bug (was storing payment_intent ID; now uses subscription ID)
+- 5E: Implemented fetchSubscriptionPeriodEnd() — actual Stripe API lookup, 30-day fallback
+- 5F: Added Redis circuit breaker with 30s cooldown retry
+
+### Batch 6 — Documentation & Deployment ✅
+- Updated superz.md with full session 4 context
+- Updated worklog.md with all batch details
+- Pushed all commits to GitHub (Morpheos22/Pitch-Perfect)
+- Triggered Vercel deployment via deploy hook — both deployments SUCCESS
 
 ---
 
@@ -134,31 +187,30 @@
 - [x] Prisma schema (17 models, 9 enums) with single baseline migration
 - [x] Clerk authentication (publishable + secret keys set)
 - [x] Z.ai AI Gateway (SDK + HTTP fallback, TTS + Web Search)
-- [x] Vercel Blob storage (client-side direct upload)
+- [x] Vercel Blob storage (client-side direct upload with progress)
 - [x] Dual billing: Stripe + Paystack
 - [x] Zoho CRM integration
 - [x] Supabase DB connected and healthy
 - [x] Production deployment LIVE at pitchcoachai.tech
 - [x] 14+ Vercel env vars configured
+- [x] Full codebase sweep (Batches 1-6) — security, dead code, anti-patterns, billing fixes
+- [x] SSRF protection (host allowlist + IPv6 private IP blocking)
+- [x] Error boundaries (root + dashboard)
+- [x] Rate limiting on sensitive endpoints
+- [x] Structured logging (debug gated in production)
+- [x] Redis circuit breaker (graceful degradation)
+- [x] Cancelled subscription grace period
+- [x] Stripe billing period from API (not hardcoded)
+- [x] Script Check E2E fully functional (text input + file upload + Kal Protocol)
 
-### ❌ Remaining Work
-
-#### Batch 3 — CRITICAL (blocks production user sign-ups)
-- [x] Set `CLERK_WEBHOOK_SECRET` in `.env.local` (`whsec_NPm/Mcxk5U+Ur+kqrePLb7m6AInILiXV`)
-- [x] Create Clerk webhook (endpoint: `/api/webhooks/clerk`, events: `user.created`, `user.updated`)
-- [ ] Set `CLERK_WEBHOOK_SECRET` in Vercel env vars — **API token lost scope, must set manually in Vercel Dashboard**
+### ⚠️ Still Outstanding
+- [ ] Set `CLERK_WEBHOOK_SECRET` in Vercel env vars — **API token lacks scope, must set manually in Vercel Dashboard**
 - [ ] Redeploy after Vercel env var is set
 - [ ] Test: sign up → verify DB record created → verify webhook fires
-
-#### Batch 4 — Billing Integrity
-- [ ] Fix Stripe webhook period lookup (`src/app/api/billing/webhooks/stripe/route.ts:99` — hardcoded 30 days)
-- [ ] Add CANCELLED subscription grace period (`src/lib/entitlement.ts:90`)
-- [ ] Add rate limiting to change-password endpoint (`src/app/api/user/change-password/route.ts:8`)
-
-#### Batch 5 — Polish & Hardening
-- [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Add Kal Protocol 2.0 test coverage
 - [ ] Add E2E/integration tests for critical flows
+- [ ] Verify `ZAI_CHAT_ID` requirement
+- [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
 - [ ] Adaptive middleware deep integration (replace direct Z.ai calls with middleware RPC for contextual chat scenarios)
 
 ---
@@ -174,17 +226,29 @@
 - DB credentials and Clerk key setup
 - Vercel deploy pipeline configured
 
-### Session 3 (Current)
-- **Handshakes verified:** All 8 services confirmed live (Supabase REST, Supabase DB, Z.ai, Vercel API, GitHub, Clerk, Kal Middleware, Production health)
-- **Critical DNS bug fixed:** Supabase pooler region corrected from `aws-0-af-south-1` (doesn't resolve) to `aws-1-eu-west-2`
-- **DB password corrected:** Updated from `***REDACTED_SUPABASE_PASSWORD***` to `***REDACTED_DB_PASSWORD***`
-- **Migration baselined:** `0_init` marked as applied on existing database
-- **Clerk secret key updated:** Pushed to Vercel + `.env.local`
-- **Clerk webhook secret set:** `CLERK_WEBHOOK_SECRET` added to `.env.local` — **still needs manual addition in Vercel Dashboard** (API token lost env var scope mid-session)
-- **Production fully LIVE:** `pitchcoachai.tech/api/health` returns `{"status":"ok"}`
-- **7 commits pushed** to GitHub/Morpheos22/Pitch-Perfect
-- **superz.md** created and updated as agent memory layer on GitHub
-- **Vercel API token scope:** Lost env var management access (403). Deploy hooks still work. Next agent should try the API first; if 403, direct user to set env vars manually in Vercel Dashboard.
+### Session 3 (Previous — context from summary)
+- Handshakes verified: All 8 services confirmed live
+- Critical DNS bug fixed: Supabase pooler region corrected
+- DB password corrected
+- Migration baselined
+- Clerk secret key updated and pushed to Vercel
+- Clerk webhook secret set in `.env.local` (NOT in Vercel — API lost scope)
+- Production fully LIVE: `pitchcoachai.tech/api/health` returns ok
+- superz.md created as agent memory layer
+- 7 commits pushed to GitHub
+
+### Session 4 (Current)
+- **Full codebase sweep executed (Batches 1-6)**
+- **Batch 1:** Created missing blob upload route, deleted hardcoded JWT file, SSRF protection, cleaned unused env vars
+- **Batch 2:** Error boundaries, rate limiting, downstream bug fixes (DELETE handler, type corrections)
+- **Batch 3:** Script Check E2E — text input, user-selectable params, Kal Protocol fallback, upload progress
+- **Batch 4:** Dead code removal (routes, components, imports), duplicate extraction (plan-config, hook)
+- **Batch 5:** Anti-pattern remediation — useEffect deps, structured logger, `any` type fixes, cancelled grace period, Stripe billing period, Redis circuit breaker
+- **Batch 6:** Documentation update (superz.md, worklog.md), git push, Vercel deployment triggered
+- **4 commits pushed** to GitHub (fb26022 is HEAD)
+- **Vercel deployment:** Both deployments SUCCESS (pitchcoach-ai + my-project, both on commit fb26022)
+- **TypeScript:** Zero errors on `tsc --noEmit` and `tsc --noEmit --strict`
+- **Tests:** 40/40 passing
 
 ---
 
@@ -199,8 +263,15 @@
 | `src/lib/kal-protocol-v2.ts` | Kal Protocol 2.0 — 10 questions, critical thinking, middleware (702 lines) |
 | `src/lib/kal-middleware-client.ts` | Adaptive middleware RPC client (297 lines) |
 | `src/lib/db.ts` | Prisma client (lazy singleton, defers validation to first access) |
+| `src/lib/logger.ts` | Structured logger — createLogger(module), debug gated in prod |
+| `src/lib/plan-config.ts` | Shared constants — PLAN_LIMITS, formatPlanName, getScoreColor |
+| `src/lib/storage.ts` | File storage with SSRF protection (host allowlist + private IP block) |
+| `src/lib/rate-limit.ts` | Redis-backed rate limiting with circuit breaker fallback |
+| `src/app/api/blob/upload/route.ts` | Vercel Blob upload — handleUpload with auth + validation + DELETE |
 | `src/app/api/kal/chat/route.ts` | Kal chat API — POST/PATCH/GET (249 lines) |
 | `src/app/api/webhooks/clerk/route.ts` | Clerk webhook — user.created, user.updated |
+| `src/app/error.tsx` | Root error boundary |
+| `src/app/(dashboard)/error.tsx` | Dashboard error boundary |
 | `src/components/kal/kal-chat-widget.tsx` | Interactive Kal chat widget (544 lines) |
 | `worklog.md` | Detailed agent work log (gitignored, for internal use) |
 | `superz.md` | **This file** — agent memory & context layer |
@@ -218,3 +289,6 @@
 7. **Append to worklog.md** — never overwrite previous entries
 8. **Use the Vercel deploy hook** for manual redeployments when only env vars change
 9. **Commit meaningful messages** — no UUID-only commit messages
+10. **Do NOT create new Vercel projects** — `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3` is the ONLY project; seek explicit user consent before creating any new project
+11. **Use `src/lib/logger.ts`** for all logging — never add raw `console.log` in coach/API routes
+12. **Redis fail-open** — if Redis is down, rate limiting allows requests through; do NOT change to fail-closed
