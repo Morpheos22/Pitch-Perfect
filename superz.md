@@ -108,21 +108,28 @@
    - Do NOT create additional Vercel projects without explicit user consent
    - Both "pitchcoach-ai" and "my-project" deployments seen in GitHub are linked to this single project
 
+5. **20-minute inactivity auto-logout (STANDING INSTRUCTION)**
+   - Users are automatically signed out after 20 minutes of inactivity
+   - Enforced globally via `InactivityGuard` at root layout level
+   - Uses `sessionStorage` timestamp + running inactivity timer + visibility change detection
+   - Admin endpoint `POST /api/auth/revoke-all` can force-logout all users (admin emails only)
+   - Do NOT reduce this timeout without explicit user consent
+
 ### 🟡 BE AWARE — May Cause Confusion
 
-5. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
+6. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
 
-6. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
+7. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
 
-7. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
+8. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
 
-8. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet.
+9. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet.
 
-9. **Vercel API token (`vcp_`) has limited scope** — it works for deploy hooks but CANNOT manage env vars (403 forbidden). If env var management is needed, the user must set vars manually in Vercel Dashboard or provide a fresh token with full project scope.
+10. **Vercel API token (`vcp_`) has limited scope** — it works for deploy hooks but CANNOT manage env vars (403 forbidden). If env var management is needed, the user must set vars manually in Vercel Dashboard or provide a fresh token with full project scope.
 
-10. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
+11. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
 
-11. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
+12. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
 
 ---
 
@@ -272,6 +279,9 @@
 | `src/app/api/webhooks/clerk/route.ts` | Clerk webhook — user.created, user.updated |
 | `src/app/error.tsx` | Root error boundary |
 | `src/app/(dashboard)/error.tsx` | Dashboard error boundary |
+| `src/hooks/use-inactivity-logout.ts` | 20-min inactivity auto-logout (standing security instruction) |
+| `src/components/auth/inactivity-guard.tsx` | Global InactivityGuard wrapping root layout |
+| `src/app/api/auth/revoke-all/route.ts` | Admin-only endpoint to revoke all Clerk sessions |
 | `src/components/kal/kal-chat-widget.tsx` | Interactive Kal chat widget (544 lines) |
 | `worklog.md` | Detailed agent work log (gitignored, for internal use) |
 | `superz.md` | **This file** — agent memory & context layer |
@@ -292,3 +302,5 @@
 10. **Do NOT create new Vercel projects** — `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3` is the ONLY project; seek explicit user consent before creating any new project
 11. **Use `src/lib/logger.ts`** for all logging — never add raw `console.log` in coach/API routes
 12. **Redis fail-open** — if Redis is down, rate limiting allows requests through; do NOT change to fail-closed
+13. **20-minute inactivity auto-logout** — standing security instruction; do NOT reduce timeout without explicit user consent
+14. **`POST /api/auth/revoke-all`** — admin-only, use to force-logout all users when needed
