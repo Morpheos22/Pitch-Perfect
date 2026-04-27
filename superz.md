@@ -119,6 +119,8 @@
 
 8. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet.
 
+9. **Vercel API token (`vcp_`) has limited scope** — it works for deploy hooks and was previously able to manage env vars, but the scope was lost mid-session. If env var management fails with 403, the user must set vars manually in Vercel Dashboard or provide a fresh token with full project scope.
+
 ---
 
 ## Project Completion Status
@@ -142,9 +144,10 @@
 ### ❌ Remaining Work
 
 #### Batch 3 — CRITICAL (blocks production user sign-ups)
-- [ ] Set `CLERK_WEBHOOK_SECRET` in Vercel env + `.env.local`
-- [ ] Create Clerk webhook (endpoint: `/api/webhooks/clerk`, events: `user.created`, `user.updated`)
-- [ ] Redeploy to pick up env change
+- [x] Set `CLERK_WEBHOOK_SECRET` in `.env.local` (`whsec_NPm/Mcxk5U+Ur+kqrePLb7m6AInILiXV`)
+- [x] Create Clerk webhook (endpoint: `/api/webhooks/clerk`, events: `user.created`, `user.updated`)
+- [ ] Set `CLERK_WEBHOOK_SECRET` in Vercel env vars — **API token lost scope, must set manually in Vercel Dashboard**
+- [ ] Redeploy after Vercel env var is set
 - [ ] Test: sign up → verify DB record created → verify webhook fires
 
 #### Batch 4 — Billing Integrity
@@ -176,10 +179,12 @@
 - **Critical DNS bug fixed:** Supabase pooler region corrected from `aws-0-af-south-1` (doesn't resolve) to `aws-1-eu-west-2`
 - **DB password corrected:** Updated from `***REDACTED_SUPABASE_PASSWORD***` to `***REDACTED_DB_PASSWORD***`
 - **Migration baselined:** `0_init` marked as applied on existing database
-- **Clerk secret key updated:** `***REDACTED_CLERK_SECRET***` pushed to Vercel + `.env.local`
+- **Clerk secret key updated:** Pushed to Vercel + `.env.local`
+- **Clerk webhook secret set:** `CLERK_WEBHOOK_SECRET` added to `.env.local` — **still needs manual addition in Vercel Dashboard** (API token lost env var scope mid-session)
 - **Production fully LIVE:** `pitchcoachai.tech/api/health` returns `{"status":"ok"}`
-- **6 commits pushed** to GitHub/Morpheos22/Pitch-Perfect
-- **Worklog + README + superz.md** updated for session continuity
+- **7 commits pushed** to GitHub/Morpheos22/Pitch-Perfect
+- **superz.md** created and updated as agent memory layer on GitHub
+- **Vercel API token scope:** Lost env var management access (403). Deploy hooks still work. Next agent should try the API first; if 403, direct user to set env vars manually in Vercel Dashboard.
 
 ---
 
