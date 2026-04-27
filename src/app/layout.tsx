@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { ClerkProvider } from "@clerk/nextjs";
+import { InactivityGuard } from "@/components/auth/inactivity-guard";
 
 // Force dynamic rendering to prevent static generation without Clerk keys
 export const dynamic = "force-dynamic";
@@ -54,7 +55,9 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <InactivityGuard>
+              {children}
+            </InactivityGuard>
             <Toaster position="top-right" />
           </ThemeProvider>
         </body>
