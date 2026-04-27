@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
 import { getVertexAIConfigStatus, isVertexAIConfigured } from '@/lib/vertex-ai';
+import { isKalMiddlewareReady, getKalBackendInfo } from '@/lib/kal-middleware-client';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
 // isAdminEmail removed — not used in this route
@@ -148,6 +149,26 @@ export async function GET(request: NextRequest) {
   } else if (vertexAIStatus.provider === 'vertex-ai') {
     // Vertex AI requires billing — note this as a potential issue
     warnings.push('Vertex AI endpoint selected (GOOGLE_CLOUD_PROJECT set) — requires billing enabled. If billing is disabled, auto-fallback to AI Studio will be attempted.');
+  }
+
+  // Kal Agent / Middleware check — verify Kal Protocol 2.0 backend
+  const kalBackendInfo = getKalBackendInfo();
+  const kalHealth = await isKalMiddlewareReady();
+  (checks as any).kal = {
+    status: kalHealth.ready ? 'ok' : 'unhealthy',
+    mode: kalHealth.mode,
+    activeUrl: kalBackendInfo.activeUrl,
+    agentConfigured: kalBackendInfo.agentConfigured,
+    agentHasApiKey: kalBackendInfo.agentHasApiKey,
+    middlewareConfigured: kalBackendInfo.middlewareConfigured,
+    latencyMs: kalHealth.latencyMs,
+    bridgeStatus: kalHealth.bridgeStatus,
+    error: kalHealth.error,
+  };
+  if (!kalHealth.ready) {
+    warnings.push(`Kal backend (${kalHealth.mode}) unreachable — Kal V2 chat will use local Z.ai fallback. Error: ${kalHealth.error || 'unknown'}`);
+  } else if (kalHealth.mode === 'middleware') {
+    warnings.push('Kal Agent not configured (KAL_AGENT_URL not set) — using legacy middleware. Set KAL_AGENT_URL and KAL_API_KEY for authenticated access.');
   }
 
 

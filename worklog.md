@@ -182,3 +182,28 @@ Work Log:
   - Rate limiting: 5 req/min on both POST endpoints
 
 Stage Summary: Script Check E2 flow fully functional. Upload to Ingestion to AI Analysis to Feedback Loop verified end-to-end with live Z.ai call. All validation, error handling, and graceful degradation (Kal Protocol) paths confirmed working.
+
+---
+Task ID: 10
+Agent: Main Agent (Super Z)
+Task: Kal Agent configuration + Vertex AI key update + Vercel env vars
+
+Work Log:
+- Verified Kal Agent health endpoint: POST https://kal-agent-morpheos255918280.on.adaptive.ai/api/rpc/health → 200 OK, bridgeStatus=ok
+- Rewrote src/lib/kal-middleware-client.ts to support dual-backend architecture:
+  - KAL_AGENT_URL + KAL_API_KEY → PRIMARY (authenticated, x-kal-api-key header)
+  - KAL_MIDDLEWARE_URL → LEGACY FALLBACK (unauthenticated, X-Source/X-Module headers)
+  - Automatic endpoint mapping: Agent uses /api/rpc/analyzeScript vs Middleware /api/rpc/analyzeKalScript
+  - Health check supports both POST (agent) and GET (middleware) methods
+  - Added getKalBackendInfo() diagnostic function
+- Updated .env.local with:
+  - KAL_AGENT_URL=https://kal-agent-morpheos255918280.on.adaptive.ai
+  - KAL_API_KEY=457051b679c89b123bdd092777a8f3db982b7117c0c5d2d156a653c92c8e5c65
+  - Updated GOOGLE_GENAI_API_KEY to new Vertex key
+- Updated .env.example with KAL_AGENT_URL and KAL_API_KEY placeholders
+- Added Kal health check to /api/health route (full diagnostics mode)
+- Fixed TypeScript build: excluded scripts/ from tsconfig.json (duplicate main() functions)
+- Fixed log.info 4-arg call in e2e-script-check.ts
+- Build passes: npx next build ✓ Compiled successfully
+
+Stage Summary: Kal Agent handshake ACTIVE (200 OK, bridgeStatus=ok). Client supports authenticated Agent + legacy Middleware with automatic endpoint mapping. Vertex AI key updated. Health route now checks Kal backend. Build clean.

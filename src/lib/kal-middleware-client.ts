@@ -1,10 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════
-// KAL ADAPTIVE MIDDLEWARE CLIENT
+// KAL ADAPTIVE CLIENT — Agent + Middleware
 // ═══════════════════════════════════════════════════════════════════════
 //
-// Hybrid Architecture (Scenario C):
+// Hybrid Architecture (Scenario C — updated):
 //   - Z.ai SDK → PRIMARY for all E1-E5 pitch analysis (fast, structured)
-//   - Adaptive Middleware → PRIMARY for Kal V2 contextual chat
+//   - Kal Agent (authenticated) → PRIMARY for Kal V2 contextual chat
+//   - Kal Middleware (legacy) → FALLBACK if agent not configured
+//   - Local Z.ai Kal V2 → FINAL fallback if both remote services are down
 //
 // This client handles RPC calls to the adaptive AI agent that powers
 // the Kal Protocol 2.0 contextual chat scenario. The adaptive agent
@@ -14,9 +16,9 @@
 //
 // ARCHITECTURE:
 //   ┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
-//   │  KalChat API │────▶│  Adaptive Agent  │────▶│  Returns     │
-//   │  Route       │     │  (RPC endpoint)  │     │  next Q /    │
-//   │              │◀────│                  │◀────│  summary     │
+//   │  KalChat API │────▶│  Kal Agent       │────▶│  Returns     │
+//   │  Route       │     │  (RPC + API Key) │     │  next Q /    │
+//   │              │◀────│  or Middleware   │◀────│  summary     │
 //   └──────────────┘     └──────────────────┘     └──────────────┘
 //         │                      │
 //         │                      ├── Handles fallback logic
@@ -24,12 +26,18 @@
 //         │                      ├── Generates summary
 //         │                      └── Adapts to user engagement
 //         │
-//         └── Fallback: If middleware is down, falls back to
+//         └── Fallback: If agent/middleware is down, falls back to
 //             local Z.ai-based Kal V2 (original code path)
 //
-// RPC ENDPOINTS (adaptive.ai):
-//   POST /api/rpc/analyzeKalScript   — Start / continue Kal chat
-//   POST /api/rpc/generateKalSummary — Generate final summary
+// RPC ENDPOINTS — Kal Agent (authenticated):
+//   POST /api/rpc/analyzeScript     — Start / continue Kal chat
+//   POST /api/rpc/generateSummary   — Generate final summary
+//   POST /api/rpc/health            — Health check (authenticated)
+//
+// RPC ENDPOINTS — Kal Middleware (legacy, no auth):
+//   POST /api/rpc/analyzeKalScript  — Start / continue Kal chat
+//   POST /api/rpc/generateKalSummary— Generate final summary
+//   GET  /api/rpc/health            — Health check (unauthenticated)
 //
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -37,14 +45,63 @@
 // CONFIGURATION
 // ============================================
 
+/**
+ * Kal Agent URL — the authenticated, preferred service.
+ * Set via KAL_AGENT_URL env var.
+ * Example: https://kal-agent-morpheos255918280.on.adaptive.ai
+ */
+const KAL_AGENT_URL = process.env.KAL_AGENT_URL || '';
+
+/**
+ * Kal Agent API Key — required for authenticated RPC calls.
+ * Set via KAL_API_KEY env var.
+ * Sent as 'x-kal-api-key' header on every request.
+ */
+const KAL_API_KEY = process.env.KAL_API_KEY || '';
+
+/**
+ * Kal Middleware URL — the legacy, unauthenticated fallback.
+ * Only used when KAL_AGENT_URL is not configured.
+ * Set via KAL_MIDDLEWARE_URL env var.
+ */
 const KAL_MIDDLEWARE_BASE_URL =
   process.env.KAL_MIDDLEWARE_URL ||
   'https://kal-middleware-morpheos255918280.adaptive.ai';
 
-const KAL_RPC_ENDPOINTS = {
-  analyzeScript: '/api/rpc/analyzeKalScript',
-  generateSummary: '/api/rpc/generateKalSummary',
+/**
+ * Determine which backend to use.
+ * Agent (authenticated) is preferred over Middleware (legacy).
+ */
+function getActiveBackend(): { url: string; mode: 'agent' | 'middleware' } {
+  if (KAL_AGENT_URL) {
+    return { url: KAL_AGENT_URL, mode: 'agent' };
+  }
+  return { url: KAL_MIDDLEWARE_BASE_URL, mode: 'middleware' };
+}
+
+/**
+ * Map logical endpoints to the correct path based on backend mode.
+ * Agent and Middleware have different RPC endpoint names.
+ */
+const ENDPOINT_MAP = {
+  agent: {
+    analyzeScript: '/api/rpc/analyzeScript',
+    generateSummary: '/api/rpc/generateSummary',
+    health: '/api/rpc/health',
+  },
+  middleware: {
+    analyzeScript: '/api/rpc/analyzeKalScript',
+    generateSummary: '/api/rpc/generateKalSummary',
+    health: '/api/rpc/health',
+  },
 } as const;
+
+function getEndpoint(
+  name: 'analyzeScript' | 'generateSummary' | 'health',
+): string {
+  const { mode } = getActiveBackend();
+  return ENDPOINT_MAP[mode][name];
+}
 
 // ============================================
 // TYPES
@@ -125,10 +182,34 @@ export interface KalMiddlewareSummaryResponse {
 // ============================================
 
 /**
- * Call the Kal adaptive middleware RPC endpoint.
+ * Build the headers for an RPC call based on the active backend.
  *
+ * Agent mode: sends 'x-kal-api-key' for authentication.
+ * Middleware mode: sends 'X-Source' / 'X-Module' for identification.
+ */
+function buildRpcHeaders(): Record<string, string> {
+  const { mode } = getActiveBackend();
+
+  const base: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (mode === 'agent') {
+    base['x-kal-api-key'] = KAL_API_KEY;
+  } else {
+    base['X-Source'] = 'pitch-perfect';
+    base['X-Module'] = 'kal-v2';
+  }
+
+  return base;
+}
+
+/**
+ * Call the Kal adaptive backend RPC endpoint.
+ *
+ * Supports both the authenticated Kal Agent and the legacy Middleware.
  * Includes timeout protection, error handling, and structured logging.
- * If the middleware is unreachable, returns a structured error response
+ * If the backend is unreachable, returns a structured error response
  * that triggers the local Z.ai fallback path.
  */
 async function kalRpc<TRequest, TResponse>(
@@ -136,21 +217,18 @@ async function kalRpc<TRequest, TResponse>(
   payload: TRequest,
   timeoutMs: number = 15_000,
 ): Promise<TResponse> {
-  const url = `${KAL_MIDDLEWARE_BASE_URL}${endpoint}`;
+  const { url: baseUrl, mode } = getActiveBackend();
+  const fullUrl = `${baseUrl}${endpoint}`;
 
-  console.log(`[KalMiddleware] RPC → ${endpoint}`);
+  console.log(`[KalClient] RPC → ${endpoint} (mode: ${mode})`);
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(url, {
+    const response = await fetch(fullUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Source': 'pitch-perfect',
-        'X-Module': 'kal-v2',
-      },
+      headers: buildRpcHeaders(),
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -160,28 +238,28 @@ async function kalRpc<TRequest, TResponse>(
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown');
       console.error(
-        `[KalMiddleware] RPC ${endpoint} failed: HTTP ${response.status} — ${errorBody.slice(0, 300)}`,
+        `[KalClient] RPC ${endpoint} failed: HTTP ${response.status} — ${errorBody.slice(0, 300)}`,
       );
-      throw new Error(`Middleware HTTP ${response.status}: ${errorBody.slice(0, 200)}`);
+      throw new Error(`Kal ${mode} HTTP ${response.status}: ${errorBody.slice(0, 200)}`);
     }
 
     const data = await response.json();
-    console.log(`[KalMiddleware] RPC ${endpoint} succeeded`);
+    console.log(`[KalClient] RPC ${endpoint} succeeded (mode: ${mode})`);
     return data as TResponse;
 
   } catch (error: any) {
     // Categorise the error for logging and fallback decisions
     if (error.name === 'AbortError') {
-      console.error(`[KalMiddleware] RPC ${endpoint} timed out after ${timeoutMs}ms`);
-      throw new Error('MIDDLEWARE_TIMEOUT');
+      console.error(`[KalClient] RPC ${endpoint} timed out after ${timeoutMs}ms`);
+      throw new Error('KAL_TIMEOUT');
     }
 
     if (error.cause?.code === 'ECONNREFUSED' || error.cause?.code === 'ENOTFOUND') {
-      console.error(`[KalMiddleware] RPC ${endpoint} — connection refused / DNS failure`);
-      throw new Error('MIDDLEWARE_UNREACHABLE');
+      console.error(`[KalClient] RPC ${endpoint} — connection refused / DNS failure`);
+      throw new Error('KAL_UNREACHABLE');
     }
 
-    console.error(`[KalMiddleware] RPC ${endpoint} error: ${error.message}`);
+    console.error(`[KalClient] RPC ${endpoint} error: ${error.message}`);
     throw error;
   }
 }
@@ -191,19 +269,19 @@ async function kalRpc<TRequest, TResponse>(
 // ============================================
 
 /**
- * Start or continue a Kal V2 contextual chat session via the adaptive middleware.
+ * Start or continue a Kal V2 contextual chat session via the adaptive backend.
  *
  * Call this when:
  *   1. Starting a new Kal session (questionIndex undefined)
  *   2. Continuing after the user answers a question (questionIndex + answer provided)
  *
- * The middleware handles:
+ * The backend handles:
  *   - Selecting the next question based on the 10-question sequence
  *   - Detecting short/vague answers and generating fallback responses
  *   - Applying the 8-step critical thinking framework
  *   - Adapting question delivery based on user engagement
  *
- * If the middleware fails, the caller should fall back to the local
+ * If the backend fails, the caller should fall back to the local
  * Z.ai-based processKalV2Answer() function.
  */
 export async function kalMiddlewareAnalyze(
@@ -211,40 +289,40 @@ export async function kalMiddlewareAnalyze(
 ): Promise<KalMiddlewareAnalyzeResponse> {
   try {
     return await kalRpc<KalMiddlewareAnalyzeRequest, KalMiddlewareAnalyzeResponse>(
-      KAL_RPC_ENDPOINTS.analyzeScript,
+      getEndpoint('analyzeScript'),
       request,
       15_000, // 15s timeout — chat is latency-tolerant
     );
   } catch (error: any) {
-    console.warn(`[KalMiddleware] Analyze failed: ${error.message}. Will use local fallback.`);
+    console.warn(`[KalClient] Analyze failed: ${error.message}. Will use local fallback.`);
     return {
       success: false,
       error: error.message,
-      statusMessage: 'Middleware unavailable. Using local Kal engine.',
+      statusMessage: 'Kal backend unavailable. Using local Kal engine.',
     };
   }
 }
 
 /**
- * Generate a Kal V2 summary via the adaptive middleware.
+ * Generate a Kal V2 summary via the adaptive backend.
  *
- * Called after all 10 questions have been answered. The middleware
+ * Called after all 10 questions have been answered. The backend
  * synthesises the Q&A pairs into a structured assessment using the
  * critical thinking framework.
  *
- * If the middleware fails, falls back to local Z.ai summary generation.
+ * If the backend fails, falls back to local Z.ai summary generation.
  */
 export async function kalMiddlewareSummary(
   request: KalMiddlewareSummaryRequest,
 ): Promise<KalMiddlewareSummaryResponse> {
   try {
     return await kalRpc<KalMiddlewareSummaryRequest, KalMiddlewareSummaryResponse>(
-      KAL_RPC_ENDPOINTS.generateSummary,
+      getEndpoint('generateSummary'),
       request,
       30_000, // 30s timeout — summary generation is heavier
     );
   } catch (error: any) {
-    console.warn(`[KalMiddleware] Summary failed: ${error.message}. Will use local Z.ai fallback.`);
+    console.warn(`[KalClient] Summary failed: ${error.message}. Will use local Z.ai fallback.`);
     return {
       success: false,
       error: error.message,
@@ -253,44 +331,100 @@ export async function kalMiddlewareSummary(
 }
 
 /**
- * Check if the Kal middleware is reachable.
+ * Check if the Kal backend is reachable.
  * Used by the health check endpoint and pre-warm logic.
+ *
+ * Agent mode: POST /api/rpc/health with x-kal-api-key header.
+ * Middleware mode: GET /api/rpc/health (unauthenticated).
  */
 export async function isKalMiddlewareReady(): Promise<{
   ready: boolean;
   latencyMs: number;
   error?: string;
+  mode?: 'agent' | 'middleware';
+  bridgeStatus?: string;
 }> {
+  const { url: baseUrl, mode } = getActiveBackend();
   const start = Date.now();
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
 
-    const response = await fetch(`${KAL_MIDDLEWARE_BASE_URL}/api/rpc/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
+    let response: Response;
+
+    if (mode === 'agent') {
+      // Agent health check: POST with API key
+      response = await fetch(`${baseUrl}${ENDPOINT_MAP.agent.health}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-kal-api-key': KAL_API_KEY,
+        },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      });
+    } else {
+      // Middleware health check: GET (unauthenticated)
+      response = await fetch(`${baseUrl}${ENDPOINT_MAP.middleware.health}`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+    }
 
     clearTimeout(timeout);
+
+    let bridgeStatus: string | undefined;
+    if (response.ok) {
+      try {
+        const data = await response.json();
+        bridgeStatus = data.bridgeStatus ?? data.status;
+      } catch {
+        // JSON parse failed — still OK, just no bridge status
+      }
+    }
 
     return {
       ready: response.ok,
       latencyMs: Date.now() - start,
+      mode,
+      bridgeStatus,
     };
   } catch (error: any) {
     return {
       ready: false,
       latencyMs: Date.now() - start,
+      mode,
       error: error.message,
     };
   }
 }
 
 /**
- * Get the configured middleware base URL.
+ * Get the configured backend URL and mode.
  * Useful for logging and debugging.
  */
 export function getKalMiddlewareUrl(): string {
-  return KAL_MIDDLEWARE_BASE_URL;
+  const { url, mode } = getActiveBackend();
+  return `${url} (mode: ${mode})`;
+}
+
+/**
+ * Get detailed backend info for health/diagnostics.
+ */
+export function getKalBackendInfo(): {
+  activeUrl: string;
+  mode: 'agent' | 'middleware';
+  agentConfigured: boolean;
+  middlewareConfigured: boolean;
+  agentHasApiKey: boolean;
+} {
+  const { url, mode } = getActiveBackend();
+  return {
+    activeUrl: url,
+    mode,
+    agentConfigured: !!KAL_AGENT_URL,
+    middlewareConfigured: !!KAL_MIDDLEWARE_BASE_URL,
+    agentHasApiKey: !!KAL_API_KEY,
+  };
 }

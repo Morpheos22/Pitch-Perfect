@@ -559,7 +559,7 @@ async function stage3_AIAnalysisFeedbackLoop() {
     if (Math.abs(totalWeight - 1.0) > 0.01) {
       throw new Error(`E2 scoring weights don't sum to 1.0: total=${totalWeight}`);
     }
-    log.info(STAGE, 'E2 scoring weights:', e2Weights, `total=${totalWeight}`);
+    log.info(STAGE, 'E2 scoring weights:', { ...e2Weights, total: totalWeight });
   });
 
   // ── 3.9 Weighted Score Computation ──
