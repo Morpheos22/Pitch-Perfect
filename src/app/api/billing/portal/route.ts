@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       select: { id: true, clerkId: true, subscription: true },
     });
     if (authResult.error) return authResult.error;
-    const user = authResult.user as Record<string, any>;
+    const user = authResult.user as { id: string; clerkId: string; subscription: { plan: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; creditsRemaining: number; stripeCustomerId: string | null; paystackCustomerId: string | null; currentPeriodStart: string | null; creditsUsed: number } };
 
 
     if (!user.subscription) {
@@ -65,15 +65,6 @@ export async function GET(request: NextRequest) {
         portalUrl = session.url;
         provider = 'stripe';
       }
-    }
-
-
-    // Zoho Billing Portal
-    if (!portalUrl && sub.zohoCustomerId && process.env.ZOHO_BILLING_ORG_ID) {
-      // Zoho Billing customer portal URL
-      const orgId = process.env.ZOHO_BILLING_ORG_ID;
-      portalUrl = `https://billing.zoho.com/portal/${orgId}/customer/${sub.zohoCustomerId}`;
-      provider = 'zoho';
     }
 
 

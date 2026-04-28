@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       onboardingCompleted,
       redirect: onboardingCompleted ? '/dashboard' : '/onboarding',
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[dev/set-mode]', error);
     return NextResponse.json(
       { error: 'Internal server error' },

@@ -153,10 +153,11 @@ async function handlePatch(request: NextRequest) {
           ? result.nextQuestion
           : 'No more questions. Generating your summary...',
     });
-  } catch (error: any) {
-    console.error('[KalV2] Answer processing failed:', error?.message);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('[KalV2] Answer processing failed:', msg);
     return NextResponse.json(
-      { error: error?.message || 'Failed to process answer' },
+      { error: msg || 'Failed to process answer' },
       { status: 500 }
     );
   }

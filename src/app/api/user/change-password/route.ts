@@ -94,7 +94,7 @@ async function handleChangePassword(request: NextRequest) {
       { error: message },
       { status: res.status }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Password change error:", error);
     return NextResponse.json(
       { error: "Failed to change password. Please try again." },

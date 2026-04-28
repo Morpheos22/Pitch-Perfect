@@ -11,18 +11,12 @@ import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
 import { ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES, MAX_FILE_SIZES, validateFileFormat } from "@/lib/file-validation";
+import { PLAN_LIMITS } from "@/lib/plan-config";
 
 // Deck-specific constants derived from the single source of truth
 const DECK_EXTENSIONS = ALLOWED_EXTENSIONS.deck;
 const DECK_MIME_TYPES = ALLOWED_MIME_TYPES.deck;
 const DECK_MAX_SIZE = MAX_FILE_SIZES.deck; // 50MB
-
-const PLAN_LIMITS: Record<string, { e1: number }> = {
-  FREE: { e1: 1 },
-  STARTER: { e1: 5 },
-  PROFESSIONAL: { e1: 20 },
-  ENTERPRISE: { e1: 999 },
-};
 
 const frameworkElements = [
   { name: "Title Slide", description: "Clear company name and tagline" },
@@ -133,9 +127,10 @@ export default function PitchDeckAnalyserNewPage() {
         blobUrl = blobResult.url;
         blobPathname = blobResult.pathname;
         console.log("[E1] Blob upload succeeded:", blobUrl);
-      } catch (blobError: any) {
+      } catch (blobError: unknown) {
         console.error("[E1] Blob upload failed:", blobError);
-        toast.error(blobError?.message || "File upload failed. Please try again.");
+        const blobMsg = blobError instanceof Error ? blobError.message : String(blobError);
+        toast.error(blobMsg || "File upload failed. Please try again.");
         return;
       }
 
@@ -156,7 +151,7 @@ export default function PitchDeckAnalyserNewPage() {
 
       toast.success("Analysis complete!");
       router.push(`/pitch-deck-analyser/session/${data.id}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[E1] Upload/analysis error:", error);
 
       // ── Clean up orphaned blob if analysis was rejected ──
@@ -169,22 +164,26 @@ export default function PitchDeckAnalyserNewPage() {
         });
       }
 
-      if (error?.status === 413) {
+      const errObj = error instanceof Error ? error : null;
+      const errData = (typeof error === 'object' && error !== null) ? error as Record<string, unknown> : null;
+      const errStatus = errData?.status as number | undefined;
+
+      if (errStatus === 413) {
         toast.error("File is too large for upload. Maximum size is 50MB.");
         return;
       }
-      if (error?.status === 403) {
+      if (errStatus === 403) {
         toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/pitch-deck-analyser/upgrade");
         return;
       }
-      if (error?.status === 401) {
+      if (errStatus === 401) {
         toast.error("Please sign in to continue");
         router.push("/sign-in");
         return;
       }
       // Surface the ACTUAL server error message — don't swallow it
-      const serverMessage = error?.message || error?.data?.error;
+      const serverMessage = errObj?.message || (errData?.data as Record<string, unknown> | undefined)?.error as string | undefined;
       if (serverMessage && serverMessage !== "Request failed (500)") {
         toast.error(serverMessage);
       } else {

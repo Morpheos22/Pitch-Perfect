@@ -46,7 +46,6 @@ const nextConfig: any = {
 
   serverExternalPackages: [
     "z-ai-web-dev-sdk",
-    "resend",
     "pdf-parse",
     "pdfjs-dist",
     "mammoth",
@@ -90,7 +89,7 @@ const nextConfig: any = {
               "font-src 'self' https://fonts.gstatic.com",
               // Image sources: blobs, data URIs, any HTTPS (for deck screenshots)
               "img-src 'self' data: https: blob:",
-              // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho, Resend
+              // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho
               // SECURITY: Internal IP (172.25.x.x) only included in development.
               // Production uses ZAI_BASE_URL env var — never expose private IPs in CSP.
               [
@@ -111,7 +110,6 @@ const nextConfig: any = {
                 'https://*.aiplatform.googleapis.com',
                 'https://api.upstash.com',
                 'https://*.zoho.com',
-                'https://resend.com',
               ].filter(Boolean).join(' '),
               // Frame sources: Clerk auth iframe (custom FAPI domain + standard), Cloudflare challenge
               "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev https://clerk.pitchcoachai.tech",

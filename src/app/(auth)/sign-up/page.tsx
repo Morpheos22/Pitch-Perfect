@@ -18,7 +18,7 @@ export default function SignUpPage() {
             footerActionLink: "text-primary hover:text-primary/80",
           },
         }}
-        fallbackRedirectUrl="/dashboard"
+        fallbackRedirectUrl="/onboarding"
         signInFallbackRedirectUrl="/dashboard"
       />
     </Card>

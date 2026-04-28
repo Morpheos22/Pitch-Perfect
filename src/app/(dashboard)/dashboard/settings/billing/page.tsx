@@ -15,14 +15,17 @@ import {
   MessageSquare,
   Video,
   TrendingUp,
+  Rocket,
 } from "lucide-react";
 import Link from "next/link";
+import { PLAN_LIMITS, formatPlanName } from "@/lib/plan-config";
 
 interface UsageData {
   e1DeckAnalyses: number;
   e2ScriptCoachSessions: number;
   e3LivePitchSessions: number;
   e4FullPitchSessions: number;
+  e5FounderSessions: number;
   zaiTokensUsed: number;
 }
 
@@ -40,22 +43,8 @@ interface UserData {
   usage: UsageData | null;
 }
 
-const PLAN_LIMITS: Record<string, { e1: number; e2: number; e3: number; e4: number }> = {
-  FREE: { e1: 1, e2: 1, e3: 0, e4: 0 },
-  STARTER: { e1: 5, e2: 10, e3: 5, e4: 1 },
-  PROFESSIONAL: { e1: 20, e2: 30, e3: 15, e4: 5 },
-  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
-};
-
-function formatPlanName(plan: string): string {
-  const names: Record<string, string> = {
-    FREE: "Free",
-    STARTER: "Starter",
-    PROFESSIONAL: "Professional",
-    ENTERPRISE: "Enterprise",
-  };
-  return names[plan] || plan;
-}
+// PLAN_LIMITS and formatPlanName imported from @/lib/plan-config (single source of truth)
+// Includes E5 (Founder Coaching) limits
 
 export default function BillingPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -98,6 +87,7 @@ export default function BillingPage() {
     { key: "e2", label: "E2 — Script Check", icon: MessageSquare, used: usage?.e2ScriptCoachSessions ?? 0, limit: limits.e2 },
     { key: "e3", label: "E3 — Live Pitch", icon: Video, used: usage?.e3LivePitchSessions ?? 0, limit: limits.e3 },
     { key: "e4", label: "E4 — Full Pitch Session", icon: TrendingUp, used: usage?.e4FullPitchSessions ?? 0, limit: limits.e4 },
+    { key: "e5", label: "E5 — Founder Coaching", icon: Rocket, used: usage?.e5FounderSessions ?? 0, limit: limits.e5 },
   ];
 
   const periodEnd = userData?.subscription?.currentPeriodEnd

@@ -245,3 +245,88 @@ Work Log:
 - Pushed to GitHub, triggered Vercel redeploy
 
 Stage Summary: ALL credentials now reflected across .env.local, .env.example, AND Vercel. Supabase has its own named handshake in /api/health. Vercel env vars synced via API. 8/8 services confirmed reachable. Production redeploy triggered.
+
+---
+Task ID: 7
+Agent: Super Z (main)
+Task: Fix Clerk auth issues — users can't sign up/sign in, password validation, onboarding flow
+
+Work Log:
+- Investigated full Clerk auth pipeline: layout.tsx (ClerkProvider), sign-in/sign-up pages, onboarding page, middleware, webhook handler, password validation schemas
+- Found root cause 1: NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard (should be /onboarding) — caused flash redirect for new users
+- Found root cause 2: Sign-up page fallbackRedirectUrl="/dashboard" (should be /onboarding)
+- Found root cause 3: CLERK_WEBHOOK_SECRET was stale — new sign-ups would not create DB records
+- Confirmed password policy is already properly implemented in clerk-config.ts and validation/schemas.ts (min 6, uppercase, lowercase, number, special char)
+- Confirmed onboarding flow is well-implemented (3-step wizard, server-side Clerk metadata update, middleware redirect with JWT+cache+Clerk API fallback)
+- Updated .env.local: CLERK_WEBHOOK_SECRET and NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
+- Updated sign-up page: fallbackRedirectUrl from /dashboard to /onboarding
+- Updated Vercel env vars via REST API: CLERK_WEBHOOK_SECRET (id: eGscbY4qDvFCdkOy) and NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL (id: ogbfMT1utZhLSzU6)
+- TypeScript: zero errors on tsc --noEmit
+- Tests: 40/40 passing
+- Updated superz.md with Session 7 context
+
+Stage Summary:
+- 3 root causes identified and fixed (env var, sign-up redirect, webhook secret)
+- 2 Vercel env vars updated via API
+- 1 source file modified (sign-up page)
+- NOT committed/pushed — awaiting user consent
+- Vercel redeploy needed to pick up env var changes
+- Clerk Dashboard password settings must also be configured manually (Dashboard-only setting)
+
+---
+Task ID: 7b
+Agent: Super Z (main)
+Task: Fix missing Zoho CRM sync and welcome email in onboarding flow
+
+Work Log:
+- Investigated the complete onboarding flow: Clerk webhook → DB → onboarding API → dashboard
+- Found 2 critical gaps in /api/user/onboarding route:
+  1. No syncUserToCRM() call — CRM only got bare lead from user.created (no country/useCase)
+  2. No sendWelcomeEmail() call — email+password users never got welcome email (only SSO users did)
+- Found Zoho CRM + Resend env vars missing from .env.local (present on Vercel)
+- Updated /api/user/onboarding/route.ts:
+  - Extract user email/name from existing DB record or Clerk API sync
+  - Added syncUserToCRM() with complete onboarding data (country, useCase) — fire-and-forget
+  - Added sendWelcomeEmail() after onboarding completes — fire-and-forget
+- Updated /api/webhooks/clerk/route.ts handleUserUpdated():
+  - Added CRM sync when onboarding data appears in public_metadata (reliable retry if onboarding API fails)
+  - Added welcome email on onboarding completion (belt-and-suspenders with onboarding API)
+  - Skips duplicate email if wasJustVerified already triggered it
+- Added to .env.local: ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN, ZOHO_API_DOMAIN, ZOHO_ORG_ID, RESEND_API_KEY
+- Updated superz.md with root causes 4 and 5
+- TypeScript: zero errors, 40/40 tests pass
+- NOT committed/pushed — awaiting user consent
+
+Stage Summary:
+- Onboarding flow now triggers: DB update → Clerk metadata update → Zoho CRM sync → Welcome email
+- Dual-delivery mechanism: onboarding API sends CRM/email directly, plus Clerk webhook provides reliable retry
+- Zoho CRM will receive complete lead data (country, primaryUseCase) when onboarding completes
+- All new users (both SSO and email+password) will receive welcome email
+
+---
+Task ID: Batch 4 + E2E Audit
+Agent: Super Z (main)
+Task: Fix all downstream bugs from audit, e2e verify Script Check module + blob upload
+
+Work Log:
+- Deleted dead Zoho billing webhook route (src/app/api/billing/webhooks/zoho/route.ts)
+- Removed zohoSubscriptionId, zohoCustomerId, zohoPlanCode fields from Prisma schema
+- Removed ZOHO from PaymentProvider enum in schema
+- Fixed PLAN_LIMITS triple desync: dashboard/page.tsx and billing/page.tsx now import from @/lib/plan-config
+- Added E5 (Founder Coaching) to dashboard entitlements panel, module cards, and billing usage breakdown
+- Added e5FounderSessions to UsageData interfaces in both dashboard and billing pages
+- Added 'founder' and 'founder-readiness' product IDs to PRODUCTS map, plan mapping, cycle mapping, and pricing
+- Fixed Record<string, any> casts in billing/portal and payment/create-session with proper typed interfaces
+- Fixed (e: any) in onboarding route with proper Clerk EmailAddress type inference
+- Fixed KAL_PENDING as any casts in script routes (enum exists in Prisma schema)
+- Fixed (user as any).emailAddresses in script route — requireAuth returns Prisma User, not Clerk User
+- Fixed ALLOWED_GATEWAYS.includes(gatewayUpper as any) with proper readonly string[] cast
+- Traced complete E2 Script Check data flow end-to-end: client page → blob upload → API route → file parser → AI service → DB write → session page render
+- Verified blob upload client-side flow: uploadFileToBlob() → /api/blob/upload (token) → Vercel Blob → blob URL → FormData POST → script route → extractTextFromUrl() → storage.getFileContent() → file parser → AI analysis
+- Build passes, 40/40 vitest tests pass
+
+Stage Summary:
+- All 6 audit bugs fixed (P0-P2)
+- Script Check e2e data flow verified — wired correctly
+- Blob upload client-side flow verified — wired correctly
+- AI analysis feedback loop verified — Z.ai primary → Vertex AI fallback → Kal Protocol graceful degradation

@@ -108,8 +108,8 @@ async function handlePost(request: NextRequest) {
       response: assistantContent,
       conversationId: convId,
     });
-  } catch (error: any) {
-    console.error('[Chat] Error:', error?.message);
+  } catch (error: unknown) {
+    console.error('[Chat] Error:', error instanceof Error ? error.message : String(error));
     return NextResponse.json(
       { error: 'Failed to get response. Please try again.' },
       { status: 500 }

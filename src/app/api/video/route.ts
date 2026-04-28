@@ -105,10 +105,11 @@ export async function POST(request: NextRequest) {
     let uploadResult;
     try {
       uploadResult = await uploadFile(videoFile, user.id, 'video', videoFile.name, videoFile.type);
-    } catch (uploadErr: any) {
+    } catch (uploadErr: unknown) {
       console.error('[Video] Upload failed:', uploadErr);
+      const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
       return NextResponse.json(
-        { error: uploadErr.message || 'Video storage upload failed' },
+        { error: msg || 'Video storage upload failed' },
         { status: 503 }
       );
     }

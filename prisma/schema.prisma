@@ -80,10 +80,6 @@ model Subscription {
   stripePaymentMethodId   String?             // Stripe payment method ID
   stripeCurrentPeriodEnd  DateTime?           // Stripe billing cycle end
 
-  // Zoho Billing Integration
-  zohoSubscriptionId  String?    @unique // Zoho Billing subscription reference
-  zohoCustomerId      String?             // Zoho Billing customer reference
-  zohoPlanCode        String?             // Zoho Billing plan code for the subscription
 
   // Billing Cycle
   currentPeriodStart DateTime?
@@ -556,7 +552,6 @@ enum TransactionType {
 enum PaymentProvider {
   PAYSTACK
   STRIPE
-  ZOHO
 }
 
 model ModuleAccess {

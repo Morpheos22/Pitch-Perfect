@@ -1,6 +1,6 @@
 // Payment Service
 // Handles payment gateway routing, webhook verification, and checkout session creation
-// Supports: Paystack (SA), Zoho Billing (International), Stripe (Fallback)
+// Supports: Paystack (African Markets), Stripe (International/Fallback)
 
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/db';
@@ -15,6 +15,8 @@ export const PRODUCTS: Record<string, { name: string; description: string }> = {
   'elevator-live': { name: 'Live Pitch', description: 'Video delivery analysis' },
   'pitch-deck-live': { name: 'Pitch Deck + Live Bundle', description: 'Combined deck and video analysis' },
   'master': { name: 'Master Plan', description: 'Full access to all modules' },
+  'founder': { name: 'Founder Coaching', description: 'Investor readiness, pathway, and network profiling' },
+  'founder-readiness': { name: 'Founder Readiness', description: 'Investor readiness assessment' },
 };
 
 // ============================================
@@ -29,6 +31,8 @@ export function getPlanFromProduct(productId: string | null | undefined): 'START
     'elevator-live': 'PROFESSIONAL',
     'pitch-deck-live': 'PROFESSIONAL',
     'master': 'ENTERPRISE',
+    'founder': 'PROFESSIONAL',
+    'founder-readiness': 'PROFESSIONAL',
   };
   return planMap[productId] || 'STARTER';
 }
@@ -40,6 +44,8 @@ export function getModuleCycles(productId: string): number {
     'elevator-live': 5,
     'pitch-deck-live': 8,
     'master': 20,
+    'founder': 10,
+    'founder-readiness': 3,
   };
   return cycleMap[productId] || 0;
 }
@@ -56,12 +62,11 @@ const AFRICAN_COUNTRIES_PAYSTACK = [
 
 /**
  * Determine payment gateway based on user's country.
- * Paystack → African countries, Zoho Billing → International, Stripe → Fallback
+ * Paystack → African countries, Stripe → International/Fallback
  */
 export function determinePaymentGateway(country: string): string {
   const code = country?.toUpperCase?.() || 'US';
   if (AFRICAN_COUNTRIES_PAYSTACK.includes(code)) return 'paystack';
-  if (process.env.ZOHO_BILLING_AUTH_TOKEN) return 'zoho';
   if (process.env.STRIPE_SECRET_KEY) return 'stripe';
   return 'stripe'; // Default fallback
 }
@@ -77,6 +82,8 @@ export function getPriceForCountry(productId: string, country: string): { amount
     'elevator-live': 49,
     'pitch-deck-live': 69,
     'master': 149,
+    'founder': 79,
+    'founder-readiness': 39,
   };
 
   const basePrice = basePrices[productId] || 29;
@@ -127,8 +134,6 @@ export async function createCheckoutSession(
   switch (gateway) {
     case 'paystack':
       return createPaystackSession(customer, productId, metadata);
-    case 'zoho':
-      return createZohoSession(customer, productId, metadata);
     case 'stripe':
       return createStripeSession(customer, productId, metadata);
     default:
@@ -169,35 +174,7 @@ async function createPaystackSession(
   };
 }
 
-async function createZohoSession(
-  customer: CustomerInfo,
-  productId: string,
-  metadata: SessionMetadata
-): Promise<CheckoutSession> {
-  // Zoho Billing checkout session
-  const response = await fetch(
-    `https://billing.zoho.com/api/v3/hostedpages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customer_id: customer.companyId,
-        product_id: productId,
-        redirect_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?payment=success`,
-        metadata: JSON.stringify(metadata),
-      }),
-    }
-  );
-
-  const data = await response.json();
-  return {
-    id: data.hostedpage?.hostedpage_id || `zoho-${Date.now()}`,
-    checkoutUrl: data.hostedpage?.url || '',
-  };
-}
+// (Zoho Billing session creation removed — not used for this service)
 
 async function createStripeSession(
   customer: CustomerInfo,
@@ -210,6 +187,8 @@ async function createStripeSession(
     'elevator-live': process.env.STRIPE_PRICE_ELEVATOR_LIVE || '',
     'pitch-deck-live': process.env.STRIPE_PRICE_PITCH_DECK_LIVE || '',
     'master': process.env.STRIPE_PRICE_MASTER || '',
+    'founder': process.env.STRIPE_PRICE_FOUNDER || '',
+    'founder-readiness': process.env.STRIPE_PRICE_FOUNDER_READINESS || '',
   };
 
   const priceId = priceData[productId];
@@ -297,20 +276,7 @@ function verifyPaystackWebhook(signature: string, body: string): boolean {
   return timingSafeEqual(hashBuf, sigBuf);
 }
 
-/**
- * Verify Zoho Billing webhook signature using timing-safe comparison.
- */
-export function verifyZohoWebhook(signature: string, body: string): boolean {
-  const webhookSecret = process.env.ZOHO_BILLING_WEBHOOK_SECRET;
-  if (!webhookSecret) return false;
-  const hash = createHmac('sha256', webhookSecret)
-    .update(body)
-    .digest('hex');
-  const hashBuf = Buffer.from(hash, 'hex');
-  const sigBuf = Buffer.from(signature, 'hex');
-  if (hashBuf.length !== sigBuf.length) return false;
-  return timingSafeEqual(hashBuf, sigBuf);
-}
+// (Zoho Billing webhook verification removed — not used for this service)
 
 // ============================================
 // WEBHOOK PAYLOAD PARSING
@@ -335,9 +301,6 @@ export function parseWebhookPayload(
   switch (provider) {
     case 'paystack':
       valid = verifyPaystackWebhook(signature, body);
-      break;
-    case 'zoho':
-      valid = verifyZohoWebhook(signature, body);
       break;
     default:
       valid = false;
@@ -380,8 +343,6 @@ export async function verifyPayment(
       return verifyPaystackPayment(reference);
     case 'stripe':
       return verifyStripePayment(reference);
-    case 'zoho':
-      return verifyZohoPayment(reference);
     default:
       return { success: false, amount: 0, currency: 'USD' };
   }
@@ -419,25 +380,4 @@ async function verifyStripePayment(sessionId: string): Promise<PaymentVerificati
   };
 }
 
-async function verifyZohoPayment(reference: string): Promise<PaymentVerificationResult> {
-  // Zoho verification via API
-  const response = await fetch(
-    `https://billing.zoho.com/api/v3/transactions/${reference}`,
-    {
-      headers: {
-        'Authorization': `Zoho-authtoken ${process.env.ZOHO_BILLING_AUTH_TOKEN}`,
-      },
-    }
-  );
-  const data = await response.json();
-  const transaction = data.transaction;
-  if (!transaction || transaction.status !== 'success') {
-    return { success: false, amount: 0, currency: 'USD' };
-  }
-  return {
-    success: true,
-    amount: parseFloat(transaction.amount) || 0,
-    currency: transaction.currency_code || 'USD',
-    reference,
-  };
-}
+// (Zoho Billing payment verification removed — not used for this service)

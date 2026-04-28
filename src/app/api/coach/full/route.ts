@@ -221,9 +221,9 @@ async function handlePost(request: NextRequest) {
     let analysis: FullPitchAnalysisResult;
     try {
       analysis = await analyzeFullPitchSession(aiVideoUrl, duration, deckAnalysis);
-    } catch (aiError: any) {
+    } catch (aiError: unknown) {
       console.error("AI full pitch analysis failed:", aiError);
-      const msg = aiError?.message || String(aiError);
+      const msg = aiError instanceof Error ? aiError.message : String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
         { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },

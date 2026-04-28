@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import type { Prisma } from '@prisma/client';
 import { MODULE_MODEL_MAP, type ModuleModelKey, executeWithFallback } from "@/lib/ai-service";
 import { webSearch, synthesizeSpeech } from "@/lib/zai-capabilities";
 import { requireModuleAccess } from "@/lib/entitlement";
@@ -487,7 +488,7 @@ async function handlePost(request: NextRequest) {
 
 
     try {
-      let analysisResult: any;
+      let analysisResult: Prisma.InputJsonValue | undefined;
       let modelUsed: string | undefined;
       let tokensUsed: number | undefined;
       let overallScore: number | undefined;
@@ -503,11 +504,11 @@ async function handlePost(request: NextRequest) {
             prompts.system,
             prompts.user
           );
-          analysisResult = result;
+          analysisResult = result as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
-          overallScore = result.overallScore;
-          recommendedPathway = result.recommendedPathway;
+          overallScore = result.overallScore as number | undefined;
+          recommendedPathway = result.recommendedPathway as string | undefined;
           break;
         }
 
@@ -519,10 +520,10 @@ async function handlePost(request: NextRequest) {
             prompts.system,
             prompts.user
           );
-          analysisResult = result;
+          analysisResult = result as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
-          recommendedPathway = result.recommendedPathway;
+          recommendedPathway = result.recommendedPathway as string | undefined;
           break;
         }
 
@@ -556,7 +557,7 @@ async function handlePost(request: NextRequest) {
             prompts.system,
             prompts.user
           );
-          analysisResult = result;
+          analysisResult = result as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
           break;
@@ -570,7 +571,7 @@ async function handlePost(request: NextRequest) {
             prompts.system,
             prompts.user
           );
-          analysisResult = result;
+          analysisResult = result as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
           break;
@@ -584,7 +585,7 @@ async function handlePost(request: NextRequest) {
             prompts.system,
             prompts.user
           );
-          analysisResult = result;
+          analysisResult = result as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
           break;
@@ -615,7 +616,7 @@ async function handlePost(request: NextRequest) {
           }
 
 
-          analysisResult = { narrationText: result };
+          analysisResult = { narrationText: result as string } as Prisma.InputJsonValue;
           modelUsed = mu;
           tokensUsed = tu;
           break;
@@ -667,7 +668,7 @@ async function handlePost(request: NextRequest) {
 
 
       console.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
-      const msg = (aiError as any)?.message || String(aiError);
+      const msg = aiError instanceof Error ? aiError.message : String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
         { error: isAuthError ? "AI service authentication error. Please contact support." : "AI analysis failed. Please try again." },

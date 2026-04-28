@@ -117,7 +117,7 @@ async function handlePost(request: NextRequest) {
       ctaScore: parentScript.ctaScore ?? undefined,
       improvements: parentScript.improvements,
       rewrittenScript: parentScript.rewrittenScript ?? undefined,
-    } as any;
+    } as { overallScore: number; hookScore?: number; problemScore?: number; solutionScore?: number; credibilityScore?: number; ctaScore?: number; improvements?: Record<string, string[]>; rewrittenScript?: string };
 
 
     // Determine version number — query DB for max existing version to prevent race conditions
@@ -151,7 +151,7 @@ async function handlePost(request: NextRequest) {
           inputFileUrl: fileUrl || parentScript.inputFileUrl,
           targetAudience: parentScript.targetAudience || "investor",
           pitchDuration: parentScript.pitchDuration || 60,
-          status: "KAL_PENDING" as any,
+          status: "KAL_PENDING",
           hookScore: 0,
           problemScore: 0,
           solutionScore: 0,

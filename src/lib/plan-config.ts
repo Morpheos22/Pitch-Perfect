@@ -14,13 +14,14 @@ export interface PlanModuleLimits {
   e2: number; // Elevator Script Coach
   e3: number; // Live Elevator Pitch
   e4: number; // Full Pitch Session
+  e5: number; // Founder Coaching
 }
 
 export const PLAN_LIMITS: Record<string, PlanModuleLimits> = {
-  FREE: { e1: 1, e2: 1, e3: 0, e4: 0 },
-  STARTER: { e1: 5, e2: 10, e3: 3, e4: 0 },
-  PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3 },
-  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
+  FREE: { e1: 1, e2: 1, e3: 0, e4: 0, e5: 0 },
+  STARTER: { e1: 5, e2: 10, e3: 3, e4: 0, e5: 3 },
+  PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3, e5: 10 },
+  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999, e5: 999 },
 };
 
 // Convenience: per-module subsets (for pages that only need one module)
@@ -35,6 +36,9 @@ export const E3_PLAN_LIMITS: Record<string, number> = Object.fromEntries(
 );
 export const E4_PLAN_LIMITS: Record<string, number> = Object.fromEntries(
   Object.entries(PLAN_LIMITS).map(([plan, limits]) => [plan, limits.e4])
+);
+export const E5_PLAN_LIMITS: Record<string, number> = Object.fromEntries(
+  Object.entries(PLAN_LIMITS).map(([plan, limits]) => [plan, limits.e5])
 );
 
 // ═══════════════════════════════════════════════════════════════════════════

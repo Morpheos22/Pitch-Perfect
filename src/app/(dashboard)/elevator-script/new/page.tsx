@@ -15,17 +15,11 @@ import { toast } from "sonner";
 import { safeJson } from "@/lib/safe-fetch";
 import { uploadFileToBlob } from "@/lib/blob-upload";
 import { ALLOWED_EXTENSIONS, MAX_FILE_SIZES } from "@/lib/file-validation";
+import { PLAN_LIMITS } from "@/lib/plan-config";
 
 // Script-specific constants derived from the single source of truth
 const SCRIPT_EXTENSIONS = ALLOWED_EXTENSIONS.script;
 const SCRIPT_MAX_SIZE = MAX_FILE_SIZES.script; // 10MB
-
-const PLAN_LIMITS: Record<string, { e2: number }> = {
-  FREE: { e2: 1 },
-  STARTER: { e2: 10 },
-  PROFESSIONAL: { e2: 30 },
-  ENTERPRISE: { e2: 999 },
-};
 
 const frameworkElements = [
   { name: "Hook", description: "Grabs attention in the opening line" },
@@ -168,10 +162,11 @@ export default function ElevatorScriptNewPage() {
           blobUrl = blobResult.url;
           setUploadProgress(100);
           console.log("[E2] Blob upload succeeded:", blobUrl);
-        } catch (blobError: any) {
+        } catch (blobError: unknown) {
           console.error("[E2] Blob upload failed:", blobError);
           setUploadProgress(null);
-          toast.error(blobError?.message || "File upload failed. Please try again.");
+          const blobMsg = blobError instanceof Error ? blobError.message : String(blobError);
+          toast.error(blobMsg || "File upload failed. Please try again.");
           return;
         }
 
@@ -208,7 +203,7 @@ export default function ElevatorScriptNewPage() {
         const data = await safeJson(response);
         return handleResponse(data);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[E2] Upload/analysis error:", error);
 
       // ── Clean up orphaned blob if analysis was rejected ──
@@ -216,21 +211,25 @@ export default function ElevatorScriptNewPage() {
         fetch(`/api/blob/upload?url=${encodeURIComponent(blobUrl)}`, { method: "DELETE" }).catch(() => {});
       }
 
-      if (error?.status === 413) {
+      const errObj = error instanceof Error ? error : null;
+      const errData = (typeof error === 'object' && error !== null) ? error as Record<string, unknown> : null;
+      const errStatus = errData?.status as number | undefined;
+
+      if (errStatus === 413) {
         toast.error("File is too large for upload. Maximum size is 10MB for scripts.");
         return;
       }
-      if (error?.status === 403) {
+      if (errStatus === 403) {
         toast.error("Usage limit reached. Please upgrade your plan.");
         router.push("/elevator-script/upgrade");
         return;
       }
-      if (error?.status === 401) {
+      if (errStatus === 401) {
         toast.error("Please sign in to continue");
         router.push("/sign-in");
         return;
       }
-      const serverMessage = error?.message || error?.data?.error;
+      const serverMessage = errObj?.message || (errData?.data as Record<string, unknown> | undefined)?.error as string | undefined;
       if (serverMessage && serverMessage !== "Request failed (500)") {
         toast.error(serverMessage);
       } else {

@@ -1,9 +1,12 @@
 // Zoho CRM Integration Service for Pitch Perfect
-// Handles lead management and contact sync
+// Handles lead management, contact sync, and onboarding email
 //
-// Previously contained ~200 lines of dead CRM functions (deal management,
-// session tracking, entitlement management) that were never called.
-// Only createOrUpdateLead and syncUserToCRM are used externally.
+// The onboarding welcome email is sent via Zoho CRM's SendMail API.
+// Zoho CRM can send template-based emails to leads, which ensures
+// the CRM is the single source of truth for all user-facing
+// communications during onboarding.
+
+import { ZOHO_CONFIG, getAccessToken } from '@/lib/zoho-auth';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -26,59 +29,6 @@ interface ZohoLead {
   Last_Session_Date?: string;
   Last_Session_Score?: number;
   Customer_Type?: 'Free' | 'Paid' | 'Gifted';
-}
-
-// ============================================
-// ZOHO API CONFIGURATION
-// ============================================
-
-const ZOHO_CONFIG = {
-  clientId: process.env.ZOHO_CLIENT_ID,
-  clientSecret: process.env.ZOHO_CLIENT_SECRET,
-  refreshToken: process.env.ZOHO_REFRESH_TOKEN,
-  apiDomain: process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com',
-  orgId: process.env.ZOHO_ORG_ID,
-};
-
-// Token cache
-let accessTokenCache: { token: string; expiresAt: number } | null = null;
-
-// ============================================
-// AUTHENTICATION
-// ============================================
-
-async function getAccessToken(): Promise<string> {
-  // Check cache
-  if (accessTokenCache && accessTokenCache.expiresAt > Date.now()) {
-    return accessTokenCache.token;
-  }
-
-  const response = await fetch(`https://accounts.zoho.com/oauth/v2/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: ZOHO_CONFIG.clientId!,
-      client_secret: ZOHO_CONFIG.clientSecret!,
-      refresh_token: ZOHO_CONFIG.refreshToken!,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Zoho auth failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  // Cache for 55 minutes (tokens expire in 1 hour)
-  accessTokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + 55 * 60 * 1000,
-  };
-
-  return data.access_token;
 }
 
 async function zohoApiRequest(
@@ -148,6 +98,7 @@ export async function syncUserToCRM(userData: {
   country?: string;
   company?: string;
   clerkId: string;
+  primaryUseCase?: string;
 }): Promise<{ leadId: string; isNew: boolean }> {
   const lead: ZohoLead = {
     email: userData.email,
@@ -157,10 +108,129 @@ export async function syncUserToCRM(userData: {
     company: userData.company,
     leadSource: 'App Registration',
     leadStatus: 'New',
-    description: `Clerk ID: ${userData.clerkId}`,
+    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}`,
     Customer_Type: 'Free',
   };
 
   const result = await createOrUpdateLead(lead);
   return { leadId: result.id, isNew: result.created };
+}
+
+// ============================================
+// ONBOARDING EMAIL VIA ZOHO CRM
+// ============================================
+//
+// When a new user completes onboarding, we update the CRM lead with
+// full profile data (country, useCase, leadStatus='Contacted') and
+// then send the onboarding welcome email via Zoho CRM's SendMail API.
+// This keeps all email communications within Zoho CRM, which provides:
+// - Email tracking (opens, clicks, bounces)
+// - CRM activity history (every email logged against the lead)
+// - Template management (update email content without code changes)
+// - Deliverability via Zoho's email infrastructure
+//
+// Zoho CRM SendMail API:
+// POST /crm/v2/Leads/{leadId}/actions/send_mail
+
+export async function sendOnboardingEmail(leadId: string, userData: {
+  email: string;
+  firstName?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const displayName = userData.firstName || 'there';
+
+  const emailHtml = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #ffffff; padding: 40px 20px;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 16px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 40px 40px 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 32px; font-weight: 700; color: #ffffff;">Welcome to Pitch Perfect!</h1>
+          <p style="margin: 10px 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">Your AI-powered pitch coaching journey begins now</p>
+        </div>
+        <div style="padding: 40px;">
+          <p style="font-size: 18px; line-height: 1.6; color: #e2e8f0;">Hi ${displayName},</p>
+          <p style="font-size: 16px; line-height: 1.6; color: #cbd5e1;">Welcome aboard! You've just unlocked access to your personal AI pitch coach. Whether you're preparing for investor meetings, sales presentations, or startup competitions, we're here to help you deliver pitches that captivate and convert.</p>
+          <h2 style="font-size: 20px; color: #ffffff; border-left: 4px solid #6366f1; padding-left: 15px;">Your 5 Powerful Modules</h2>
+          <ul style="color: #cbd5e1; font-size: 14px; line-height: 2;">
+            <li><strong style="color: #a5b4fc;">Pitch Deck Analyser</strong> — Upload your deck for content and visual analysis</li>
+            <li><strong style="color: #a5b4fc;">Script Check</strong> — Refine your pitch script with AI suggestions</li>
+            <li><strong style="color: #a5b4fc;">Elevator Live</strong> — Practice your elevator pitch with instant feedback</li>
+            <li><strong style="color: #a5b4fc;">Full Pitch Session</strong> — Complete 30-min session with deck + video analysis</li>
+            <li><strong style="color: #a5b4fc;">Founder Coaching</strong> — Readiness, pathway, research, and narration</li>
+          </ul>
+          <a href="https://pitchcoachai.tech/dashboard" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600;">Start Your First Pitch Analysis</a>
+          <div style="background-color: #1e293b; border: 1px solid #475569; border-radius: 8px; padding: 20px; margin-top: 30px;">
+            <h3 style="margin: 0 0 15px; font-size: 16px; color: #fbbf24;">Quick Start Tips</h3>
+            <ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 14px; line-height: 1.8;">
+              <li>Start with the Pitch Deck Analyser to get baseline feedback</li>
+              <li>Use Script Check to refine your narrative before practicing</li>
+              <li>Try Elevator Live for quick, iterative practice sessions</li>
+              <li>Graduate to Full Pitch Session when you're ready for the real deal</li>
+            </ul>
+          </div>
+        </div>
+        <div style="padding: 30px 40px; background-color: #0f172a; border-top: 1px solid #334155;">
+          <p style="margin: 0; font-size: 14px; color: #94a3b8;">Questions? We're here to help!</p>
+          <p style="margin: 5px 0 0; font-size: 14px;"><a href="mailto:${ZOHO_CONFIG.senderEmail}" style="color: #a5b4fc; text-decoration: none;">${ZOHO_CONFIG.senderEmail}</a></p>
+        </div>
+        <div style="padding: 20px 40px; background-color: #0f172a; text-align: center; border-top: 1px solid #1e293b;">
+          <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://automagikal.co.za/" style="color: #a5b4fc; text-decoration: none;">AutomagiKal</a></p>
+          <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">&copy; ${new Date().getFullYear()} Pitch Perfect. All rights reserved.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    await zohoApiRequest(`/Leads/${leadId}/actions/send_mail`, 'POST', {
+      data: [{
+        from: ZOHO_CONFIG.senderEmail,
+        to: userData.email,
+        subject: 'Welcome to Pitch Perfect - Your AI Pitch Coach Awaits!',
+        content: emailHtml,
+        mail_format: 'html',
+      }],
+    });
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Zoho CRM] Send onboarding email failed for ${userData.email}:`, message);
+    return { success: false, error: message };
+  }
+}
+
+// ============================================
+// SYNC + EMAIL: COMPLETE ONBOARDING TO CRM
+// ============================================
+// Single function that updates the CRM lead with full onboarding data
+// AND sends the welcome email. Used by both the onboarding API and
+// the Clerk webhook as a reliable retry mechanism.
+
+export async function completeOnboardingInCRM(userData: {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  country?: string;
+  clerkId: string;
+  primaryUseCase?: string;
+}): Promise<{ leadId: string; isNew: boolean; emailSent: boolean }> {
+  // 1. Update CRM lead with complete profile
+  const lead: ZohoLead = {
+    email: userData.email,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    country: userData.country,
+    leadSource: 'App Registration',
+    leadStatus: 'Contacted', // Upgraded from 'New' — user has completed onboarding
+    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}`,
+    Customer_Type: 'Free',
+  };
+
+  const result = await createOrUpdateLead(lead);
+
+  // 2. Send onboarding welcome email via Zoho CRM
+  const emailResult = await sendOnboardingEmail(result.id, {
+    email: userData.email,
+    firstName: userData.firstName,
+  });
+
+  return { leadId: result.id, isNew: result.created, emailSent: emailResult.success };
 }

@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       zohoContactId: user.zohoContactId ?? null,
       zohoAccountId: user.zohoAccountId ?? null,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[dev/impersonate]', error);
     return NextResponse.json(
       { error: 'Internal server error' },

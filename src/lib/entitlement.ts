@@ -14,6 +14,7 @@
 
 import { prisma } from '@/lib/db';
 import { isAdminEmail } from '@/lib/dev-auth';
+import { PLAN_LIMITS } from '@/lib/plan-config';
 
 export type CoachModule = 'e1' | 'e2' | 'e3' | 'e4' | 'e5';
 
@@ -230,12 +231,9 @@ export async function requireModuleAccess(
         console.error('[Entitlement] Monthly usage reset check failed (non-fatal):', resetErr);
       }
 
-      const PLAN_MODULE_LIMITS: Record<string, Record<string, number>> = {
-        STARTER: { e1: 5, e2: 10, e3: 3, e4: 0, e5: 3 },
-        PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3, e5: 10 },
-        ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999, e5: 999 },
-      };
-      const moduleLimit = PLAN_MODULE_LIMITS[sub.plan]?.[module];
+      // Use shared plan limits from plan-config.ts (single source of truth)
+      // PLAN_LIMITS includes all modules E1–E5 and all plans (FREE, STARTER, PROFESSIONAL, ENTERPRISE)
+      const moduleLimit = PLAN_LIMITS[sub.plan]?.[module as keyof typeof PLAN_LIMITS[string]];
       if (moduleLimit !== undefined) {
         // Atomic check-and-increment: only increment if current count < limit
         // This prevents concurrent requests from both passing the check

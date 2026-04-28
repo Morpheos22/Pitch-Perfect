@@ -4,14 +4,6 @@ import { contactSchema } from '@/lib/validation/schemas';
 import { withRateLimit } from '@/lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
-// Zoho Forms configuration
-const ZOHO_FORMS_CONFIG = {
-  apiDomain: process.env.ZOHO_FORMS_API_DOMAIN || "https://forms.zoho.com",
-  formLinkName: process.env.ZOHO_CONTACT_FORM_LINK_NAME || "contact-form",
-  accessToken: process.env.ZOHO_FORMS_ACCESS_TOKEN || "",
-};
-
-
 // ============================================
 // TYPES
 // ============================================
@@ -25,69 +17,10 @@ interface ContactFormData {
 }
 
 // ============================================
-// ZOHO FORMS SUBMISSION
-// ============================================
-
-
-async function submitToZohoForms(data: ContactFormData): Promise<{ success: boolean; recordId?: string; error?: string }> {
-  const token = ZOHO_FORMS_CONFIG.accessToken;
-
-
-  if (!token) {
-    // If no Zoho Forms token is configured, skip but don't fail
-    console.warn("Zoho Forms access token not configured. Skipping form submission.");
-    return { success: true };
-  }
-
-
-  try {
-    const formFields: Record<string, string> = {
-      Name: data.name,
-      Email: data.email,
-      Message: data.message,
-    };
-
-
-    if (data.company) formFields.Company = data.company;
-    if (data.subject) formFields.Subject = data.subject;
-
-
-    const response = await fetch(
-      `${ZOHO_FORMS_CONFIG.apiDomain}/api/json/${ZOHO_FORMS_CONFIG.formLinkName}/formRecords`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formFields),
-      }
-    );
-
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Zoho Forms submission failed:", response.status, errorText);
-      return { success: false, error: `Zoho Forms error: ${response.status}` };
-    }
-
-
-    const result = await response.json();
-    return {
-      success: true,
-      recordId: result?.data?.[0]?.details?.ID || result?.ID,
-    };
-  } catch (error) {
-    console.error("Zoho Forms submission error:", error);
-    // Don't fail the entire request if Zoho Forms is down
-    return { success: true };
-  }
-}
-
-
-// ============================================
 // ZOHO CRM LEAD SYNC
 // ============================================
+// Contact form submissions are synced directly to Zoho CRM as leads.
+// Zoho Forms has been removed — CRM is the single source of truth.
 
 
 async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean; leadId?: string; error?: string }> {
@@ -138,11 +71,7 @@ async function handlePost(request: NextRequest) {
     };
 
 
-    // Submit to Zoho Forms
-    const formsResult = await submitToZohoForms(formData);
-
-
-    // Sync to Zoho CRM as a Lead
+    // Sync to Zoho CRM as a Lead (single source of truth)
     const crmResult = await syncToZohoCRM(formData) as { success: boolean; leadId?: string; isNew?: boolean };
 
 

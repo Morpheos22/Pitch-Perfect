@@ -48,7 +48,7 @@ AI-powered pitch coaching platform for founders and entrepreneurs — built by A
 | Auth | Clerk (pk_live_ production key) |
 | Billing | Stripe + Paystack |
 | CRM | Zoho |
-| Email | Resend |
+| Email | Zoho CRM (SendMail API) |
 | Cache | Upstash Redis (rate limiting) |
 | Logging | Structured logger (`src/lib/logger.ts`) — debug/info gated behind NODE_ENV |
 | Hosting | Vercel (project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`) |
@@ -111,7 +111,7 @@ src/
     ├── file-parser.ts           # PDF/PPTX/DOCX parsing
     ├── vertex-ai.ts             # Google Vertex AI (secondary)
     ├── zoho-crm.ts              # Zoho CRM integration
-    ├── email.ts                 # Resend email
+    ├── email.ts                 # Zoho CRM email (SendMail API)
     └── validation/schemas.ts    # Zod validation schemas
 prisma/
 ├── schema.prisma                # 17 models, 9 enums

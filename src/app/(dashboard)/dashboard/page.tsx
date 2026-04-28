@@ -19,7 +19,9 @@ import {
   Sparkles,
   Zap,
   AlertCircle,
+  Rocket,
 } from "lucide-react";
+import { PLAN_LIMITS, formatPlanName } from "@/lib/plan-config";
 
 // ── Types ──
 interface UsageData {
@@ -27,6 +29,7 @@ interface UsageData {
   e2ScriptCoachSessions: number;
   e3LivePitchSessions: number;
   e4FullPitchSessions: number;
+  e5FounderSessions: number;
   zaiTokensUsed: number;
 }
 
@@ -69,22 +72,8 @@ interface HistoryData {
   counts: { decks: number; scripts: number; videos: number; fullSessions: number };
 }
 
-const PLAN_LIMITS: Record<string, { e1: number; e2: number; e3: number; e4: number }> = {
-  FREE: { e1: 1, e2: 1, e3: 0, e4: 0 },
-  STARTER: { e1: 5, e2: 10, e3: 3, e4: 0 },
-  PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3 },
-  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999 },
-};
-
-function formatPlanName(plan: string): string {
-  const names: Record<string, string> = {
-    FREE: "Free",
-    STARTER: "Starter",
-    PROFESSIONAL: "Professional",
-    ENTERPRISE: "Enterprise",
-  };
-  return names[plan] || plan;
-}
+// PLAN_LIMITS and formatPlanName imported from @/lib/plan-config (single source of truth)
+// Includes E5 (Founder Coaching) limits
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -156,10 +145,11 @@ export default function DashboardPage() {
     { key: "e2", label: "Script Sessions", used: usage?.e2ScriptCoachSessions ?? 0, total: limits.e2 },
     { key: "e3", label: "Live Sessions", used: usage?.e3LivePitchSessions ?? 0, total: limits.e3 },
     { key: "e4", label: "Full Sessions", used: usage?.e4FullPitchSessions ?? 0, total: limits.e4 },
+    { key: "e5", label: "Founder Sessions", used: usage?.e5FounderSessions ?? 0, total: limits.e5 },
   ];
 
   const totalSessions = usage
-    ? usage.e1DeckAnalyses + usage.e2ScriptCoachSessions + usage.e3LivePitchSessions + usage.e4FullPitchSessions
+    ? usage.e1DeckAnalyses + usage.e2ScriptCoachSessions + usage.e3LivePitchSessions + usage.e4FullPitchSessions + (usage.e5FounderSessions ?? 0)
     : 0;
 
   // Build recent sessions from history API
@@ -252,6 +242,14 @@ export default function DashboardPage() {
       color: "bg-emerald-500/10 text-emerald-500",
       sessions: usage?.e4FullPitchSessions ?? 0, limit: limits.e4,
       status: limits.e4 > 0 ? ("active" as const) : ("upgrade" as const),
+    },
+    {
+      id: "m5", title: "Founder Coaching",
+      description: "Investor readiness assessment, pathway, and network profiling",
+      icon: Rocket, href: "/founder",
+      color: "bg-purple-500/10 text-purple-500",
+      sessions: usage?.e5FounderSessions ?? 0, limit: limits.e5,
+      status: limits.e5 > 0 ? ("active" as const) : ("upgrade" as const),
     },
   ];
 

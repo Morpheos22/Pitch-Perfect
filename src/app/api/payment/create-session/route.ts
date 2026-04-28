@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       },
     });
     if (authResult.error) return authResult.error;
-    const user = authResult.user as Record<string, any>;
+    const user = authResult.user as { id: string; clerkId: string; email: string; firstName: string | null; lastName: string | null; country: string | null };
 
 
     const body = await request.json();
@@ -64,10 +64,10 @@ export async function POST(request: NextRequest) {
     const { amount, currency } = getPriceForCountry(productId, userCountry);
 
     // SECURITY: Validate gateway against allowed providers before Prisma write
-    // NOTE: LEMONSQUEEZY removed — Paystack/Stripe/Zoho only
-    const ALLOWED_GATEWAYS = ['PAYSTACK', 'STRIPE', 'ZOHO'] as const;
+    // NOTE: LEMONSQUEEZY and ZOHO BILLING removed — Paystack/Stripe only
+    const ALLOWED_GATEWAYS = ['PAYSTACK', 'STRIPE'] as const;
     const gatewayUpper = gateway.toUpperCase();
-    if (!ALLOWED_GATEWAYS.includes(gatewayUpper as any)) {
+    if (!(ALLOWED_GATEWAYS as readonly string[]).includes(gatewayUpper)) {
       console.error(`[Payment] Invalid gateway: ${gateway}`);
       return NextResponse.json(
         { error: 'Payment gateway not available. Please try again later.' },
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
         type: 'SUBSCRIPTION',
         amount: Math.round(amount * 100), // Store in smallest currency unit
         currency: currency.toLowerCase(),
-        provider: gatewayUpper as 'PAYSTACK' | 'STRIPE' | 'ZOHO',
+        provider: gatewayUpper as 'PAYSTACK' | 'STRIPE',
         providerReference: session.id,
         providerAccessCode: productId, // Store product ID for webhook reconciliation
       },

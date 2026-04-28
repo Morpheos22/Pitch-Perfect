@@ -32,6 +32,7 @@ import {
 import { useState, useEffect } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useClerk, useUser } from "@clerk/nextjs";
+import { formatPlanName } from "@/lib/plan-config";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -65,13 +66,7 @@ function PlanBadge({ className }: PlanBadgeProps) {
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.user?.subscription?.plan) {
-            const names: Record<string, string> = {
-              FREE: "Free",
-              STARTER: "Starter",
-              PROFESSIONAL: "Professional",
-              ENTERPRISE: "Enterprise",
-            };
-            const planName = names[json.user.subscription.plan] || json.user.subscription.plan;
+            const planName = formatPlanName(json.user.subscription.plan);
             _planCache = { plan: planName, ts: Date.now() };
             setPlan(planName);
           } else {

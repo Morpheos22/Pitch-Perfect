@@ -46,10 +46,10 @@ async function handlePost(request: NextRequest) {
       }));
       const content = response.choices?.[0]?.message?.content || '';
       gatewayReady = content.toLowerCase().includes('ready') || content.length > 0;
-    } catch (warmErr: any) {
+    } catch (warmErr: unknown) {
       // Non-fatal — the pre-warm is best-effort. The actual analysis
       // will still work even if the warm-up ping fails.
-      console.warn('[KalPrewarm] Gateway ping failed (non-fatal):', warmErr?.message);
+      console.warn('[KalPrewarm] Gateway ping failed (non-fatal):', warmErr instanceof Error ? warmErr.message : String(warmErr));
       // Still mark as ready if the SDK initialized — the gateway
       // may just be slow to respond on the first call.
       gatewayReady = zai !== null;
@@ -61,8 +61,8 @@ async function handlePost(request: NextRequest) {
       gatewayReady,
       message: 'Kal Protocol pre-warmed. AI pipeline ready.',
     });
-  } catch (error: any) {
-    console.error('[KalPrewarm] Pre-warm failed:', error?.message);
+  } catch (error: unknown) {
+    console.error('[KalPrewarm] Pre-warm failed:', error instanceof Error ? error.message : String(error));
     // Non-blocking — the user can still submit, it just might be slower
     return NextResponse.json({
       success: false,

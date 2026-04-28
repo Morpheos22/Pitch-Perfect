@@ -15,13 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-
-const PLAN_LIMITS: Record<string, { e2: number; e3: number }> = {
-  FREE: { e2: 1, e3: 0 },
-  STARTER: { e2: 10, e3: 3 },
-  PROFESSIONAL: { e2: 30, e3: 10 },
-  ENTERPRISE: { e2: 999, e3: 999 },
-};
+import { PLAN_LIMITS } from "@/lib/plan-config";
 
 interface HistoryItem {
   id: string;

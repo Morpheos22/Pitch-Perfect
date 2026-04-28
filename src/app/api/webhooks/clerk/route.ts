@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { prisma } from "@/lib/db";
-import { sendWelcomeEmail } from "@/lib/email";
-import { syncUserToCRM } from "@/lib/zoho-crm";
+import { syncUserToCRM, completeOnboardingInCRM } from "@/lib/zoho-crm";
 import { isAdminEmail } from "@/lib/dev-auth";
 import { isBlockedEmail } from "@/lib/clerk-config";
 export const dynamic = 'force-dynamic';
 
 // Clerk webhook events we handle
-// - user.created: Create user record
-// - user.updated: Update user record, detect email verification, trigger welcome email
+// - user.created: Create user record in Supabase, sync bare lead to Zoho CRM
+// - user.updated: Update user record, detect email verification, complete CRM onboarding + send welcome email
 
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -113,17 +112,13 @@ export async function POST(req: NextRequest) {
 
 async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   const email = data.email_addresses.find(
-    (e: any) => e.id === data.primary_email_address_id
+    (e) => e.id === data.primary_email_address_id
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
   // ── Subdomain/Disposable email check ──
-  // Block users with subdomain or disposable email addresses
   if (isBlockedEmail(email)) {
     console.warn(`[Clerk Webhook] Blocked user with subdomain/disposable email: ${email}`);
-    // We can't prevent Clerk from creating the user, but we can refuse
-    // to create the database record. The user will see errors accessing
-    // any authenticated features since they have no DB record.
     return;
   }
 
@@ -147,7 +142,7 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   const emailVerified = primaryEmail?.verification?.status === 'verified';
 
 
-  // Create user
+  // Create user in Supabase
   const user = await prisma.user.create({
     data: {
       clerkId: data.id,
@@ -160,7 +155,7 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   });
 
 
-  // Create subscription
+  // Create subscription (FREE plan, or ENTERPRISE for developers)
   await prisma.subscription.create({
     data: {
       userId: user.id,
@@ -176,7 +171,9 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   });
 
 
-  // Sync to Zoho CRM (fire-and-forget — non-blocking)
+  // Sync to Zoho CRM — bare lead (no country/useCase yet)
+  // This creates the lead in CRM so it exists before onboarding completes.
+  // The welcome email will be sent AFTER onboarding completes (user.updated webhook).
   syncUserToCRM({
     email,
     firstName: data.first_name || undefined,
@@ -184,20 +181,14 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     country: data.public_metadata?.country as string || undefined,
     clerkId: data.id,
   }).catch((crmErr) => {
-    console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
+    console.warn(`[Clerk Webhook] CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
   });
-
-
-  // If email is already verified (e.g., Google SSO), trigger welcome email
-  if (emailVerified) {
-    await sendWelcomeEmail({ email, firstName: data.first_name });
-  }
 }
 
 
 async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   const email = data.email_addresses.find(
-    (e: any) => e.id === data.primary_email_address_id
+    (e) => e.id === data.primary_email_address_id
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
@@ -215,14 +206,8 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   const emailVerified = primaryEmail?.verification?.status === 'verified';
 
 
-  // Detect if email was just verified
-  const wasJustVerified = existingUser &&
-    !existingUser.emailVerified &&
-    emailVerified;
-
-
   // Build update data with only non-null fields from Clerk
-  const updateData: Record<string, any> = {
+  const updateData: Record<string, string | boolean | undefined> = {
     email,
     emailVerified,
     onboardingCompleted: data.public_metadata?.onboardingCompleted === true,
@@ -234,15 +219,35 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   if (data.image_url != null) updateData.avatarUrl = data.image_url;
 
 
-  // Update user
+  // Update user in Supabase
   await prisma.user.update({
     where: { clerkId: data.id },
     data: updateData,
   });
 
 
-  // If email was just verified, trigger welcome email
-  if (wasJustVerified) {
-    await sendWelcomeEmail({ email, firstName: data.first_name });
+  // ── CRM onboarding completion + welcome email ──
+  // When onboarding data (country, primaryUseCase) appears in public_metadata,
+  // update the CRM lead with the complete profile AND send the welcome email
+  // via Zoho CRM's SendMail API. This handles the case where the onboarding
+  // API's fire-and-forget CRM call fails — the Clerk metadata update triggers
+  // this user.updated webhook as a reliable retry.
+  const onboardingJustCompleted = data.public_metadata?.onboardingCompleted === true
+    && existingUser && !existingUser.onboardingCompleted;
+
+  if (onboardingJustCompleted) {
+    const country = data.public_metadata?.country as string || undefined;
+    const primaryUseCase = data.public_metadata?.primaryUseCase as string || undefined;
+
+    completeOnboardingInCRM({
+      email,
+      firstName: data.first_name || undefined,
+      lastName: data.last_name || undefined,
+      country,
+      clerkId: data.id,
+      primaryUseCase,
+    }).catch((crmErr) => {
+      console.warn(`[Clerk Webhook] CRM onboarding completion failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
+    });
   }
 }
