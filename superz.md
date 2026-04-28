@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 8 — 2026-04-28
+> **Last Updated:** Session 9 — 2026-04-28
 
 ---
 
@@ -32,8 +32,9 @@
 - **Kal Agent:** Authenticated agent at `kal-agent-morpheos255918280.on.adaptive.ai` (PRIMARY)
 - **Kal Middleware:** Legacy unauthenticated fallback at `kal-middleware-morpheos255918280.adaptive.ai`
 - **Storage:** Vercel Blob (client-side direct upload)
-- **Billing:** Stripe (international) + Paystack (African markets) + Zoho CRM
+- **Billing:** Stripe (international) + Paystack (African markets) — Zoho Billing REMOVED
 - **Email:** Zoho CRM SendMail API (all transactional emails — onboarding welcome, Kal Protocol notifications)
+- **CRM:** Zoho CRM (lead sync, onboarding completion, welcome email)
 - **Cache/Rate Limiting:** Upstash Redis (with circuit breaker fallback)
 - **Logging:** Structured logger (`src/lib/logger.ts`) — debug/info gated behind NODE_ENV=development
 - **Hosting:** Vercel (serverless functions, auto-deploy from GitHub `main` branch)
@@ -91,6 +92,9 @@
 | GitHub PAT | `GITHUB_TOKEN` | `.env.local` + Vercel env |
 | Google AI / Vertex AI | `GOOGLE_GENAI_API_KEY` | `.env.local` + Vercel env |
 | Google Cloud Project | `GOOGLE_CLOUD_PROJECT` | `.env.local` + Vercel env (empty = AI Studio endpoint) |
+| Zoho OAuth | `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_API_DOMAIN`, `ZOHO_ORG_ID` | `.env.local` + Vercel env |
+| Zoho Sender Email | `ZOHO_SENDER_EMAIL` | `.env.local` + Vercel env (sherwyn@automagikal.co.za) |
+| Stripe Prices | `STRIPE_PRICE_PITCH_DECK`, `STRIPE_PRICE_ELEVATOR_SCRIPT`, `STRIPE_PRICE_ELEVATOR_LIVE`, `STRIPE_PRICE_PITCH_DECK_LIVE`, `STRIPE_PRICE_MASTER`, `STRIPE_PRICE_FOUNDER`, `STRIPE_PRICE_FOUNDER_READINESS` | `.env.local` + Vercel env |
 
 ### Vercel Deploy Hook
 `https://api.vercel.com/v1/integrations/deploy/prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3/LGBDEY1mZs`
@@ -103,7 +107,7 @@
 
 ---
 
-## Service Handshake Status (Session 8)
+## Service Handshake Status (Session 9)
 
 | # | Service | Handshake Method | Status |
 |---|---------|-----------------|--------|
@@ -116,20 +120,6 @@
 | 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
 | 8 | **Clerk Auth** | `GET /v1/users?limit=1` with secret key | ✅ ACTIVE |
 | 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ❌ FAILED (`invalid_client` — credentials rejected by all Zoho domains) |
-
-
-### Health Check Response Structure
-```json
-{
-  "supabase": { "status": "ok", "restApiReachable": true, "hasAnonKey": true, "hasServiceRoleKey": true, "dbUrl": "connected" },
-  "database": { "status": "ok" },
-  "ai": { "status": "ok", "configFound": true },
-  "kal": { "status": "ok", "mode": "agent", "bridgeStatus": "ok" },
-  "googleAI": { "configured": true, "provider": "google-ai-studio" },
-  "storage": { "status": "ok", "backend": "vercel-blob" },
-  "entitlement": { "devEmailsConfigured": true }
-}
-```
 
 ---
 
@@ -152,7 +142,7 @@
    - New user sign-ups will NOT create DB records → users get errors on authenticated pages
    - Webhook endpoint: `https://pitchcoachai.tech/api/webhooks/clerk`
    - Events to subscribe: `user.created`, `user.updated`
-   - **Status:** Set in `.env.local` AND Vercel env (synced in Session 5)
+   - **Status:** Set in `.env.local` AND Vercel env (synced in Session 7)
 
 4. **Only ONE Vercel project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`**
    - Do NOT create additional Vercel projects without explicit user consent
@@ -175,31 +165,49 @@
    - After changing Vercel env vars via API, you MUST trigger a redeploy for them to take effect
    - Use the deploy hook or push a commit to trigger redeployment
 
+8. **PLAN_LIMITS single source of truth: `src/lib/plan-config.ts`**
+   - All pages MUST import from `@/lib/plan-config` — NEVER duplicate PLAN_LIMITS locally
+   - Previous audit found 3 module pages with hardcoded copies that had WRONG values
+   - E1-E5 limits per plan: FREE(1,1,0,0,0), STARTER(5,10,3,0,3), PROFESSIONAL(15,30,10,3,10), ENTERPRISE(999,999,999,999,999)
+
+9. **Zoho Billing is REMOVED — Paystack + Stripe only**
+   - Zoho billing webhook route is DELETED
+   - Zoho is NOT in PaymentProvider enum anymore
+   - `createModuleAccess()` in payment-service.ts is the single source of truth for which products grant which module access
+   - Products 'founder' and 'founder-readiness' map to PROFESSIONAL plan, e5Access=true
+
+10. **Resend is REMOVED — all email via Zoho CRM SendMail API**
+    - `src/lib/email.ts` uses Zoho CRM SendMail for Kal Protocol notifications
+    - Onboarding welcome emails go through `completeOnboardingInCRM()` in `src/lib/zoho-crm.ts`
+    - Zoho OAuth is consolidated in `src/lib/zoho-auth.ts` (shared between zoho-crm.ts and email.ts)
+
 ### 🟡 BE AWARE — May Cause Confusion
 
-8. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
+11. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
 
-9. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
+12. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
 
-10. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
+13. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
 
-11. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet.
+14. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet. Note: test files have Babel parser issues with TypeScript generics — pre-existing, not related to code changes.
 
-12. **Vercel API token now has full project scope** — the token provided in Session 5 (`vcp_7diJ...`) CAN manage env vars via REST API. Previous sessions had a token with limited scope.
+15. **Vercel API token now has full project scope** — the token provided in Session 5 (`vcp_7diJ...`) CAN manage env vars via REST API. Previous sessions had a token with limited scope.
 
-13. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
+16. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
 
-14. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
+17. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
 
-15. **Google AI region blocking** — The Google AI API may be region-blocked (400 "User location is not supported") from certain regions. This is detected at runtime. The Z.ai gateway (primary) handles fallback automatically. Region block only affects local dev in certain regions — works fine from Vercel US/EU.
+18. **Google AI region blocking** — The Google AI API may be region-blocked (400 "User location is not supported") from certain regions. This is detected at runtime. The Z.ai gateway (primary) handles fallback automatically. Region block only affects local dev in certain regions — works fine from Vercel US/EU.
 
-16. **Kal Agent vs Middleware endpoints differ** — Agent uses `/api/rpc/analyzeScript`, Middleware uses `/api/rpc/analyzeKalScript`. The client (`kal-middleware-client.ts`) auto-maps based on which backend is active. Don't hardcode endpoint paths outside the client.
+19. **Kal Agent vs Middleware endpoints differ** — Agent uses `/api/rpc/analyzeScript`, Middleware uses `/api/rpc/analyzeKalScript`. The client (`kal-middleware-client.ts`) auto-maps based on which backend is active. Don't hardcode endpoint paths outside the client.
 
-17. **tsconfig.json excludes `scripts/`** — Script files have duplicate `main()` functions and TS errors. They're excluded from the main build. Run scripts with `npx tsx` not `tsc`.
+20. **tsconfig.json excludes `scripts/`** — Script files have duplicate `main()` functions and TS errors. They're excluded from the main build. Run scripts with `npx tsx` not `tsc`.
+
+21. **Stripe price env vars for E5 products** — `STRIPE_PRICE_FOUNDER` and `STRIPE_PRICE_FOUNDER_READINESS` were added to the price map in Session 9 but may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for Founder Coaching products will throw "No Stripe price configured for founder".
 
 ---
 
-## Codebase Sweep Status (Sessions 4-5)
+## Codebase Sweep Status (Sessions 4-9)
 
 ### Batch 1 — Critical Infrastructure ✅
 - Created missing `/api/blob/upload/route.ts` — handleUpload() with Clerk auth, category validation, DELETE handler
@@ -250,17 +258,27 @@
 ### Session 5 — Kal Agent + Supabase Handshake + Credential Sync ✅
 - Rewrote `kal-middleware-client.ts` — dual-backend architecture (Agent PRIMARY + Middleware LEGACY)
 - Added Kal Agent authenticated health check to `/api/health`
-- Added Supabase as named handshake in `/api/health` (REST API + DB + key presence)
+- Added Supabase as named handshake in `/api/health`
 - Cross-referenced ALL user credentials against `.env.local` and Vercel
-- Added 5 missing vars to `.env.local`: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, VERCEL_TOKEN, GITHUB_TOKEN
-- Updated 8 vars on Vercel via REST API (PATCH)
-- Updated `.env.example` with Supabase SDK, Vercel, GitHub placeholders
-- Fixed tsconfig.json: excluded scripts/ (duplicate main functions)
-- Fixed e2e-script-check.ts: log.info 4-arg call
-- Fixed health route: warnings array used before declaration
-- 2 commits pushed: `35fd42b` and `9b9ad1d`
-- Vercel redeploy triggered with all new env vars
+- Updated 8 vars on Vercel via REST API PATCH
 - Full handshake verification: 8/8 services confirmed reachable
+
+### Session 8 — Resend Removal + Zoho OAuth Consolidation ✅
+- Removed all Resend references — onboarding emails now via Zoho CRM SendMail API
+- Created `src/lib/zoho-auth.ts` — shared Zoho OAuth module (single token cache, getAccessToken(), ZOHO_CONFIG with senderEmail)
+- Refactored `src/lib/zoho-crm.ts` and `src/lib/email.ts` to import from zoho-auth.ts
+- Removed Zoho Billing from payment-service.ts, billing portal, create-session route
+- Removed Zoho Forms from contact route
+- Updated .env.example with ZOHO_SENDER_EMAIL, removed dead vars
+
+### Session 9 — Downstream Bug Fixes + E2E Verification ✅
+- P0: Replaced hardcoded PLAN_LIMITS in 3 module pages with imports from `@/lib/plan-config` (pitch-deck-analyser had WRONG e1=20 for PRO)
+- P1: Added Stripe price mappings for 'founder' and 'founder-readiness' products
+- P2: Removed `as any` casts for e5FounderSessions (type already includes the field)
+- P2: Replaced `catch(error: any)` with `catch(error: unknown)` + proper instanceof Error narrowing across 10 API routes + 2 client components
+- P2: Replaced `let analysisResult: any` with `Prisma.InputJsonValue` in coach/founder route
+- Verified blob upload, AI analysis, Kal Protocol fallback, orphan cleanup flows end-to-end
+- Committed as 137d9ed, pushed to GitHub, Vercel deployment triggered (dpl_CEovsm4fz7wJ4UzfGH5MFLcfouW1)
 
 ---
 
@@ -271,17 +289,18 @@
 - [x] 5 coaching modules (E1-E5) with AI analysis
 - [x] Kal Protocol 2.0 — full implementation (protocol + API + agent + chat widget)
 - [x] Kal Protocol 2.0 handoff document (DOCX at `/download/Kal_Protocol_2_Handoff_Prompt.docx`)
-- [x] Kal Agent authenticated RPC client (dual-backend: Agent + Middleware, all 5 endpoints: analyzeScript, runTenQuestions, generateSummary, coachingChat, health)
+- [x] Kal Agent authenticated RPC client (dual-backend: Agent + Middleware, all 5 endpoints)
 - [x] Prisma schema (17 models, 9 enums) with single baseline migration
 - [x] Clerk authentication (publishable + secret keys set)
 - [x] Z.ai AI Gateway (SDK + HTTP fallback, TTS + Web Search)
 - [x] Vercel Blob storage (client-side direct upload with progress)
-- [x] Dual billing: Stripe + Paystack
-- [x] Zoho CRM integration
+- [x] Dual billing: Stripe + Paystack (Zoho Billing REMOVED)
+- [x] Zoho CRM integration (lead sync + onboarding email via SendMail API)
+- [x] Zoho OAuth consolidated into shared `zoho-auth.ts` module
 - [x] Supabase DB connected and healthy (REST API handshake + Prisma DB connection)
 - [x] Production deployment LIVE at pitchcoachai.tech
-- [x] 25+ Vercel env vars configured and synced (including NEXT_PUBLIC_SUPABASE_*, KAL_AGENT_*, VERCEL_TOKEN, GITHUB_TOKEN)
-- [x] Full codebase sweep (Batches 1-6) — security, dead code, anti-patterns, billing fixes
+- [x] 25+ Vercel env vars configured and synced
+- [x] Full codebase sweep (Batches 1-6 + Sessions 8-9) — security, dead code, anti-patterns, billing fixes, type safety
 - [x] SSRF protection (host allowlist + IPv6 private IP blocking)
 - [x] Error boundaries (root + dashboard)
 - [x] Rate limiting on sensitive endpoints
@@ -291,18 +310,22 @@
 - [x] Stripe billing period from API (not hardcoded)
 - [x] Script Check E2E fully functional (text input + file upload + Kal Protocol)
 - [x] Health check covers ALL services: Supabase, Kal Agent, Z.ai, Google AI, DB, Storage
+- [x] PLAN_LIMITS single source of truth enforced across all pages
+- [x] No `catch(error: any)` in user-facing API routes (all use `unknown` with instanceof narrowing)
+- [x] Stripe checkout for E5 Founder Coaching products now supported
 
 ### ⚠️ Still Outstanding
 - [ ] **Zoho CRM credentials are invalid** — `invalid_client` error on all Zoho OAuth endpoints (accounts.zoho.com, .eu, .in, .com.au). The credentials in `.env.local` and Vercel are IDENTICAL. User confirmed Vercel creds are correct — this may need a client secret regeneration in Zoho API Console.
 - [ ] **Supabase REST API keys** — Anon key and service role key return 401 from REST API (DB connection via Prisma works fine). May need key rotation in Supabase Dashboard.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
+- [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for E5 will fail.
 - [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email
 - [ ] Add Kal Protocol 2.0 test coverage
 - [ ] Add E2E/integration tests for critical flows
 - [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
 - [ ] Google AI / Vertex AI region-blocked from certain dev locations — works from Vercel
-- [ ] **Session 7+8 changes NOT yet committed** — awaiting user consent before pushing to GitHub
+- [ ] Babel parser issues in test files (TypeScript generics in .test.ts) — pre-existing, not blocking
 
 ---
 
@@ -323,7 +346,7 @@
 - DB password corrected
 - Migration baselined
 - Clerk secret key updated and pushed to Vercel
-- Clerk webhook secret set in `.env.local` (NOT in Vercel — API lost scope)
+- Clerk webhook secret set in `.env.local`
 - Production fully LIVE: `pitchcoachai.tech/api/health` returns ok
 - superz.md created as agent memory layer
 - 7 commits pushed to GitHub
@@ -331,113 +354,51 @@
 ### Session 4
 - **Full codebase sweep executed (Batches 1-6)**
 - **Batch 1:** Created missing blob upload route, deleted hardcoded JWT file, SSRF protection, cleaned unused env vars
-- **Batch 2:** Error boundaries, rate limiting, downstream bug fixes (DELETE handler, type corrections)
+- **Batch 2:** Error boundaries, rate limiting, downstream bug fixes
 - **Batch 3:** Script Check E2E — text input, user-selectable params, Kal Protocol fallback, upload progress
-- **Batch 4:** Dead code removal (routes, components, imports), duplicate extraction (plan-config, hook)
+- **Batch 4:** Dead code removal, duplicate extraction (plan-config, hook)
 - **Batch 5:** Anti-pattern remediation — useEffect deps, structured logger, `any` type fixes, cancelled grace period, Stripe billing period, Redis circuit breaker
-- **Batch 6:** Documentation update (superz.md, worklog.md), git push, Vercel deployment triggered
+- **Batch 6:** Documentation update, git push, Vercel deployment triggered
 - **4 commits pushed** to GitHub (fb26022 is HEAD)
-- **Vercel deployment:** Both deployments SUCCESS (pitchcoach-ai + my-project, both on commit fb26022)
-- **TypeScript:** Zero errors on `tsc --noEmit` and `tsc --noEmit --strict`
-- **Tests:** 40/40 passing
 
 ### Session 5
-- **Kal Agent integration:**
-  - Verified Kal Agent health: POST /api/rpc/health with x-kal-api-key → 200 OK, bridgeStatus=ok
-  - Rewrote `kal-middleware-client.ts` with dual-backend: KAL_AGENT_URL (PRIMARY) + KAL_MIDDLEWARE_URL (LEGACY)
-  - Auto endpoint mapping, auth header injection, health check per mode
-  - Added `getKalBackendInfo()` diagnostic function
-- **Supabase handshake:**
-  - Added Supabase as named service in `/api/health` (REST API reachability + key presence + DB status)
-  - Added NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY to .env.local
-- **Credential sync:**
-  - Cross-referenced ALL user-provided credentials against .env.local and Vercel
-  - Added 5 missing vars to .env.local (Supabase SDK keys, VERCEL_TOKEN, GITHUB_TOKEN)
-  - Updated 8 vars on Vercel via REST API PATCH (full project scope token now available)
-  - Updated .env.example with Supabase SDK, Vercel, GitHub placeholders
-- **Build fixes:**
-  - Fixed tsconfig.json: excluded scripts/ (duplicate main functions)
-  - Fixed e2e-script-check.ts: log.info 4-arg call
-  - Fixed health route: warnings array used before declaration
-- **Full handshake verification:** 8/8 services confirmed reachable
-- **2 commits pushed:** `35fd42b` (Kal Agent) and `9b9ad1d` (Supabase handshake)
-- **Vercel redeploy triggered** with all updated env vars
-- **HEAD:** `9b9ad1d` on `main`
+- **Kal Agent integration:** Rewrote `kal-middleware-client.ts` with dual-backend
+- **Supabase handshake:** Added as named service in `/api/health`
+- **Credential sync:** Added 5 missing vars to `.env.local`, updated 8 vars on Vercel via REST API
+- **2 commits pushed:** `35fd42b` and `9b9ad1d`
 
 ### Session 6
-- **Kal Agent full endpoint verification:**
-  - health: POST /api/rpc/health → 200 OK, bridgeStatus=ok, protocol="Kal Protocol 2.0"
-  - analyzeScript: POST /api/rpc/analyzeScript → 200 OK, full script analysis with scores, improvements, rewrite
-  - runTenQuestions: POST /api/rpc/runTenQuestions → 200 OK, 10-question flow with session state
-  - coachingChat: POST /api/rpc/coachingChat → 200 OK, freeform coaching with session state
-  - generateSummary: POST /api/rpc/generateSummary → 200 OK, SUMMARY + KEY_ISSUES + BOTTOM_LINE + QUICK_FEEDBACK
-- **Extended `kal-middleware-client.ts`** with:
-  - KalRunTenQuestionsRequest/Response types
-  - KalCoachingChatRequest/Response types
-  - `runTenQuestions` and `coachingChat` in ENDPOINT_MAP
-  - `kalRunTenQuestions()` and `kalCoachingChat()` public functions
-  - Middleware fallback: maps both to analyzeKalScript (no dedicated endpoints)
-- **Verified .env.local** already has KAL_AGENT_URL and KAL_API_KEY
-- **Verified Vercel env vars** already has all 5 previously missing vars (pushed in Session 5)
-- **TypeScript:** Zero errors on tsc --noEmit
-- **1 commit pushed:** `2e4fa57` ("feat: add runTenQuestions + coachingChat endpoints to Kal Agent client")
-- **HEAD:** `2e4fa57` on `main`
+- **Kal Agent full endpoint verification:** All 5 RPC endpoints confirmed working (health, analyzeScript, runTenQuestions, coachingChat, generateSummary)
+- Extended `kal-middleware-client.ts` with runTenQuestions + coachingChat
+- **1 commit pushed:** `2e4fa57`
 
 ### Session 7
-- **Auth bug investigation and fixes:**
-  - Fixed `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` from `/dashboard` to `/onboarding`
-  - Fixed sign-up page `fallbackRedirectUrl` from `/dashboard` to `/onboarding`
-  - Updated `CLERK_WEBHOOK_SECRET` to new value (`whsec_6F7r6dik7vw5KfStJVtPSlBCki0KnZ/o`)
-  - Added Zoho CRM sync + Resend welcome email to onboarding completion path
-  - Added ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN, ZOHO_API_DOMAIN, ZOHO_ORG_ID, RESEND_API_KEY to `.env.local`
-- **Vercel env vars updated via API:** CLERK_WEBHOOK_SECRET, NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
-- **NOT YET COMMITTED** — awaiting user consent
+- **Auth bug fixes:** Fixed NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL, sign-up fallbackRedirectUrl, CLERK_WEBHOOK_SECRET
+- Added Zoho CRM sync + welcome email to onboarding completion path
+- Updated Vercel env vars via API
 
-### Session 8 (Current)
-- **Full codebase scan** — Read every file in the auth/onboarding/sign-in flow
-- **Supabase anon key verified** — Matches user-provided value exactly
-- **Zoho credentials** — Verified Vercel values are IDENTICAL to `.env.local`. Both are rejected by Zoho OAuth (`invalid_client`). User confirmed Vercel creds are correct.
-- **Removed Resend from onboarding flow** — Per user instruction, welcome emails now go through Zoho CRM SendMail API instead of Resend
-- **Enhanced `src/lib/zoho-crm.ts`** with:
-  - `sendOnboardingEmail()` — Sends welcome email via Zoho CRM's SendMail API (POST /crm/v2/Leads/{leadId}/actions/send_mail)
-  - `completeOnboardingInCRM()` — Combined function that updates CRM lead (leadStatus='Contacted') + sends welcome email
-  - `syncUserToCRM()` now accepts `primaryUseCase` field
-- **Updated Clerk webhook handler** (`src/app/api/webhooks/clerk/route.ts`):
-  - `user.created` → Creates Supabase DB record + syncs bare lead to Zoho CRM
-  - `user.updated` → Detects onboarding completion → calls `completeOnboardingInCRM()` (CRM update + welcome email)
-  - Removed all `sendWelcomeEmail` (Resend) calls
-- **Updated onboarding API** (`src/app/api/user/onboarding/route.ts`):
-  - On completion → calls `completeOnboardingInCRM()` (CRM update + welcome email)
-  - Removed `sendWelcomeEmail` (Resend) call
-- **Updated `src/lib/email.ts`**:
-  - Removed `sendWelcomeEmail()` function entirely
-  - Kept `sendEmail()` for Kal Protocol session notifications
-  - Added documentation: Resend is ONLY for Kal Protocol, onboarding emails go via Zoho CRM
-- **Updated `.env.local`**:
-  - Annotated RESEND_API_KEY as "Kal Protocol notifications only"
-- **Complete flow documentation:**
-  - **New user sign-up:** Sign-up → Clerk creates account → webhook creates Supabase record + CRM bare lead → redirect to /onboarding → 3-step wizard → POST /api/user/onboarding → Supabase update + Clerk metadata update + CRM completion + Zoho welcome email → redirect to /dashboard
-  - **Existing user sign-in:** Sign-in → Clerk authenticates → middleware checks onboarding (JWT claims → cache → Clerk API) → if incomplete: redirect to /onboarding; if complete: /dashboard → /api/user/sync ensures DB record + CRM synced → dashboard renders with entitlements, usage, module cards
-  - **20-min inactivity** applies to all authenticated pages
-- **Service handshake verification:**
-  - Supabase DB: ✅ ACTIVE (pooler at aws-1-eu-west-2)
-  - Supabase REST: ⚠️ DEGRADED (keys return 401)
-  - Kal Agent: ✅ ACTIVE
-  - Clerk Auth: ✅ ACTIVE
-  - Zoho CRM: ❌ FAILED (invalid_client on all domains)
+### Session 8
+- **Resend fully removed** — onboarding emails now via Zoho CRM SendMail API
+- **Zoho OAuth consolidated** into shared `src/lib/zoho-auth.ts`
+- **Zoho Billing removed** from payment-service, billing portal, create-session route
+- **Zoho Forms removed** from contact route (kept CRM lead sync)
+- Updated .env.example with ZOHO_SENDER_EMAIL, removed dead vars
 
-  - Vercel: ✅ ACTIVE
-  - GitHub: ✅ ACTIVE
-- **TypeScript:** Zero errors on `tsc --noEmit` and `tsc --noEmit --strict`
-- **Tests:** 40/40 passing
-- **NOT YET COMMITTED** — awaiting user consent before pushing to GitHub
-- **Files modified:**
-  - `src/lib/zoho-crm.ts` — Added sendOnboardingEmail(), completeOnboardingInCRM(), primaryUseCase support
-  - `src/app/api/webhooks/clerk/route.ts` — Replaced Resend with Zoho CRM for onboarding email
-  - `src/app/api/user/onboarding/route.ts` — Replaced Resend with Zoho CRM for onboarding email
-  - `src/lib/email.ts` — Removed sendWelcomeEmail(), kept sendEmail() for Kal Protocol
-  - `.env.local` — Annotated RESEND_API_KEY
-  - `superz.md` — Updated with Session 8 context
+### Session 9 (Current)
+- **E2E audit conducted** — build passes, 40 tests pass, 6 bugs found
+- **P0 fixed:** PLAN_LIMITS desync in pitch-deck-analyser (PROFESSIONAL e1=20 → should be 15)
+  - Replaced all 3 hardcoded PLAN_LIMITS with imports from `@/lib/plan-config`
+  - Files: pitch-deck-analyser/new, elevator-script/new, elevator-pitch-live/new
+- **P1 fixed:** Stripe price mappings for E5 products ('founder', 'founder-readiness')
+- **P2 fixed:** `usage as any` casts for e5FounderSessions removed (type already correct)
+- **P2 fixed:** `catch(error: any)` → `catch(error: unknown)` + instanceof narrowing in 10 API routes + 2 client components
+- **P2 fixed:** `let analysisResult: any` → `Prisma.InputJsonValue` in coach/founder route
+- **E2E verified:** Blob upload, AI analysis, Kal Protocol fallback, orphan cleanup
+- **Committed** as 137d9ed, pushed to Morpheos22/Pitch-Perfect main
+- **Vercel deployment:** dpl_CEovsm4fz7wJ4UzfGH5MFLcfouW1 (BUILDING)
+- **HEAD:** `137d9ed` on `main`
+- **TypeScript:** Zero errors on `tsc --noEmit`
+- **Build:** Passes clean
 
 ---
 
@@ -454,17 +415,25 @@
 | `src/lib/vertex-ai.ts` | Google AI / Vertex AI fallback for E2 script check (~354 lines) |
 | `src/lib/db.ts` | Prisma client (lazy singleton, defers validation to first access) |
 | `src/lib/logger.ts` | Structured logger — createLogger(module), debug gated in prod |
-| `src/lib/plan-config.ts` | Shared constants — PLAN_LIMITS, formatPlanName, getScoreColor |
+| `src/lib/plan-config.ts` | **Single source of truth** — PLAN_LIMITS (E1-E5), formatPlanName, getScoreColor |
 | `src/lib/storage.ts` | File storage with SSRF protection (host allowlist + private IP block) |
 | `src/lib/rate-limit.ts` | Redis-backed rate limiting with circuit breaker fallback |
+| `src/lib/zoho-auth.ts` | **Shared Zoho OAuth module** — getAccessToken(), invalidateAccessToken(), ZOHO_CONFIG |
+| `src/lib/zoho-crm.ts` | Zoho CRM — lead sync + onboarding email via SendMail API |
+| `src/lib/email.ts` | Email via Zoho CRM SendMail — Kal Protocol notifications only |
+| `src/lib/blob-upload.ts` | Client-side Vercel Blob upload — uploadFileToBlob() with progress callback |
+| `src/lib/payment-service.ts` | Payment routing — Paystack + Stripe only, createModuleAccess() is single source of truth |
+| `src/lib/entitlement.ts` | Module access enforcement — E1-E5, atomic check-and-increment, monthly lazy reset |
 | `src/app/api/health/route.ts` | Full health diagnostics — Supabase, Kal, Z.ai, Google AI, DB, Storage |
 | `src/app/api/blob/upload/route.ts` | Vercel Blob upload — handleUpload with auth + validation + DELETE |
+| `src/app/api/coach/script/route.ts` | E2 Script Check — POST (file+text), GET, PATCH, DELETE with Kal fallback |
 | `src/app/api/kal/chat/route.ts` | Kal chat API — POST/PATCH/GET (249 lines) |
-| `src/lib/zoho-crm.ts` | Zoho CRM integration — lead sync + onboarding email via SendMail API |
-| `src/lib/email.ts` | Generic email sender via Zoho CRM SendMail API — Kal Protocol notifications |
 | `src/app/api/webhooks/clerk/route.ts` | Clerk webhook — user.created (Supabase + CRM bare lead), user.updated (CRM onboarding + welcome email) |
+| `src/app/api/user/onboarding/route.ts` | Onboarding completion — DB + Clerk metadata + CRM completion + Zoho welcome email |
 | `src/app/error.tsx` | Root error boundary |
 | `src/app/(dashboard)/error.tsx` | Dashboard error boundary |
+| `src/app/(dashboard)/dashboard/page.tsx` | Dashboard — imports PLAN_LIMITS + formatPlanName from plan-config, shows E1-E5 |
+| `src/app/(dashboard)/dashboard/settings/billing/page.tsx` | Billing — imports PLAN_LIMITS + formatPlanName from plan-config, shows E1-E5 |
 | `src/hooks/use-inactivity-logout.ts` | 20-min inactivity auto-logout (standing security instruction) |
 | `src/components/auth/inactivity-guard.tsx` | Global InactivityGuard wrapping root layout |
 | `src/app/api/auth/revoke-all/route.ts` | Admin-only endpoint to revoke all Clerk sessions |
@@ -495,8 +464,13 @@
 16. **Vercel env var management** — use the REST API with `VERCEL_TOKEN` (`PATCH /v9/projects/{PID}/env/{ENV_ID}`). The token has full project scope.
 17. **Scripts excluded from tsconfig** — `scripts/` dir is excluded from TypeScript compilation. Run scripts with `npx tsx scripts/...` not `tsc`.
 18. **Kal client auto-selects backend** — when `KAL_AGENT_URL` is set, it's PRIMARY (authenticated). When not set, falls back to `KAL_MIDDLEWARE_URL`. Don't bypass this logic.
-19. **Clerk Dashboard password settings are SEPARATE from code** — The password policy in `src/lib/clerk-config.ts` and `validation/schemas.ts` (min 6 chars, uppercase, lowercase, number, special char) must ALSO be configured in the Clerk Dashboard (User & Authentication → Email → Password Settings). If Dashboard settings are weaker, users can sign up with weaker passwords that will fail at the change-password endpoint later.
-20. **`NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` must be `/onboarding`** — Changed in Session 7 from `/dashboard`. If reverted, new users get a flash redirect (dashboard → middleware check → onboarding) instead of a direct onboarding flow.
-21. **All emails go via Zoho CRM SendMail API** — Both onboarding welcome emails (`completeOnboardingInCRM()` in `src/lib/zoho-crm.ts`) and Kal Protocol notifications (`sendEmail()` in `src/lib/email.ts`) use Zoho CRM's SendMail API. Resend has been fully removed.
-22. **Zoho CRM credentials may need regeneration** — Current credentials return `invalid_client` on all Zoho OAuth endpoints. The same values are in both `.env.local` and Vercel. If Zoho CRM isn't working in production either, regenerate the client secret in Zoho API Console.
-23. **Supabase REST API keys may need rotation** — Both anon and service role keys return 401 from the REST API. DB connection via Prisma works fine. Check if keys were rotated in Supabase Dashboard.
+19. **Clerk Dashboard password settings are SEPARATE from code** — The password policy in `src/lib/clerk-config.ts` and `validation/schemas.ts` (min 6 chars, uppercase, lowercase, number, special char) must ALSO be configured in the Clerk Dashboard.
+20. **`NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` must be `/onboarding`** — If reverted, new users get a flash redirect instead of direct onboarding flow.
+21. **All emails go via Zoho CRM SendMail API** — Both onboarding welcome emails and Kal Protocol notifications. Resend has been fully removed.
+22. **Zoho CRM credentials may need regeneration** — Current credentials return `invalid_client` on all Zoho OAuth endpoints.
+23. **Supabase REST API keys may need rotation** — Both anon and service role keys return 401 from the REST API. DB connection via Prisma works fine.
+24. **PLAN_LIMITS MUST come from `@/lib/plan-config`** — Never duplicate PLAN_LIMITS locally in a page component. The module-level constant WILL drift from the source of truth. Import PLAN_LIMITS, formatPlanName, getScoreColor from plan-config.
+25. **No `catch(error: any)` in new code** — Always use `catch(error: unknown)` with `instanceof Error` narrowing. This was a batch fix in Session 9.
+26. **`src/lib/zoho-auth.ts` is the shared OAuth module** — Both `zoho-crm.ts` and `email.ts` import from it. Never duplicate OAuth logic in those files.
+27. **Commit/push ONLY with user consent** — Use Morpheos22 profile with personal access token for GitHub push.
+28. **Vercel deployment is auto-triggered** from GitHub push to `main`. Manual deploy via API or deploy hook only needed for env var changes.
