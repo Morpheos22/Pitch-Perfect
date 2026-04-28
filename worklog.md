@@ -46,7 +46,7 @@ Task: Session wrap-up — verify all credentials, update Clerk, create superz.md
 
 Work Log:
 - Verified all 8 credential handshakes: Supabase REST, Supabase DB, Z.ai, Vercel, GitHub, Clerk, Kal Middleware, Production health
-- Updated CLERK_SECRET_KEY to ***REDACTED_CLERK_SECRET*** in Vercel + .env.local
+- Updated CLERK_SECRET_KEY to production sk_live_*** key in Vercel + .env.local
 - Recreated .env.local with all correct credentials (was lost after session gap)
 - Provided Clerk webhook setup guide (endpoint: /api/webhooks/clerk, events: user.created + user.updated)
 - Created superz.md — agent memory and context layer for GitHub (215 lines)
@@ -264,3 +264,46 @@ Stage Summary:
 - Stripe E5 checkout now functional
 - Type safety improved: eliminated `any` in critical paths
 - Deployed to Vercel production
+
+---
+Task ID: 15
+Agent: Super Z (main)
+Task: Session 10 — Investigate production issues (Clerk sign-in empty + Script Check broken)
+
+Work Log:
+- Continued from previous session context — two critical production issues reported
+- User made repo public (Morpheos22/Pitch-Perfect) for agent access
+- Cloned repo to /home/z/my-project/pitch-perfect/
+- Verified Clerk IS on Production instance:
+  - Publishable key: ***REDACTED_CLERK_PUBLISHABLE*** (decodes to clerk.pitchcoachai.tech$)
+  - Custom FAPI domain clerk.pitchcoachai.tech resolves via Cloudflare
+  - auth_config.test_mode = false — confirmed Production
+  - identification_strategies: email_address, oauth_google, username
+  - CSP headers allow all Clerk domains
+  - Clerk JS v5.125.10 loads and redirects correctly
+- 🔴 ROOT CAUSE FOUND: Clerk Native API is DISABLED on Production instance
+  - Tested /v1/client?_is_native=1 → returns "native_api_disabled" error
+  - Tested /v1/client (legacy) → works fine, returns valid client data
+  - @clerk/nextjs@6.39.1 uses Clerk JS v5 which defaults to Native API
+  - Without Native API, Clerk JS cannot initialize → SignIn/SignUp render empty
+- Investigated Script Check module:
+  - Read full codebase: elevator-script/new, coach/script/route, blob/upload/route, blob-upload.ts, storage.ts, with-auth.ts, file-validation.ts
+  - No upload-specific bug found — blob upload architecture is sound
+  - Script Check broken AS A CONSEQUENCE of Clerk auth failure (requireAuth → 401)
+  - Latent risk: BLOB_READ_WRITE_TOKEN may not be set on Vercel
+- Presented fix plan to user (5 steps), awaiting consent:
+  1. Enable Native API in Clerk Dashboard (CRITICAL — fixes both issues)
+  2. Verify CLERK_SECRET_KEY starts with sk_live_
+  3. Verify Google OAuth redirect URLs
+  4. Verify BLOB_READ_WRITE_TOKEN after auth fix
+  5. End-to-end verification
+- Updated superz.md with Session 10 findings
+- Committed as 6c520fb, pushed to GitHub/Morpheos22/Pitch-Perfect main
+- Vercel deployment triggered: dpl_7DpeDF6VEyzqbgaT9kAHXYMxNjJs (QUEUED)
+
+Stage Summary:
+- ROOT CAUSE identified: Clerk Native API disabled on Production instance
+- Both production issues (sign-in empty + Script Check broken) traced to single root cause
+- No code changes needed — fix requires Dashboard action by user
+- Fix plan presented, awaiting user action on Clerk Dashboard
+- Documentation updated and pushed to GitHub
