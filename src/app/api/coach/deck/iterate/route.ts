@@ -8,6 +8,7 @@ import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { ALLOWED_UPLOAD_HOSTS, ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E1-iter');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -71,7 +72,7 @@ async function handlePost(request: NextRequest) {
       try {
         analysisContent = await extractTextFromUrl(fileUrl, fileName);
       } catch (e) {
-        console.error("[Deck Iterate] Failed to extract from Blob URL:", e);
+        log.error("[Deck Iterate] Failed to extract from Blob URL:", e);
         return NextResponse.json(
           { error: "Failed to process uploaded file. Please upload a new version of your deck." },
           { status: 400 }
@@ -101,7 +102,7 @@ async function handlePost(request: NextRequest) {
         });
         analysisContent = await extractFileText(fileObj);
       } catch (e) {
-        console.error("[Deck Iterate] Failed to extract from file:", e);
+        log.error("[Deck Iterate] Failed to extract from file:", e);
       }
     }
 
@@ -112,7 +113,7 @@ async function handlePost(request: NextRequest) {
       if (parentDeck.fileUrl) {
         // SSRF prevention: validate parent file URL host
         if (!isHostAllowed(parentDeck.fileUrl, ALLOWED_UPLOAD_HOSTS)) {
-          console.warn('[Deck Iterate] Parent file URL host not in allowlist, skipping re-extraction:', new URL(parentDeck.fileUrl).hostname);
+          log.warn('[Deck Iterate] Parent file URL host not in allowlist, skipping re-extraction:', new URL(parentDeck.fileUrl).hostname);
         } else {
           analysisContent = await extractTextFromUrl(parentDeck.fileUrl, parentDeck.fileName || 'deck.pdf');
         }
@@ -173,7 +174,7 @@ async function handlePost(request: NextRequest) {
           if (!['pptx', 'ppt'].includes(ext)) {
             // Private blob URLs need conversion to data URI for AI access
             if (isPrivateBlobUrl(fileUrl)) {
-              console.warn('[Deck Iterate] Converting private blob URL to data URI for vision model');
+              log.warn('[Deck Iterate] Converting private blob URL to data URI for vision model');
               const dataUri = await blobUrlToDataUri(fileUrl);
               safeVisualUrl = dataUri || fileUrl;
             } else {
@@ -283,7 +284,7 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error) {
-    console.error("Deck iterate error:", error);
+    log.error("Deck iterate error:", error);
     return NextResponse.json(
       { error: "Failed to iterate deck analysis" },
       { status: 500 }

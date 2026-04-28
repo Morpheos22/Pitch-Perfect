@@ -30,6 +30,8 @@ let accessTokenCache: { token: string; expiresAt: number } | null = null;
  * - Only one OAuth refresh call per token lifetime (not one per module)
  * - No stale-token drift between modules
  * - Consistent credential validation
+ *
+ * @throws Error with detailed Zoho error info if auth fails
  */
 export async function getAccessToken(): Promise<string> {
   // Return cached token if still valid
@@ -54,11 +56,28 @@ export async function getAccessToken(): Promise<string> {
     }),
   });
 
-  if (!response.ok) {
-    throw new Error(`Zoho auth failed: ${response.status}`);
+  const data = await response.json();
+
+  // Zoho sometimes returns HTTP 200 with an error body (e.g., {"error":"invalid_client"})
+  // Check both the HTTP status and the response body for errors
+  if (!response.ok || data.error) {
+    const zohoError = data.error || 'unknown';
+    const zohoErrorDesc = data.error_description || '';
+    invalidateAccessToken(); // Clear any stale cache
+    throw new Error(
+      `Zoho auth failed: ${response.status} — ${zohoError}${zohoErrorDesc ? `: ${zohoErrorDesc}` : ''}`
+    );
   }
 
-  const data = await response.json();
+  // Validate that access_token exists before caching
+  if (!data.access_token) {
+    invalidateAccessToken();
+    throw new Error(
+      `Zoho auth succeeded (HTTP ${response.status}) but no access_token in response. ` +
+      `Response keys: ${Object.keys(data).join(', ')}. ` +
+      `This usually means the refresh token is invalid or revoked.`
+    );
+  }
 
   // Cache for 55 minutes (tokens expire in 1 hour)
   accessTokenCache = {

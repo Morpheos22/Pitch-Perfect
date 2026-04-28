@@ -5,6 +5,7 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { drillsSchema } from "@/lib/validation/schemas";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('Drills');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -221,7 +222,7 @@ async function handlePost(request: NextRequest) {
 
     return NextResponse.json({ drills });
   } catch (error) {
-    console.error("Coaching drills generation error:", error);
+    log.error("Coaching drills generation error:", error);
     return NextResponse.json(
       { error: "Failed to generate coaching drills" },
       { status: 500 }

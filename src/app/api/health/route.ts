@@ -89,9 +89,9 @@ export async function GET(request: NextRequest) {
       if (!supabaseRestOk) {
         supabaseRestError = `HTTP ${resp.status}`;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       supabaseRestLatency = Date.now() - supaStart;
-      supabaseRestError = err.message;
+      supabaseRestError = err instanceof Error ? err.message : String(err);
     }
   }
 

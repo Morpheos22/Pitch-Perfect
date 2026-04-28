@@ -7,6 +7,7 @@ import { requireModuleAccess } from "@/lib/entitlement";
 import { founderInputSchema } from "@/lib/validation/schemas";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E5');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -544,7 +545,7 @@ async function handlePost(request: NextRequest) {
               )
               .join("\n");
           } catch (searchErr) {
-            console.warn("[E5] Web search failed:", searchErr);
+            log.warn("[E5] Web search failed:", searchErr);
           }
 
 
@@ -611,7 +612,7 @@ async function handlePost(request: NextRequest) {
             });
             audioBase64 = audioBuffer.toString("base64");
           } catch (ttsErr) {
-            console.warn("[E5] TTS generation failed:", ttsErr);
+            log.warn("[E5] TTS generation failed:", ttsErr);
             // Continue without audio — text narration is still valuable
           }
 
@@ -667,7 +668,7 @@ async function handlePost(request: NextRequest) {
       });
 
 
-      console.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
+      log.error(`[E5] AI analysis failed for ${moduleType}:`, aiError);
       const msg = aiError instanceof Error ? aiError.message : String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
@@ -676,7 +677,7 @@ async function handlePost(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error("[E5] Founder API error:", error);
+    log.error("[E5] Founder API error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -787,7 +788,7 @@ export async function GET(request: NextRequest) {
       allSessions: sessions,
     });
   } catch (error) {
-    console.error("[E5] GET founder history error:", error);
+    log.error("[E5] GET founder history error:", error);
     return NextResponse.json(
       { error: "Failed to fetch founder history" },
       { status: 500 }

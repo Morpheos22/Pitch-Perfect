@@ -8,6 +8,7 @@ import { ALLOWED_UPLOAD_HOSTS, isHostAllowed } from "@/lib/storage";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
 import { activateKalProtocol } from "@/lib/kal-protocol";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E2-iter');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 60;
@@ -79,7 +80,7 @@ async function handlePost(request: NextRequest) {
       try {
         scriptText = await extractTextFromUrl(fileUrl, fileName);
       } catch (e) {
-        console.error("[Script Iterate] Failed to extract from Blob URL:", e);
+        log.error("[Script Iterate] Failed to extract from Blob URL:", e);
       }
     }
 
@@ -182,7 +183,7 @@ async function handlePost(request: NextRequest) {
         targetAudience: parentScript.targetAudience || undefined,
         targetDuration: parentScript.pitchDuration || undefined,
       }).catch((kalErr) => {
-        console.error('[E2 Iterate] Kal Protocol activation failed:', kalErr);
+        log.error('[E2 Iterate] Kal Protocol activation failed:', kalErr);
       });
 
       return NextResponse.json({
@@ -236,7 +237,7 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error) {
-    console.error("Script iterate error:", error);
+    log.error("Script iterate error:", error);
     return NextResponse.json(
       { error: "Failed to iterate script analysis" },
       { status: 500 }

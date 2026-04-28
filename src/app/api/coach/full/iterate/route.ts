@@ -8,6 +8,7 @@ import { ALLOWED_VIDEO_HOSTS, isHostAllowed } from "@/lib/storage";
 import { clampScore } from "@/lib/ai-utils";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E4-iter');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
@@ -118,7 +119,7 @@ async function handlePost(request: NextRequest) {
     // (same pattern as parent /api/coach/full route)
     let aiVideoUrl = analysisVideoUrl;
     if (isPrivateBlobUrl(analysisVideoUrl)) {
-      console.warn('[E4-iterate] Converting private blob URL to data URI for vision model');
+      log.warn('[E4-iterate] Converting private blob URL to data URI for vision model');
       const dataUri = await blobUrlToDataUri(analysisVideoUrl);
       if (dataUri) {
         aiVideoUrl = dataUri;
@@ -162,7 +163,7 @@ async function handlePost(request: NextRequest) {
 
     const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
     if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
-      console.warn(`[E4-iterate] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
+      log.warn(`[E4-iterate] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
       analysis.investorReadinessLevel = 'NEEDS_WORK';
     }
 
@@ -177,7 +178,7 @@ async function handlePost(request: NextRequest) {
     ) / 6;
     const overallDelta = Math.abs(analysis.overallReadinessScore - subScoreAvg);
     if (overallDelta > 30) {
-      console.warn(`[E4-iterate] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
+      log.warn(`[E4-iterate] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
     }
 
 
@@ -242,7 +243,7 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error) {
-    console.error("Full session iterate error:", error);
+    log.error("Full session iterate error:", error);
     return NextResponse.json(
       { error: "Failed to iterate full session analysis" },
       { status: 500 }

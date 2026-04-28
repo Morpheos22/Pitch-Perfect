@@ -7,6 +7,7 @@ import { liveNotesSchema } from "@/lib/validation/schemas";
 import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E3');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
@@ -65,7 +66,7 @@ async function handlePost(request: NextRequest) {
         );
         analysisVideoUrl = uploadResult.url;
       } catch (uploadErr) {
-        console.error('[E3] Video upload failed:', uploadErr);
+        log.error('[E3] Video upload failed:', uploadErr);
         return NextResponse.json(
           { error: 'Video upload failed. Please try again.' },
           { status: 500 }
@@ -117,7 +118,7 @@ async function handlePost(request: NextRequest) {
     // Note: Video data URIs can be large, but the AI gateway cannot fetch private blobs
     let aiVideoUrl = analysisVideoUrl;
     if (isPrivateBlobUrl(analysisVideoUrl)) {
-      console.warn('[E3] Converting private blob URL to data URI for vision model');
+      log.warn('[E3] Converting private blob URL to data URI for vision model');
       const dataUri = await blobUrlToDataUri(analysisVideoUrl);
       if (dataUri) {
         aiVideoUrl = dataUri;
@@ -129,7 +130,7 @@ async function handlePost(request: NextRequest) {
     try {
       analysis = await analyzePitchVideo(aiVideoUrl, duration);
     } catch (aiError: unknown) {
-      console.error("AI video analysis failed:", aiError);
+      log.error("AI video analysis failed:", aiError);
       const msg = aiError instanceof Error ? aiError.message : String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
@@ -201,7 +202,7 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error) {
-    console.error("Live pitch analysis error:", error);
+    log.error("Live pitch analysis error:", error);
     return NextResponse.json(
       { error: "Failed to analyze video" },
       { status: 500 }
@@ -283,7 +284,7 @@ export async function GET(request: NextRequest) {
       data: videos,
     });
   } catch (error) {
-    console.error("Get video history error:", error);
+    log.error("Get video history error:", error);
     return NextResponse.json(
       { error: "Failed to get video history" },
       { status: 500 }
@@ -337,7 +338,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, id: validatedData.id });
   } catch (error) {
-    console.error("Patch video session error:", error);
+    log.error("Patch video session error:", error);
     return NextResponse.json(
       { error: "Failed to update session" },
       { status: 500 }
@@ -387,7 +388,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, id: videoId });
   } catch (error) {
-    console.error("Delete video session error:", error);
+    log.error("Delete video session error:", error);
     return NextResponse.json(
       { error: "Failed to delete session" },
       { status: 500 }

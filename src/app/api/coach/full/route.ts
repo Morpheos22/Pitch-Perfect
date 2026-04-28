@@ -9,6 +9,7 @@ import { blobUrlToDataUri, isPrivateBlobUrl } from "@/lib/blob-signature";
 import { clampScore } from "@/lib/ai-utils";
 import { requireAuth } from "@/lib/with-auth";
 import { withRateLimit } from "@/lib/rate-limit";
+import { createLogger } from '@/lib/logger'; const log = createLogger('E4');
 export const dynamic = 'force-dynamic';
 
 export const maxDuration = 120;
@@ -68,7 +69,7 @@ async function handlePost(request: NextRequest) {
         );
         analysisVideoUrl = uploadResult.url;
       } catch (uploadErr) {
-        console.error('[E4] Video upload failed:', uploadErr);
+        log.error('[E4] Video upload failed:', uploadErr);
         return NextResponse.json(
           { error: 'Video upload failed. Please try again or provide a video URL.' },
           { status: 500 }
@@ -125,11 +126,11 @@ async function handlePost(request: NextRequest) {
       try {
         const deckText = await extractTextFromUrl(deckFileUrl, deckFileName);
         // Run a proper E1 analysis instead of creating a dummy all-zero result
-        console.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
+        log.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
         try {
           deckAnalysis = await analyzePitchDeck(deckText);
         } catch (deckAnalysisErr) {
-          console.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
+          log.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
           deckAnalysis = {
             overallScore: 0,
             strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
@@ -150,9 +151,9 @@ async function handlePost(request: NextRequest) {
             typographyScore: 0,
           };
         }
-        console.warn("[E4] Deck text extracted from Blob URL, length:", deckText.length);
+        log.warn("[E4] Deck text extracted from Blob URL, length:", deckText.length);
       } catch (parseErr) {
-        console.error("[E4] Deck file parsing from URL failed:", parseErr);
+        log.error("[E4] Deck file parsing from URL failed:", parseErr);
         // Non-fatal: continue without deck context
       }
     } else if (deckFile && deckFile.size > 0) {
@@ -160,11 +161,11 @@ async function handlePost(request: NextRequest) {
       try {
         const deckText = await extractFileText(deckFile);
         // Run a proper E1 analysis instead of creating a dummy all-zero result
-        console.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
+        log.warn("[E4] Running real E1 deck analysis on uploaded deck file...");
         try {
           deckAnalysis = await analyzePitchDeck(deckText);
         } catch (deckAnalysisErr) {
-          console.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
+          log.warn("[E4] E1 deck analysis failed, using raw text fallback:", deckAnalysisErr);
           deckAnalysis = {
             overallScore: 0,
             strengths: [`Raw deck content:\n${deckText.substring(0, 8000)}`],
@@ -186,7 +187,7 @@ async function handlePost(request: NextRequest) {
           };
         }
       } catch (parseErr) {
-        console.error('[E4] Deck file parsing failed:', parseErr);
+        log.error('[E4] Deck file parsing failed:', parseErr);
         // Non-fatal: continue without deck context
       }
     } else if (existingDeckId) {
@@ -210,7 +211,7 @@ async function handlePost(request: NextRequest) {
     // Private blob URLs need conversion to data URI for AI gateway access
     let aiVideoUrl = analysisVideoUrl;
     if (isPrivateBlobUrl(analysisVideoUrl)) {
-      console.warn('[E4] Converting private blob URL to data URI for vision model');
+      log.warn('[E4] Converting private blob URL to data URI for vision model');
       const dataUri = await blobUrlToDataUri(analysisVideoUrl);
       if (dataUri) {
         aiVideoUrl = dataUri;
@@ -222,7 +223,7 @@ async function handlePost(request: NextRequest) {
     try {
       analysis = await analyzeFullPitchSession(aiVideoUrl, duration, deckAnalysis);
     } catch (aiError: unknown) {
-      console.error("AI full pitch analysis failed:", aiError);
+      log.error("AI full pitch analysis failed:", aiError);
       const msg = aiError instanceof Error ? aiError.message : String(aiError);
       const isAuthError = msg.includes('401') || msg.includes('X-Token') || msg.includes('unauthorized');
       return NextResponse.json(
@@ -263,7 +264,7 @@ async function handlePost(request: NextRequest) {
     // Validate investorReadinessLevel enum
     const validReadinessLevels = ['NOT_READY', 'NEEDS_WORK', 'INVESTOR_READY', 'HIGHLY_PREPARED'];
     if (!validReadinessLevels.includes(analysis.investorReadinessLevel)) {
-      console.warn(`[E4] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
+      log.warn(`[E4] Invalid investorReadinessLevel "${analysis.investorReadinessLevel}" — defaulting to NEEDS_WORK`);
       analysis.investorReadinessLevel = 'NEEDS_WORK';
     }
 
@@ -279,7 +280,7 @@ async function handlePost(request: NextRequest) {
     ) / 6;
     const overallDelta = Math.abs(analysis.overallReadinessScore - subScoreAvg);
     if (overallDelta > 30) {
-      console.warn(`[E4] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
+      log.warn(`[E4] Score inconsistency: overall=${analysis.overallReadinessScore} vs sub-avg=${subScoreAvg.toFixed(1)} (delta=${overallDelta.toFixed(1)})`);
     }
 
 
@@ -349,7 +350,7 @@ async function handlePost(request: NextRequest) {
       modelUsed: analysis.modelUsed,
     });
   } catch (error) {
-    console.error("Full session analysis error:", error);
+    log.error("Full session analysis error:", error);
     return NextResponse.json(
       { error: "Failed to analyze full session" },
       { status: 500 }
@@ -401,7 +402,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, notes: updated.notes });
   } catch (error) {
-    console.error("PATCH full session error:", error);
+    log.error("PATCH full session error:", error);
     return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
   }
 }
@@ -429,7 +430,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("DELETE full session error:", error);
+    log.error("DELETE full session error:", error);
     return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
   }
 }
@@ -500,7 +501,7 @@ export async function GET(request: NextRequest) {
       data: sessions,
     });
   } catch (error) {
-    console.error("Get session history error:", error);
+    log.error("Get session history error:", error);
     return NextResponse.json(
       { error: "Failed to get session history" },
       { status: 500 }
