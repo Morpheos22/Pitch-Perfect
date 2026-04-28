@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 9 — 2026-04-28
+> **Last Updated:** Session 10 — 2026-04-29
 
 ---
 
@@ -107,7 +107,7 @@
 
 ---
 
-## Service Handshake Status (Session 9)
+## Service Handshake Status (Session 10)
 
 | # | Service | Handshake Method | Status |
 |---|---------|-----------------|--------|
@@ -118,7 +118,7 @@
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
 | 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
-| 8 | **Clerk Auth** | `GET /v1/users?limit=1` with secret key | ✅ ACTIVE |
+| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client` | ⚠️ DEGRADED — Native API DISABLED (legacy API works, native API blocked) |
 | 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ❌ FAILED (`invalid_client` — credentials rejected by all Zoho domains) |
 
 ---
@@ -181,29 +181,48 @@
     - Onboarding welcome emails go through `completeOnboardingInCRM()` in `src/lib/zoho-crm.ts`
     - Zoho OAuth is consolidated in `src/lib/zoho-auth.ts` (shared between zoho-crm.ts and email.ts)
 
+11. **🔴 Clerk Native API is DISABLED on Production instance (CRITICAL — Session 10 finding)**
+    - The Clerk Production instance has the Native API disabled in the Dashboard
+    - `@clerk/nextjs@6.39.1` uses Clerk JS v5, which communicates with the Native API by default (`/v1/client?_is_native=1`)
+    - Without Native API, the client-side Clerk JS cannot initialize → `<SignIn>` and `<SignUp>` components render EMPTY
+    - The legacy API (`/v1/client` without `_is_native`) still works, but the SDK doesn't use it
+    - **FIX:** Go to Clerk Dashboard → Production instance → Settings → Enable Native API
+    - Verified: `***REDACTED_CLERK_PUBLISHABLE***` decodes to `clerk.pitchcoachai.tech$` — correct Production key
+    - Custom FAPI domain `clerk.pitchcoachai.tech` resolves via Cloudflare (172.64.153.110)
+    - CSP headers correctly allow `clerk.pitchcoachai.tech` in script-src, connect-src, frame-src, style-src
+    - `auth_config.test_mode` is `false` — confirms Production instance, not Development
+    - `auth_config.identification_strategies` includes `email_address`, `oauth_google`, `username` — correct
+
+12. **Script Check module is broken AS A CONSEQUENCE of Clerk auth failure**
+    - Users can't sign in → can't access `/elevator-script/new` (behind `auth.protect()`)
+    - Even if they could, blob upload calls `/api/blob/upload` which requires `await auth()` → 401
+    - No additional upload-specific bug found in code — blob upload architecture is sound
+    - Once Clerk Native API is enabled, Script Check should work immediately
+    - **Latent risk:** If `BLOB_READ_WRITE_TOKEN` is not properly set on Vercel, uploads will still fail after auth is fixed
+
 ### 🟡 BE AWARE — May Cause Confusion
 
-11. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
+13. **Prisma migration state:** `0_init` is baselined (marked as applied) on the existing database. Schema is up to date. New migrations should be created with `prisma migrate dev` for any future schema changes.
 
-12. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
+14. **Build script** (`scripts/vercel-build.sh`) runs `prisma migrate deploy` before `next build`. This works because Vercel's build environment CAN reach the eu-west-2 pooler.
 
-13. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
+15. **ZAI_CHAT_ID is empty** in `.env.local` — unclear if this is required for Z.ai SDK functionality. The SDK works without it for chat completions.
 
-14. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet. Note: test files have Babel parser issues with TypeScript generics — pre-existing, not related to code changes.
+16. **40 tests pass** (ai-utils: 32, with-auth: 4, entitlement: 4). No Kal Protocol 2.0 specific tests exist yet. Note: test files have Babel parser issues with TypeScript generics — pre-existing, not related to code changes.
 
-15. **Vercel API token now has full project scope** — the token provided in Session 5 (`vcp_7diJ...`) CAN manage env vars via REST API. Previous sessions had a token with limited scope.
+17. **Vercel API token now has full project scope** — the token provided in Session 5 (`vcp_7diJ...`) CAN manage env vars via REST API. Previous sessions had a token with limited scope.
 
-16. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
+18. **Redis circuit breaker** — If Upstash Redis is unreachable, the rate limiter enters cooldown (30s retry window). All rate-limited endpoints will allow requests through (fail-open) during Redis outage. This is intentional graceful degradation.
 
-17. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
+19. **Structured logger** — `console.log` calls in coach routes have been replaced with `src/lib/logger.ts`. Debug/info logs are no-ops in production; warn/error always emit. Do NOT revert to raw `console.log` in these files.
 
-18. **Google AI region blocking** — The Google AI API may be region-blocked (400 "User location is not supported") from certain regions. This is detected at runtime. The Z.ai gateway (primary) handles fallback automatically. Region block only affects local dev in certain regions — works fine from Vercel US/EU.
+20. **Google AI region blocking** — The Google AI API may be region-blocked (400 "User location is not supported") from certain regions. This is detected at runtime. The Z.ai gateway (primary) handles fallback automatically. Region block only affects local dev in certain regions — works fine from Vercel US/EU.
 
-19. **Kal Agent vs Middleware endpoints differ** — Agent uses `/api/rpc/analyzeScript`, Middleware uses `/api/rpc/analyzeKalScript`. The client (`kal-middleware-client.ts`) auto-maps based on which backend is active. Don't hardcode endpoint paths outside the client.
+21. **Kal Agent vs Middleware endpoints differ** — Agent uses `/api/rpc/analyzeScript`, Middleware uses `/api/rpc/analyzeKalScript`. The client (`kal-middleware-client.ts`) auto-maps based on which backend is active. Don't hardcode endpoint paths outside the client.
 
-20. **tsconfig.json excludes `scripts/`** — Script files have duplicate `main()` functions and TS errors. They're excluded from the main build. Run scripts with `npx tsx` not `tsc`.
+22. **tsconfig.json excludes `scripts/`** — Script files have duplicate `main()` functions and TS errors. They're excluded from the main build. Run scripts with `npx tsx` not `tsc`.
 
-21. **Stripe price env vars for E5 products** — `STRIPE_PRICE_FOUNDER` and `STRIPE_PRICE_FOUNDER_READINESS` were added to the price map in Session 9 but may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for Founder Coaching products will throw "No Stripe price configured for founder".
+23. **Stripe price env vars for E5 products** — `STRIPE_PRICE_FOUNDER` and `STRIPE_PRICE_FOUNDER_READINESS` were added to the price map in Session 9 but may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for Founder Coaching products will throw "No Stripe price configured for founder".
 
 ---
 
@@ -315,6 +334,10 @@
 - [x] Stripe checkout for E5 Founder Coaching products now supported
 
 ### ⚠️ Still Outstanding
+- [ ] **🔴 P0: Clerk Native API DISABLED on Production instance** — This is the root cause of both production issues (empty sign-in card AND broken Script Check). Fix: Enable Native API in Clerk Dashboard → Production instance → Settings. Cannot be fixed via code — requires Dashboard action by user.
+- [ ] **P0.5: Verify `CLERK_SECRET_KEY` on Vercel starts with `sk_live_`** — If it's a Development `sk_test_` key, replace with Production `sk_live_` key from Clerk Dashboard.
+- [ ] **P0.5: Verify Google OAuth redirect URL** — In Clerk Dashboard (Production) + Google Cloud Console, confirm redirect URL is `https://clerk.pitchcoachai.tech/v1/oauth_callback`
+- [ ] **P0.5: Verify `BLOB_READ_WRITE_TOKEN`** — After Clerk is fixed, test Script Check upload. If upload fails, check this token is set on Vercel.
 - [ ] **Zoho CRM credentials are invalid** — `invalid_client` error on all Zoho OAuth endpoints (accounts.zoho.com, .eu, .in, .com.au). The credentials in `.env.local` and Vercel are IDENTICAL. User confirmed Vercel creds are correct — this may need a client secret regeneration in Zoho API Console.
 - [ ] **Supabase REST API keys** — Anon key and service role key return 401 from REST API (DB connection via Prisma works fine). May need key rotation in Supabase Dashboard.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
@@ -384,7 +407,7 @@
 - **Zoho Forms removed** from contact route (kept CRM lead sync)
 - Updated .env.example with ZOHO_SENDER_EMAIL, removed dead vars
 
-### Session 9 (Current)
+### Session 9
 - **E2E audit conducted** — build passes, 40 tests pass, 6 bugs found
 - **P0 fixed:** PLAN_LIMITS desync in pitch-deck-analyser (PROFESSIONAL e1=20 → should be 15)
   - Replaced all 3 hardcoded PLAN_LIMITS with imports from `@/lib/plan-config`
@@ -399,6 +422,39 @@
 - **HEAD:** `137d9ed` on `main`
 - **TypeScript:** Zero errors on `tsc --noEmit`
 - **Build:** Passes clean
+
+### Session 10 (Current)
+- **Production investigation: Two critical issues reported by user**
+  1. Users can't sign up or sign in — Clerk auth renders empty on production
+  2. Script Check module upload not working
+- **Repo made public** — `Morpheos22/Pitch-Perfect` (was private, now public for agent access)
+- **Cloned repo** to `/home/z/my-project/pitch-perfect/`
+- **Full codebase examination:** middleware.ts, sign-in/sign-up pages, layout.tsx, clerk-config.ts, next.config.ts, blob-upload.ts, coach/script/route.ts, storage.ts, with-auth.ts, file-validation.ts
+- **🔴 ROOT CAUSE FOUND: Clerk Native API is DISABLED on Production instance**
+  - `@clerk/nextjs@6.39.1` uses Clerk JS v5, which communicates via Native API (`/v1/client?_is_native=1`)
+  - Clerk FAPI returns: `{"errors": [{"code": "native_api_disabled", "message": "The Native API is disabled for this instance."}]}`
+  - Legacy API (`/v1/client` without `_is_native`) works fine — but SDK doesn't use it
+  - Without Native API, Clerk JS cannot initialize on the client → `<SignIn>` and `<SignUp>` render empty
+- **Script Check is broken as a CONSEQUENCE of Clerk auth failure** (not a separate bug):
+  - Users can't sign in → can't access protected routes → can't upload
+  - All API routes require `requireAuth()` → 401 when not signed in
+  - Blob upload requires `await auth()` → 401 when not signed in
+  - No additional upload-specific bug found — architecture is sound
+- **Clerk Production instance verification (all confirmed OK):**
+  - Publishable key: `***REDACTED_CLERK_PUBLISHABLE***` (decodes to `clerk.pitchcoachai.tech$`)
+  - Custom FAPI domain: `clerk.pitchcoachai.tech` — resolves via Cloudflare
+  - `auth_config.test_mode` = `false` — confirmed Production
+  - `auth_config.identification_strategies` = `email_address`, `oauth_google`, `username`
+  - CSP headers allow all Clerk domains in script-src, connect-src, frame-src, style-src
+  - Clerk JS script loads and redirects correctly (v5.125.10)
+- **Fix plan presented to user, awaiting consent:**
+  1. Enable Native API in Clerk Dashboard (CRITICAL — fixes both issues)
+  2. Verify CLERK_SECRET_KEY starts with `sk_live_`
+  3. Verify Google OAuth redirect URLs
+  4. Verify BLOB_READ_WRITE_TOKEN after auth fix
+  5. End-to-end verification of sign-up, sign-in, Google SSO, Script Check upload
+- **superz.md updated** with Session 10 findings, pushed to GitHub
+- **HEAD:** `137d9ed` on `main` (no code changes this session — only documentation update)
 
 ---
 
@@ -474,3 +530,5 @@
 26. **`src/lib/zoho-auth.ts` is the shared OAuth module** — Both `zoho-crm.ts` and `email.ts` import from it. Never duplicate OAuth logic in those files.
 27. **Commit/push ONLY with user consent** — Use Morpheos22 profile with personal access token for GitHub push.
 28. **Vercel deployment is auto-triggered** from GitHub push to `main`. Manual deploy via API or deploy hook only needed for env var changes.
+29. **Clerk Native API MUST be enabled** in the Clerk Dashboard for `@clerk/nextjs@6.x` to work. Without it, sign-in/sign-up components render empty. This was the root cause of the Session 10 production outage.
+30. **Script Check depends on Clerk auth** — If auth is broken, Script Check is broken. The upload flow chain is: Clerk auth → middleware `auth.protect()` → page access → `requireAuth()` → blob upload → coach API. A failure at the first step cascades through the entire flow.
