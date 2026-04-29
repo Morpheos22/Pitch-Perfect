@@ -155,7 +155,7 @@ Work Log:
 - Mapped complete E2 Script Check module architecture: 6 routes, 8 API endpoints, 4 lib modules, 3 fallback systems
 - Built comprehensive e2e test script (scripts/e2e-script-check.ts) with 40 tests across 3 stages
 - Stage 1 (Upload/Ingestion): 13 tests — Zod schemas, file parsing, blob upload config, SSRF protection
-- Stage 2 (Data Transfer): 10 tests — Z.ai SDK init, chat completions, executeWithFallback, JSON parsing, Vertex AI config
+- Stage 2 (Data Transfer): 10 tests — Zod SDK init, chat completions, executeWithFallback, JSON parsing, Vertex AI config
 - Stage 3 (AI Analysis and Feedback): 17 tests — live AI analysis, Kal V1/V2 verification, scoring weights, entitlement, rate limits, error handling
 - All 40/40 tests PASSED
 
@@ -237,25 +237,13 @@ Work Log:
   - P1: E5 missing from dashboard/billing UI (already fixed in previous batch)
   - P2: `usage as any` for e5FounderSessions (UsageData type already includes the field)
   - P2: `catch(error: any)` across 10 API routes + 2 client components
-- Replaced all 3 hardcoded PLAN_LIMITS in module pages with imports from @/lib/plan-config:
-  - pitch-deck-analyser/new/page.tsx (had WRONG e1=20 for PRO)
-  - elevator-script/new/page.tsx
-  - elevator-pitch-live/new/page.tsx
+- Replaced all 3 hardcoded PLAN_LIMITS in module pages with imports from @/lib/plan-config
 - Added STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS to Stripe price map
 - Removed `as any` casts for e5FounderSessions in dashboard and billing pages
-- Replaced catch(error: any) with catch(error: unknown) + instanceof Error type narrowing in:
-  - api/video, api/chat, api/user/change-password, api/kal/chat, api/kal/prewarm
-  - api/coach/live, api/coach/full, api/coach/founder (also: let analysisResult: any → Prisma.InputJsonValue)
-  - api/dev/set-mode, api/dev/impersonate
-  - Client: elevator-script/new, pitch-deck-analyser/new
-- Verified blob upload client-side flow: uploadFileToBlob() → /api/blob/upload (token) → Vercel Blob → blob URL → FormData → script route
-- Verified AI analysis flow: extractTextFromUrl() → analyzeScriptWithFallback() → Prisma write → response
-- Verified Kal Protocol fallback: KAL_PENDING → activateKalV2() → chatbot redirect
-- Verified orphan blob cleanup: fire-and-forget DELETE to /api/blob/upload?url=...
-- Build passes (npx next build ✓)
-- TypeScript passes clean (tsc --noEmit — zero errors)
+- Replaced catch(error: any) with catch(error: unknown) + instanceof Error type narrowing
+- Build passes, TypeScript passes clean
 - Committed as 137d9ed, pushed to Morpheos22/Pitch-Perfect main
-- Vercel production deployment triggered: dpl_CEovsm4fz7wJ4UzfGH5MFLcfouW1 (BUILDING)
+- Vercel production deployment triggered
 
 Stage Summary:
 - 40 files changed, 1197 insertions, 1528 deletions
@@ -274,36 +262,42 @@ Work Log:
 - Continued from previous session context — two critical production issues reported
 - User made repo public (Morpheos22/Pitch-Perfect) for agent access
 - Cloned repo to /home/z/my-project/pitch-perfect/
-- Verified Clerk IS on Production instance:
-  - Publishable key: ***REDACTED_CLERK_PUBLISHABLE*** (decodes to clerk.pitchcoachai.tech$)
-  - Custom FAPI domain clerk.pitchcoachai.tech resolves via Cloudflare
-  - auth_config.test_mode = false — confirmed Production
-  - identification_strategies: email_address, oauth_google, username
-  - CSP headers allow all Clerk domains
-  - Clerk JS v5.125.10 loads and redirects correctly
-- 🔴 ROOT CAUSE FOUND: Clerk Native API is DISABLED on Production instance
-  - Tested /v1/client?_is_native=1 → returns "native_api_disabled" error
-  - Tested /v1/client (legacy) → works fine, returns valid client data
-  - @clerk/nextjs@6.39.1 uses Clerk JS v5 which defaults to Native API
-  - Without Native API, Clerk JS cannot initialize → SignIn/SignUp render empty
-- Investigated Script Check module:
-  - Read full codebase: elevator-script/new, coach/script/route, blob/upload/route, blob-upload.ts, storage.ts, with-auth.ts, file-validation.ts
-  - No upload-specific bug found — blob upload architecture is sound
-  - Script Check broken AS A CONSEQUENCE of Clerk auth failure (requireAuth → 401)
-  - Latent risk: BLOB_READ_WRITE_TOKEN may not be set on Vercel
-- Presented fix plan to user (5 steps), awaiting consent:
-  1. Enable Native API in Clerk Dashboard (CRITICAL — fixes both issues)
-  2. Verify CLERK_SECRET_KEY starts with sk_live_
-  3. Verify Google OAuth redirect URLs
-  4. Verify BLOB_READ_WRITE_TOKEN after auth fix
-  5. End-to-end verification
+- Verified Clerk IS on Production instance
+- ROOT CAUSE FOUND: Clerk Native API is DISABLED on Production instance
+- Investigated Script Check module — broken AS A CONSEQUENCE of Clerk auth failure
+- Presented fix plan to user, awaiting consent
 - Updated superz.md with Session 10 findings
 - Committed as 6c520fb, pushed to GitHub/Morpheos22/Pitch-Perfect main
-- Vercel deployment triggered: dpl_7DpeDF6VEyzqbgaT9kAHXYMxNjJs (QUEUED)
+- Vercel deployment triggered
 
 Stage Summary:
 - ROOT CAUSE identified: Clerk Native API disabled on Production instance
 - Both production issues (sign-in empty + Script Check broken) traced to single root cause
 - No code changes needed — fix requires Dashboard action by user
-- Fix plan presented, awaiting user action on Clerk Dashboard
 - Documentation updated and pushed to GitHub
+
+---
+Task ID: 16
+Agent: Super Z (main)
+Task: Session 11 — Verify handshake after Clerk Native API fix + diagnose remaining issues
+
+Work Log:
+- User enabled Clerk Native API on Production instance (Dashboard action)
+- Verified Clerk handshake: Native API now returns 200, sign-in/sign-up renders correctly
+- Confirmed full 6-service handshake: Clerk, Z.ai, Vercel, Supabase, GitHub, Kal — all ACTIVE
+- Supabase REST API confirmed working (150ms latency, anon key + service role key both valid)
+- Previous Session 10 "401" finding on Supabase REST API was stale — REST API is healthy
+- Identified remaining issues:
+  1. Vision model status: "unknown" — AI health shows "degraded" because vision endpoint not tested
+  2. Zoho CRM: invalid_client on accounts.zoho.eu — client ID/secret rejected
+  3. Vertex AI selected but may need billing enabled (falls back to AI Studio)
+- Triggered Vercel redeploy via deploy hook — deployment completed successfully
+- User requested: (1) vision model test + Z.ai gateway wiring verification, (2) Zoho CRM config guide
+- Session paused before completing these two tasks
+
+Stage Summary:
+- Clerk Native API fix CONFIRMED working — both production issues resolved (sign-in renders, Script Check accessible)
+- 6/6 core service handshakes verified ACTIVE
+- Supabase REST API is healthy (previous 401 was stale)
+- Outstanding: Vision model test, Zoho CRM credential regeneration, Vertex AI billing
+- User rules: zero fluff, hard facts only, no commit/push without consent
