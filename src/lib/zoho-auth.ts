@@ -6,12 +6,38 @@
 // ============================================
 // ZOHO API CONFIGURATION
 // ============================================
+// Zoho has regional data centers. The OAuth token endpoint and API endpoint
+// must match the region where the Zoho account was created:
+//   US:  accounts.zoho.com       / www.zohoapis.com
+//   EU:  accounts.zoho.eu        / www.zohoapis.eu
+//   IN:  accounts.zoho.in        / www.zohoapis.in
+//   AU:  accounts.zoho.com.au    / www.zohoapis.com.au
+//
+// ZOHO_API_DOMAIN env var controls the CRM API base URL (e.g. https://www.zohoapis.eu).
+// The OAuth token URL is auto-derived from ZOHO_API_DOMAIN so they always match.
+
+// Derive the OAuth accounts domain from the API domain.
+// e.g. "https://www.zohoapis.eu" → "https://accounts.zoho.eu"
+function deriveOAuthDomain(apiDomain: string): string {
+  try {
+    const url = new URL(apiDomain);
+    // Replace "www.zohoapis" with "accounts.zoho" in the hostname
+    const host = url.hostname.replace('www.zohoapis', 'accounts.zoho');
+    return `${url.protocol}//${host}`;
+  } catch {
+    // Fallback: if URL parsing fails, use US defaults
+    return 'https://accounts.zoho.com';
+  }
+}
+
+const _apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
 
 export const ZOHO_CONFIG = {
   clientId: process.env.ZOHO_CLIENT_ID,
   clientSecret: process.env.ZOHO_CLIENT_SECRET,
   refreshToken: process.env.ZOHO_REFRESH_TOKEN,
-  apiDomain: process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com',
+  apiDomain: _apiDomain,
+  oAuthDomain: deriveOAuthDomain(_apiDomain),
   orgId: process.env.ZOHO_ORG_ID,
   senderEmail: process.env.ZOHO_SENDER_EMAIL || 'sherwyn@automagikal.co.za',
 };
@@ -45,7 +71,10 @@ export async function getAccessToken(): Promise<string> {
     );
   }
 
-  const response = await fetch('https://accounts.zoho.com/oauth/v2/token', {
+  // OAuth token endpoint must match the Zoho region (EU, US, IN, AU)
+  const tokenUrl = `${ZOHO_CONFIG.oAuthDomain}/oauth/v2/token`;
+
+  const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -65,7 +94,7 @@ export async function getAccessToken(): Promise<string> {
     const zohoErrorDesc = data.error_description || '';
     invalidateAccessToken(); // Clear any stale cache
     throw new Error(
-      `Zoho auth failed: ${response.status} — ${zohoError}${zohoErrorDesc ? `: ${zohoErrorDesc}` : ''}`
+      `Zoho auth failed (${ZOHO_CONFIG.oAuthDomain}): ${response.status} — ${zohoError}${zohoErrorDesc ? `: ${zohoErrorDesc}` : ''}`
     );
   }
 
@@ -85,7 +114,7 @@ export async function getAccessToken(): Promise<string> {
     expiresAt: Date.now() + 55 * 60 * 1000,
   };
 
-  return data.access_token;
+  return accessTokenCache.token;
 }
 
 /**
