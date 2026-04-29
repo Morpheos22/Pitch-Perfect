@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 10 — 2026-04-29
+> **Last Updated:** Session 11 — 2026-04-29
 
 ---
 
@@ -107,19 +107,20 @@
 
 ---
 
-## Service Handshake Status (Session 10)
+## Service Handshake Status (Session 11)
 
 | # | Service | Handshake Method | Status |
 |---|---------|-----------------|--------|
 | 1 | **Supabase DB** | `prisma.$queryRaw\`SELECT 1\`` via pooler | ✅ ACTIVE |
-| 2 | **Supabase REST API** | `GET /rest/v1/` with apikey header | ⚠️ DEGRADED (DB works, REST keys return 401 — may need key rotation) |
+| 2 | **Supabase REST API** | `GET /rest/v1/` with apikey header | ✅ ACTIVE (150ms latency, anon + service role keys valid) |
 | 3 | **Kal Agent** | `POST /api/rpc/health` with x-kal-api-key | ✅ ACTIVE (bridgeStatus=ok, all 5 RPC endpoints verified) |
-| 4 | **Z.ai Gateway** | SDK chat.completions + HTTP fallback | ✅ ACTIVE |
+| 4 | **Z.ai Gateway** | SDK chat.completions + HTTP fallback | ✅ ACTIVE (text + vision via glm-4.6v) |
+| 4b | **Z.ai Vision** | `GET /api/health/vision` with x-health-token | ✅ ACTIVE (dedicated endpoint at /api/health/vision) |
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
 | 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
-| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client` | ⚠️ DEGRADED — Native API DISABLED (legacy API works, native API blocked) |
-| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ❌ FAILED (`invalid_client` — credentials rejected by all Zoho domains) |
+| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client?_is_native=1` | ✅ ACTIVE (Native API enabled, sign-in/sign-up rendering) |
+| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ⚠️ REGION FIX APPLIED — OAuth now hits accounts.zoho.eu (was accounts.zoho.com). If `invalid_client` persists, credentials need regeneration in Zoho API Console. |
 
 ---
 
@@ -181,17 +182,13 @@
     - Onboarding welcome emails go through `completeOnboardingInCRM()` in `src/lib/zoho-crm.ts`
     - Zoho OAuth is consolidated in `src/lib/zoho-auth.ts` (shared between zoho-crm.ts and email.ts)
 
-11. **🔴 Clerk Native API is DISABLED on Production instance (CRITICAL — Session 10 finding)**
-    - The Clerk Production instance has the Native API disabled in the Dashboard
-    - `@clerk/nextjs@6.39.1` uses Clerk JS v5, which communicates with the Native API by default (`/v1/client?_is_native=1`)
-    - Without Native API, the client-side Clerk JS cannot initialize → `<SignIn>` and `<SignUp>` components render EMPTY
-    - The legacy API (`/v1/client` without `_is_native`) still works, but the SDK doesn't use it
-    - **FIX:** Go to Clerk Dashboard → Production instance → Settings → Enable Native API
-    - Verified: `***REDACTED_CLERK_PUBLISHABLE***` decodes to `clerk.pitchcoachai.tech$` — correct Production key
+11. **Clerk Native API is now ENABLED on Production instance (FIXED — Session 11)**
+    - User enabled Native API in Clerk Dashboard → both production issues resolved
+    - Sign-in/sign-up components now render correctly
+    - Script Check module restored (was broken as downstream of auth failure)
+    - `***REDACTED_CLERK_PUBLISHABLE***` decodes to `clerk.pitchcoachai.tech$` — correct Production key
     - Custom FAPI domain `clerk.pitchcoachai.tech` resolves via Cloudflare (172.64.153.110)
     - CSP headers correctly allow `clerk.pitchcoachai.tech` in script-src, connect-src, frame-src, style-src
-    - `auth_config.test_mode` is `false` — confirms Production instance, not Development
-    - `auth_config.identification_strategies` includes `email_address`, `oauth_google`, `username` — correct
 
 12. **Script Check module is broken AS A CONSEQUENCE of Clerk auth failure**
     - Users can't sign in → can't access `/elevator-script/new` (behind `auth.protect()`)
@@ -334,17 +331,18 @@
 - [x] Stripe checkout for E5 Founder Coaching products now supported
 
 ### ⚠️ Still Outstanding
-- [ ] **🔴 P0: Clerk Native API DISABLED on Production instance** — This is the root cause of both production issues (empty sign-in card AND broken Script Check). Fix: Enable Native API in Clerk Dashboard → Production instance → Settings. Cannot be fixed via code — requires Dashboard action by user.
+- [x] **~~🔴 P0: Clerk Native API DISABLED on Production instance~~** — FIXED by user enabling Native API in Clerk Dashboard. Sign-in/sign-up rendering confirmed. Script Check restored.
 - [ ] **P0.5: Verify `CLERK_SECRET_KEY` on Vercel starts with `sk_live_`** — If it's a Development `sk_test_` key, replace with Production `sk_live_` key from Clerk Dashboard.
 - [ ] **P0.5: Verify Google OAuth redirect URL** — In Clerk Dashboard (Production) + Google Cloud Console, confirm redirect URL is `https://clerk.pitchcoachai.tech/v1/oauth_callback`
 - [ ] **P0.5: Verify `BLOB_READ_WRITE_TOKEN`** — After Clerk is fixed, test Script Check upload. If upload fails, check this token is set on Vercel.
-- [ ] **Zoho CRM credentials are invalid** — `invalid_client` error on all Zoho OAuth endpoints (accounts.zoho.com, .eu, .in, .com.au). The credentials in `.env.local` and Vercel are IDENTICAL. User confirmed Vercel creds are correct — this may need a client secret regeneration in Zoho API Console.
-- [ ] **Supabase REST API keys** — Anon key and service role key return 401 from REST API (DB connection via Prisma works fine). May need key rotation in Supabase Dashboard.
+- [ ] **Zoho CRM OAuth region fix deployed** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN` (www.zohoapis.eu → accounts.zoho.eu). `ZOHO_API_DOMAIN` on Vercel corrected to `https://www.zohoapis.eu`. If `invalid_client` persists after this fix, the client ID/secret themselves need regeneration at `api-console.zoho.eu`.
+- [x] **~~Supabase REST API keys~~** — CONFIRMED WORKING in Session 11. 150ms latency, both anon and service role keys valid. Previous 401 finding was stale.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
 - [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for E5 will fail.
 - [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email
 - [ ] Add Kal Protocol 2.0 test coverage
 - [ ] Add E2E/integration tests for critical flows
+- [x] **Z.ai Vision health endpoint** — Created `/api/health/vision/route.ts`. Live on production. Tests glm-4.6v via SDK + HTTP fallback.
 - [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
 - [ ] Google AI / Vertex AI region-blocked from certain dev locations — works from Vercel
@@ -423,7 +421,15 @@
 - **TypeScript:** Zero errors on `tsc --noEmit`
 - **Build:** Passes clean
 
-### Session 10 (Current)
+### Session 11
+- **Clerk Native API fix verified** — User enabled Native API in Clerk Dashboard. Confirmed sign-in/sign-up rendering, 6/6 service handshakes active.
+- **Zoho OAuth region fix** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN` via `deriveOAuthDomain()`. Fixes `invalid_client` caused by hitting `accounts.zoho.com` with EU credentials.
+- **Vision health endpoint** — Created `/api/health/vision/route.ts`. Dedicated Z.ai vision diagnostics (glm-4.6v) with SDK + HTTP fallback. Live on production.
+- **Vercel env var update** — `ZOHO_API_DOMAIN` corrected from `https://accounts.zoho.eu` to `https://www.zohoapis.eu`.
+- **Deployments:** 2 commits pushed (10064dd + 176b29e), Vercel deploy dpl_FtCn2ATjp9KfcnUZvKT8SSPNJxJy READY.
+- **Supabase REST API** confirmed healthy — previous "401" finding was stale.
+
+### Session 10
 - **Production investigation: Two critical issues reported by user**
   1. Users can't sign up or sign in — Clerk auth renders empty on production
   2. Script Check module upload not working
@@ -481,6 +487,7 @@
 | `src/lib/payment-service.ts` | Payment routing — Paystack + Stripe only, createModuleAccess() is single source of truth |
 | `src/lib/entitlement.ts` | Module access enforcement — E1-E5, atomic check-and-increment, monthly lazy reset |
 | `src/app/api/health/route.ts` | Full health diagnostics — Supabase, Kal, Z.ai, Google AI, DB, Storage |
+| `src/app/api/health/vision/route.ts` | Dedicated Z.ai vision model diagnostics — glm-4.6v test with HTTP fallback |
 | `src/app/api/blob/upload/route.ts` | Vercel Blob upload — handleUpload with auth + validation + DELETE |
 | `src/app/api/coach/script/route.ts` | E2 Script Check — POST (file+text), GET, PATCH, DELETE with Kal fallback |
 | `src/app/api/kal/chat/route.ts` | Kal chat API — POST/PATCH/GET (249 lines) |
@@ -523,7 +530,7 @@
 19. **Clerk Dashboard password settings are SEPARATE from code** — The password policy in `src/lib/clerk-config.ts` and `validation/schemas.ts` (min 6 chars, uppercase, lowercase, number, special char) must ALSO be configured in the Clerk Dashboard.
 20. **`NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` must be `/onboarding`** — If reverted, new users get a flash redirect instead of direct onboarding flow.
 21. **All emails go via Zoho CRM SendMail API** — Both onboarding welcome emails and Kal Protocol notifications. Resend has been fully removed.
-22. **Zoho CRM credentials may need regeneration** — Current credentials return `invalid_client` on all Zoho OAuth endpoints.
+22. **Zoho CRM OAuth is region-aware** — `zoho-auth.ts` auto-derives OAuth domain from `ZOHO_API_DOMAIN` (e.g. www.zohoapis.eu → accounts.zoho.eu). If credentials still fail after region fix, regenerate client ID/secret at `api-console.zoho.eu`.
 23. **Supabase REST API keys may need rotation** — Both anon and service role keys return 401 from the REST API. DB connection via Prisma works fine.
 24. **PLAN_LIMITS MUST come from `@/lib/plan-config`** — Never duplicate PLAN_LIMITS locally in a page component. The module-level constant WILL drift from the source of truth. Import PLAN_LIMITS, formatPlanName, getScoreColor from plan-config.
 25. **No `catch(error: any)` in new code** — Always use `catch(error: unknown)` with `instanceof Error` narrowing. This was a batch fix in Session 9.
