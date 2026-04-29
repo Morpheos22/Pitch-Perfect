@@ -119,7 +119,7 @@
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
 | 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
-| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client?_is_native=1` | ✅ ACTIVE (Native API enabled, sign-in/sign-up rendering) |
+| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client?_is_native=1` | ✅ ACTIVE (Native API enabled) ⚠️ Turnstile CAPTCHA may block sign-up |
 | 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ⚠️ REGION FIX APPLIED — OAuth now hits accounts.zoho.eu (was accounts.zoho.com). If `invalid_client` persists, credentials need regeneration in Zoho API Console. |
 
 ---
@@ -330,6 +330,27 @@
 - [x] No `catch(error: any)` in user-facing API routes (all use `unknown` with instanceof narrowing)
 - [x] Stripe checkout for E5 Founder Coaching products now supported
 
+
+### 🔴 Sign-Up Failure — 5 Bugs Identified (Session 11 Scan)
+
+**Batch 1 — Clerk Dashboard Actions (USER DOES THESE — PREREQUISITE):**
+- [ ] Disable Turnstile CAPTCHA on sign-up (or verify site keys cover `pitchcoachai.tech`) — Clerk Dashboard → Users & Authentication → Sign-up
+- [ ] Set After sign-up URL to `/onboarding` — Clerk Dashboard → Paths → After sign-up (currently set to `/` → double redirect)
+- [ ] Verify `verify_at_sign_up: true` is intentional — Clerk Dashboard → Users & Authentication → Email
+
+**Batch 2 — Webhook Handler Fixes (1 file: `src/app/api/webhooks/clerk/route.ts`):**
+- [ ] BUG #1: `isBlockedEmail()` → delete Clerk user instead of silent return (prevents zombie users with Clerk account but no DB record)
+- [ ] BUG #2: `prisma.subscription.create()` + `prisma.usage.create()` → `upsert()` (fixes race condition with onboarding route causing webhook 500s)
+- [ ] BUG #4: Add email-orphan recovery — if `clerkId` lookup fails, check by email and update orphaned record with new `clerkId`
+
+**Batch 3 — ClerkProvider + Middleware Hardening (2 files):**
+- [ ] Add `afterSignUpUrl="/onboarding"` + `afterSignInUrl="/dashboard"` props to `<ClerkProvider>` in `src/app/layout.tsx`
+- [ ] Clear both `__client` AND `__session` cookies in orphaned session detection in `src/middleware.ts`
+
+**Batch 4 — Verification:**
+- [ ] Live production test: sign-up → DB record → webhook → onboarding → dashboard
+- [ ] Full health check with token
+
 ### ⚠️ Still Outstanding
 - [x] **~~🔴 P0: Clerk Native API DISABLED on Production instance~~** — FIXED by user enabling Native API in Clerk Dashboard. Sign-in/sign-up rendering confirmed. Script Check restored.
 - [ ] **P0.5: Verify `CLERK_SECRET_KEY` on Vercel starts with `sk_live_`** — If it's a Development `sk_test_` key, replace with Production `sk_live_` key from Clerk Dashboard.
@@ -339,7 +360,7 @@
 - [x] **~~Supabase REST API keys~~** — CONFIRMED WORKING in Session 11. 150ms latency, both anon and service role keys valid. Previous 401 finding was stale.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
 - [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for E5 will fail.
-- [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email
+- [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email (BLOCKED by 5 bugs above — execute 4-batch plan first)
 - [ ] Add Kal Protocol 2.0 test coverage
 - [ ] Add E2E/integration tests for critical flows
 - [x] **Z.ai Vision health endpoint** — Created `/api/health/vision/route.ts`. Live on production. Tests glm-4.6v via SDK + HTTP fallback.
@@ -422,7 +443,16 @@
 - **Build:** Passes clean
 
 ### Session 11
-- **Clerk Native API fix verified** — User enabled Native API in Clerk Dashboard. Confirmed sign-in/sign-up rendering, 6/6 service handshakes active.
+- **Clerk Native API fix verified** — User enabled Native API. 6/6 handshakes confirmed. Supabase REST API healthy (previous 401 stale).
+- **Zoho OAuth region fix deployed** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN`. `ZOHO_API_DOMAIN` on Vercel corrected to `https://www.zohoapis.eu`. Vision health endpoint created at `/api/health/vision/route.ts`.
+- **Full codebase scan for sign-up failure** — Identified 5 bugs across webhook handler, Clerk Dashboard config, and middleware:
+  - 🔴 BUG #1: `isBlockedEmail()` silently returns → zombie users (no DB record)
+  - 🔴 BUG #2: Subscription/Usage race condition → webhook 500s, CRM sync never fires
+  - 🟡 BUG #3: Turnstile CAPTCHA enabled — may silently block sign-up submission
+  - 🟡 BUG #4: Email uniqueness violation on re-signup → webhook 500
+  - 🟠 BUG #5: Dashboard `after_sign_up_url` = `/` instead of `/onboarding` → double redirect
+- **4-batch execution plan drafted** — awaiting user consent to proceed
+- **Commits this session:** 10064dd (zoho-auth.ts), 176b29e (vision/route.ts), 40902bc (worklog), f3198fe (superz.md), fe4573 (worklog scan update) — User enabled Native API in Clerk Dashboard. Confirmed sign-in/sign-up rendering, 6/6 service handshakes active.
 - **Zoho OAuth region fix** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN` via `deriveOAuthDomain()`. Fixes `invalid_client` caused by hitting `accounts.zoho.com` with EU credentials.
 - **Vision health endpoint** — Created `/api/health/vision/route.ts`. Dedicated Z.ai vision diagnostics (glm-4.6v) with SDK + HTTP fallback. Live on production.
 - **Vercel env var update** — `ZOHO_API_DOMAIN` corrected from `https://accounts.zoho.eu` to `https://www.zohoapis.eu`.
@@ -538,4 +568,5 @@
 27. **Commit/push ONLY with user consent** — Use Morpheos22 profile with personal access token for GitHub push.
 28. **Vercel deployment is auto-triggered** from GitHub push to `main`. Manual deploy via API or deploy hook only needed for env var changes.
 29. **Clerk Native API MUST be enabled** in the Clerk Dashboard for `@clerk/nextjs@6.x` to work. Without it, sign-in/sign-up components render empty. This was the root cause of the Session 10 production outage.
-30. **Script Check depends on Clerk auth** — If auth is broken, Script Check is broken. The upload flow chain is: Clerk auth → middleware `auth.protect()` → page access → `requireAuth()` → blob upload → coach API. A failure at the first step cascades through the entire flow.
+30. **Turnstile CAPTCHA is enabled on sign-up** — Clerk Dashboard has `captcha_enabled: true` with Cloudflare Turnstile (smart widget). If site keys are misconfigured for `pitchcoachai.tech`, sign-up form submission silently fails with no user-visible error. This may be THE root cause of sign-up failure.
+31. **Script Check depends on Clerk auth** — If auth is broken, Script Check is broken. The upload flow chain is: Clerk auth → middleware `auth.protect()` → page access → `requireAuth()` → blob upload → coach API. A failure at the first step cascades through the entire flow.
