@@ -107,7 +107,7 @@
 
 ---
 
-## Service Handshake Status (Session 11)
+## Service Handshake Status (Session 12)
 
 | # | Service | Handshake Method | Status |
 |---|---------|-----------------|--------|
@@ -119,8 +119,8 @@
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
 | 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
-| 8 | **Clerk Auth** | `GET /v1/environment` + FAPI `/v1/client?_is_native=1` | ✅ ACTIVE (Native API enabled) ⚠️ Turnstile CAPTCHA may block sign-up |
-| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ⚠️ REGION FIX APPLIED — OAuth now hits accounts.zoho.eu (was accounts.zoho.com). If `invalid_client` persists, credentials need regeneration in Zoho API Console. |
+| 8 | **Clerk Auth** | FAPI `/v1/client?_is_native=1` + CSP `connect-src` | ✅ ACTIVE (Native API enabled + CSP connect-src FIXED in Session 12) |
+| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ⚠️ REGION FIX APPLIED — OAuth hits accounts.zoho.eu. If `invalid_client` persists, credentials need regeneration in Zoho API Console. |
 
 ---
 
@@ -184,17 +184,15 @@
 
 11. **Clerk Native API is now ENABLED on Production instance (FIXED — Session 11)**
     - User enabled Native API in Clerk Dashboard → both production issues resolved
-    - Sign-in/sign-up components now render correctly
-    - Script Check module restored (was broken as downstream of auth failure)
     - `***REDACTED_CLERK_PUBLISHABLE***` decodes to `clerk.pitchcoachai.tech$` — correct Production key
     - Custom FAPI domain `clerk.pitchcoachai.tech` resolves via Cloudflare (172.64.153.110)
-    - CSP headers correctly allow `clerk.pitchcoachai.tech` in script-src, connect-src, frame-src, style-src
+    - CSP `connect-src` now properly allows `clerk.pitchcoachai.tech` (FIXED — Session 12)
 
-12. **Script Check module is broken AS A CONSEQUENCE of Clerk auth failure**
-    - Users can't sign in → can't access `/elevator-script/new` (behind `auth.protect()`)
-    - Even if they could, blob upload calls `/api/blob/upload` which requires `await auth()` → 401
-    - No additional upload-specific bug found in code — blob upload architecture is sound
-    - Once Clerk Native API is enabled, Script Check should work immediately
+12. **🔴 CSP `connect-src` directive MUST have the prefix** — In `next.config.ts`, the connect-sources array MUST be prefixed with `"connect-src "`. Without it, the browser treats the bare values as an invalid directive and blocks ALL cross-origin XHR/fetch — including Clerk JS FAPI calls. This was the root cause of the Session 12 production outage (empty sign-up/sign-in on production but working on Clerk's hosted domain). If you add a new CSP directive, always verify it has the directive name prefix.
+
+13. **Script Check module works once auth is functional**
+    - Script Check depends on: Clerk auth → middleware `auth.protect()` → `requireAuth()` → blob upload → coach API
+    - No additional upload-specific bug in code — blob upload architecture is sound
     - **Latent risk:** If `BLOB_READ_WRITE_TOKEN` is not properly set on Vercel, uploads will still fail after auth is fixed
 
 ### 🟡 BE AWARE — May Cause Confusion
@@ -352,18 +350,24 @@
 - [ ] Full health check with token
 
 ### ⚠️ Still Outstanding
-- [x] **~~🔴 P0: Clerk Native API DISABLED on Production instance~~** — FIXED by user enabling Native API in Clerk Dashboard. Sign-in/sign-up rendering confirmed. Script Check restored.
+- [x] **~~🔴 P0: Clerk Native API DISABLED~~** — FIXED by user enabling Native API in Clerk Dashboard.
+- [x] **~~🔴 P0: CSP connect-src missing from production headers~~** — FIXED in Session 12. Root cause of empty sign-up on production. `next.config.ts` now prefixes connect-sources with `"connect-src "`.
+- [x] **~~BUG #1: isBlockedEmail() zombie users~~** — FIXED in Session 12. No longer returns early; creates DB record + skips CRM sync.
+- [x] **~~BUG #2: Subscription/Usage race condition~~** — FIXED in Session 12. Changed to `$transaction` with `upsert`.
+- [x] **~~BUG #4: Email uniqueness violation on re-signup~~** — FIXED in Session 12. Webhook now checks both clerkId and email.
+- [x] **~~BUG #5: afterSignUpUrl missing~~** — FIXED in Session 12. Added `afterSignUpUrl="/onboarding"` to ClerkProvider.
+- [x] **~~Middleware __session cookie~~** — FIXED in Session 12. Now clears both `__client` and `__session` for orphaned sessions.
 - [ ] **P0.5: Verify `CLERK_SECRET_KEY` on Vercel starts with `sk_live_`** — If it's a Development `sk_test_` key, replace with Production `sk_live_` key from Clerk Dashboard.
 - [ ] **P0.5: Verify Google OAuth redirect URL** — In Clerk Dashboard (Production) + Google Cloud Console, confirm redirect URL is `https://clerk.pitchcoachai.tech/v1/oauth_callback`
 - [ ] **P0.5: Verify `BLOB_READ_WRITE_TOKEN`** — After Clerk is fixed, test Script Check upload. If upload fails, check this token is set on Vercel.
-- [ ] **Zoho CRM OAuth region fix deployed** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN` (www.zohoapis.eu → accounts.zoho.eu). `ZOHO_API_DOMAIN` on Vercel corrected to `https://www.zohoapis.eu`. If `invalid_client` persists after this fix, the client ID/secret themselves need regeneration at `api-console.zoho.eu`.
-- [x] **~~Supabase REST API keys~~** — CONFIRMED WORKING in Session 11. 150ms latency, both anon and service role keys valid. Previous 401 finding was stale.
+- [ ] **Zoho CRM OAuth** — Region fix deployed. If `invalid_client` persists, client ID/secret need regeneration at `api-console.zoho.eu`.
+- [x] **~~Supabase REST API keys~~** — CONFIRMED WORKING in Session 11.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
-- [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for E5 will fail.
-- [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email (BLOCKED by 5 bugs above — execute 4-batch plan first)
+- [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet.
+- [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email
 - [ ] Add Kal Protocol 2.0 test coverage
 - [ ] Add E2E/integration tests for critical flows
-- [x] **Z.ai Vision health endpoint** — Created `/api/health/vision/route.ts`. Live on production. Tests glm-4.6v via SDK + HTTP fallback.
+- [x] **~~Z.ai Vision health endpoint~~** — Created `/api/health/vision/route.ts`. Live on production.
 - [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
 - [ ] Google AI / Vertex AI region-blocked from certain dev locations — works from Vercel
@@ -452,12 +456,26 @@
   - 🟡 BUG #4: Email uniqueness violation on re-signup → webhook 500
   - 🟠 BUG #5: Dashboard `after_sign_up_url` = `/` instead of `/onboarding` → double redirect
 - **4-batch execution plan drafted** — awaiting user consent to proceed
-- **Commits this session:** 10064dd (zoho-auth.ts), 176b29e (vision/route.ts), 40902bc (worklog), f3198fe (superz.md), fe4573 (worklog scan update) — User enabled Native API in Clerk Dashboard. Confirmed sign-in/sign-up rendering, 6/6 service handshakes active.
-- **Zoho OAuth region fix** — `zoho-auth.ts` now auto-derives OAuth domain from `ZOHO_API_DOMAIN` via `deriveOAuthDomain()`. Fixes `invalid_client` caused by hitting `accounts.zoho.com` with EU credentials.
-- **Vision health endpoint** — Created `/api/health/vision/route.ts`. Dedicated Z.ai vision diagnostics (glm-4.6v) with SDK + HTTP fallback. Live on production.
-- **Vercel env var update** — `ZOHO_API_DOMAIN` corrected from `https://accounts.zoho.eu` to `https://www.zohoapis.eu`.
-- **Deployments:** 2 commits pushed (10064dd + 176b29e), Vercel deploy dpl_FtCn2ATjp9KfcnUZvKT8SSPNJxJy READY.
-- **Supabase REST API** confirmed healthy — previous "401" finding was stale.
+
+### Session 12
+- **🔴 ROOT CAUSE FOUND: CSP `connect-src` directive was MISSING from production headers**
+  - Sign-up rendered on `accounts.pitchcoachai.tech` (Clerk hosted) but NOT on `pitchcoachai.tech` (production)
+  - Root cause: `next.config.ts` built the connect-sources as a bare sub-array without the `connect-src ` prefix
+  - Browser treated `'self'` (first value) as an invalid directive name and ignored the entire block
+  - Without `connect-src`, browser fell back to `default-src 'self'` — blocking ALL cross-origin XHR/fetch
+  - Clerk JS couldn't call `https://clerk.pitchcoachai.tech/v1/client?_is_native=1` → `<SignUp>` rendered empty
+  - Also added `https://challenges.cloudflare.com` to `connect-src` for Cloudflare Turnstile CAPTCHA
+- **ALL 5 downstream bugs fixed in commit 0c5ffd3:**
+  1. ✅ **CSP connect-src fix** — Added `"connect-src "` prefix to the sub-array in `next.config.ts`
+  2. ✅ **Zombie users fix** — `isBlockedEmail()` no longer returns early; creates DB record + skips CRM sync instead
+  3. ✅ **Subscription race condition fix** — Changed `subscription.create()` + `usage.create()` to `$transaction` with `upsert` — safe to run in parallel with onboarding API
+  4. ✅ **Re-signup fix** — Webhook now checks BOTH `clerkId` AND `email` for existing users; updates clerkId on re-signup
+  5. ✅ **afterSignUpUrl fix** — Added `afterSignUpUrl="/onboarding"` to ClerkProvider in `layout.tsx`
+  6. ✅ **Session cookie fix** — Middleware now clears BOTH `__client` and `__session` cookies for orphaned sessions (previously only cleared `__client`, causing half-signed-out state)
+- **Vercel deployment verified** — CSP header now shows `connect-src` with all required domains
+- **Clerk FAPI confirmed working** — Native API returns valid client data with sign_up and sign_in objects
+- **Commit:** `0c5ffd3` pushed to `main`, Vercel deployment READY
+- **HEAD:** `0c5ffd3` on `main`
 
 ### Session 10
 - **Production investigation: Two critical issues reported by user**
