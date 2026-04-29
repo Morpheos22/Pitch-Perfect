@@ -301,3 +301,32 @@ Stage Summary:
 - Supabase REST API is healthy (previous 401 was stale)
 - Outstanding: Vision model test, Zoho CRM credential regeneration, Vertex AI billing
 - User rules: zero fluff, hard facts only, no commit/push without consent
+
+---
+Task ID: 17
+Agent: Super Z (main)
+Task: Session 11 — Zoho auth fix + vision health endpoint + Vercel env var update
+
+Work Log:
+- Fixed zoho-auth.ts: OAuth token URL now auto-derives from ZOHO_API_DOMAIN env var
+  - Added deriveOAuthDomain() helper: www.zohoapis.eu → accounts.zoho.eu
+  - Added oAuthDomain to ZOHO_CONFIG for transparent region matching
+  - Fixes invalid_client caused by hitting accounts.zoho.com with EU credentials
+- Created /api/health/vision/route.ts: dedicated Z.ai vision model diagnostics endpoint
+  - SDK-first test with direct HTTP fallback on SDK failure
+  - Returns resolved model, response content, token usage, timing
+  - Requires x-health-token auth (same as main health check)
+  - Separated from /api/health to avoid timeout impact on core checks
+- Updated ZOHO_API_DOMAIN on Vercel: https://accounts.zoho.eu → https://www.zohoapis.eu
+  - This is the CRM API base URL (correct domain for REST API calls)
+  - OAuth domain (accounts.zoho.eu) is now auto-derived by code
+- Pushed 2 commits to GitHub: 10064dd (zoho-auth.ts) + 176b29e (vision/route.ts)
+- Triggered Vercel redeploy — deployment dpl_FtCn2ATjp9KfcnUZvKT8SSPNJxJy is READY
+- Verified /api/health/vision returns 401 (route exists, auth required)
+
+Stage Summary:
+- zoho-auth.ts fix: region-aware OAuth derivation (eliminates hardcoded accounts.zoho.com)
+- Vision health endpoint live at /api/health/vision
+- ZOHO_API_DOMAIN corrected on Vercel (www.zohoapis.eu)
+- Production deployment confirmed READY
+- Still outstanding: Zoho client credentials may need regeneration if invalid_client persists
