@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
   const hasAnyWorkingRegion = workingRegion !== null;
 
   // Build warnings
-  if (!isConfiguredRegionWorking && hasAnyWorkingRegion) {
+  if (!isConfiguredRegionWorking && hasAnyWorkingRegion && workingRegion) {
     warnings.push(
       `ZOHO_API_DOMAIN is set to ${configuredDomain} (${configuredRegionKey.toUpperCase()}), but credentials only work in ${workingRegion.region.toUpperCase()}. ` +
       `Change ZOHO_API_DOMAIN to ${workingRegion.apiEndpoint} on Vercel.`
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
 
   // If a working region was found that's NOT the configured one, suggest the fix
   let fixSuggestion: string | undefined;
-  if (!isConfiguredRegionWorking && hasAnyWorkingRegion) {
+  if (!isConfiguredRegionWorking && hasAnyWorkingRegion && workingRegion) {
     fixSuggestion = `Update ZOHO_API_DOMAIN from "${configuredDomain}" to "${workingRegion.apiEndpoint}" on Vercel. This will auto-derive the correct OAuth domain (${workingRegion.oauthEndpoint}).`;
   } else if (!hasAnyWorkingRegion) {
     fixSuggestion = `Go to the Zoho API Console for your region (e.g. https://api-console.zoho.eu for EU) and: 1) Verify the client is active, 2) If not, create a new client, 3) Generate a new refresh token with CRM scopes, 4) Update ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REFRESH_TOKEN on Vercel.`;
