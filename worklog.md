@@ -330,3 +330,33 @@ Stage Summary:
 - ZOHO_API_DOMAIN corrected on Vercel (www.zohoapis.eu)
 - Production deployment confirmed READY
 - Still outstanding: Zoho client credentials may need regeneration if invalid_client persists
+
+---
+Task ID: 18
+Agent: Super Z (main)
+Task: Session 11 (continued) — Full codebase scan for sign-up failure root causes
+
+Work Log:
+- Full codebase scan across 18+ files: middleware.ts, sign-up/sign-in pages, webhook handler, onboarding API, clerk-config.ts, Prisma schema, layout.tsx, with-auth.ts, entitlement.ts, zoho-crm.ts, email.ts
+- Live production tests: Clerk FAPI ✅ 200, Clerk environment ✅, sign-up page ✅ HTML, webhook endpoint ✅ alive, all 7 Clerk env vars present on Vercel
+- Clerk environment dump confirmed: Turnstile CAPTCHA enabled, after_sign_up_url points to / (not /onboarding), email verification required at sign-up, single_session_mode=true
+- Identified 5 bugs causing sign-up failure (2 Critical, 1 High, 2 Medium)
+
+Bug Findings:
+1. 🔴 CRITICAL — isBlockedEmail() in webhook silently returns without creating DB record → zombie users (Clerk account exists but no User/Subscription/Usage rows). Blocks subdomain email users.
+2. 🔴 CRITICAL — Subscription/Usage race condition: both webhook and onboarding route create these records. Subscription.userId is @unique → webhook 500s → CRM sync never fires → Clerk retries indefinitely.
+3. 🟡 HIGH — Turnstile CAPTCHA enabled on sign-up with smart widget. If site keys misconfigured for pitchcoachai.tech domain, form submission silently blocked.
+4. 🟡 MEDIUM — Email uniqueness violation on re-signup: webhook only checks clerkId, not email. Deleted user re-signs up with same email → new clerkId → prisma.user.create() throws unique constraint on email → webhook 500.
+5. 🟠 MEDIUM — Clerk Dashboard after_sign_up_url set to https://pitchcoachai.tech (root) instead of /onboarding → double redirect, widens race window.
+
+Drafted 4-batch execution plan, awaiting user consent:
+- Batch 1: Dashboard actions (disable Turnstile, fix after_sign_up_url, verify email verification) — user does
+- Batch 2: Webhook handler fixes (isBlockedEmail → delete user, subscription/usage → upsert, email-orphan recovery) — 1 file
+- Batch 3: ClerkProvider + middleware hardening (afterSignUpUrl prop, clear both cookies on orphan) — 2 files
+- Batch 4: Production verification + log update
+
+Stage Summary:
+- 5 bugs identified, 4-batch execution plan drafted, awaiting consent
+- Batch 1 (Dashboard) is prerequisite for testing Batches 2-3
+- No code pushed this task — findings and plan only
+- User consent required before any code changes
