@@ -92,7 +92,11 @@ const nextConfig: any = {
               // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho
               // SECURITY: Internal IP (172.25.x.x) only included in development.
               // Production uses ZAI_BASE_URL env var — never expose private IPs in CSP.
-              [
+              // BUG FIX: The previous version omitted the "connect-src " directive prefix,
+              // causing the browser to treat the values as an invalid directive and block
+              // ALL cross-origin XHR/fetch — including Clerk JS FAPI calls. This was the
+              // root cause of the empty <SignUp>/<SignIn> components on production.
+              "connect-src " + [
                 "'self'",
                 process.env.NODE_ENV === 'development' && process.env.ZAI_BASE_URL?.startsWith('http://') ? process.env.ZAI_BASE_URL : '',
                 'https://api.clerk.com',
@@ -110,6 +114,8 @@ const nextConfig: any = {
                 'https://*.aiplatform.googleapis.com',
                 'https://api.upstash.com',
                 'https://*.zoho.com',
+                // Cloudflare Turnstile CAPTCHA backend (Clerk uses smart widget)
+                'https://challenges.cloudflare.com',
               ].filter(Boolean).join(' '),
               // Frame sources: Clerk auth iframe (custom FAPI domain + standard), Cloudflare challenge
               "frame-src 'self' https://challenges.cloudflare.com https://clerk.com https://*.clerk.accounts.dev https://clerk.pitchcoachai.tech",

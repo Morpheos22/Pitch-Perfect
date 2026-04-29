@@ -101,7 +101,10 @@ export default clerkMiddleware(async (auth, request) => {
           orphanSessionCache.set(userId, true);
           const url = new URL("/sign-in?reason=session_expired", request.url);
           const response = NextResponse.redirect(url);
-          response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
+          // Clear BOTH __client and __session cookies — Clerk uses both for session state.
+          // Previously only __client was cleared, leaving __session behind and causing a
+          // half-signed-out state where Clerk JS thinks the user is still partially authenticated.
+          response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax, __session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
           return response;
         }
         // Network/timeout error — fail open, don't force logout
@@ -111,7 +114,8 @@ export default clerkMiddleware(async (auth, request) => {
       // Known orphaned — redirect to sign-in with session clear
       const url = new URL("/sign-in?reason=session_expired", request.url);
       const response = NextResponse.redirect(url);
-      response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
+      // Clear BOTH __client and __session cookies to prevent half-signed-out state
+      response.headers.set("Set-Cookie", "__client=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax, __session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax");
       return response;
     }
     // cachedStatus === false → user is valid, continue normally

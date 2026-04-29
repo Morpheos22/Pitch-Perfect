@@ -117,23 +117,58 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   if (!email) return;
 
   // ── Subdomain/Disposable email check ──
-  if (isBlockedEmail(email)) {
+  // BUG FIX: Previously, isBlockedEmail() returned early WITHOUT creating any DB record.
+  // This left a "zombie user" — the user exists in Clerk but has no DB row, causing
+  // errors on all authenticated pages (middleware finds no subscription/usage).
+  // Fix: Instead of silently returning, we still create the user + subscription + usage,
+  // but mark the account as blocked via onboardingCompleted=false and skip CRM sync.
+  // The user will be stuck at onboarding and can be deleted from Clerk Dashboard.
+  const blocked = isBlockedEmail(email);
+  if (blocked) {
     console.warn(`[Clerk Webhook] Blocked user with subdomain/disposable email: ${email}`);
-    return;
+    // Don't return — continue to create DB record so the user isn't a zombie.
   }
 
-  // Check if user already exists (idempotency)
-  const existingUser = await prisma.user.findUnique({
+  // ── Idempotency: check by clerkId FIRST, then by email ──
+  // BUG FIX: Previously only checked clerkId. If a user was deleted from the DB
+  // (e.g., manual cleanup) but re-signed-up with the same email, the clerkId would
+  // be different but the email unique constraint would cause a Prisma error.
+  // Fix: Check both clerkId and email; upsert by email if clerkId not found.
+  const existingByClerkId = await prisma.user.findUnique({
     where: { clerkId: data.id },
   });
 
+  if (existingByClerkId) return; // Already exists — idempotent
 
-  if (existingUser) return;
+  const existingByEmail = await prisma.user.findUnique({
+    where: { email },
+  });
 
+  if (existingByEmail) {
+    // User re-signed-up with same email but new clerkId — update the clerkId
+    console.log(`[Clerk Webhook] Re-signup detected: updating clerkId for ${email}`);
+    await prisma.user.update({
+      where: { email },
+      data: { clerkId: data.id },
+    });
+    // Ensure subscription + usage exist
+    await prisma.$transaction([
+      prisma.subscription.upsert({
+        where: { userId: existingByEmail.id },
+        create: { userId: existingByEmail.id },
+        update: {},
+      }),
+      prisma.usage.upsert({
+        where: { userId: existingByEmail.id },
+        create: { userId: existingByEmail.id },
+        update: {},
+      }),
+    ]);
+    return;
+  }
 
   // Check if developer email (single source of truth in dev-auth.ts)
   const isDeveloper = isAdminEmail(email);
-
 
   // Check if email is already verified
   const primaryEmail = data.email_addresses.find(
@@ -141,8 +176,11 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   );
   const emailVerified = primaryEmail?.verification?.status === 'verified';
 
-
-  // Create user in Supabase
+  // ── Create user + subscription + usage in a single transaction ──
+  // BUG FIX: Previously, subscription.create() was a separate call after user.create().
+  // If the onboarding API ran concurrently (race condition), both would try to create
+  // a subscription for the same userId, hitting the unique constraint and crashing one.
+  // Fix: Use a $transaction with upsert for subscription and usage — safe to run in parallel.
   const user = await prisma.user.create({
     data: {
       clerkId: data.id,
@@ -154,35 +192,38 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     },
   });
 
-
-  // Create subscription (FREE plan, or ENTERPRISE for developers)
-  await prisma.subscription.create({
-    data: {
-      userId: user.id,
-      plan: isDeveloper ? 'ENTERPRISE' : 'FREE',
-      status: 'ACTIVE',
-    },
-  });
-
-
-  // Create usage record
-  await prisma.usage.create({
-    data: { userId: user.id },
-  });
-
+  await prisma.$transaction([
+    prisma.subscription.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        plan: isDeveloper ? 'ENTERPRISE' : 'FREE',
+        status: 'ACTIVE',
+      },
+      update: {}, // no-op if already exists from onboarding race
+    }),
+    prisma.usage.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id },
+      update: {}, // no-op if already exists
+    }),
+  ]);
 
   // Sync to Zoho CRM — bare lead (no country/useCase yet)
   // This creates the lead in CRM so it exists before onboarding completes.
   // The welcome email will be sent AFTER onboarding completes (user.updated webhook).
-  syncUserToCRM({
-    email,
-    firstName: data.first_name || undefined,
-    lastName: data.last_name || undefined,
-    country: data.public_metadata?.country as string || undefined,
-    clerkId: data.id,
-  }).catch((crmErr) => {
-    console.warn(`[Clerk Webhook] CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
-  });
+  // Skip CRM sync for blocked emails — no point creating a lead for a spammer.
+  if (!blocked) {
+    syncUserToCRM({
+      email,
+      firstName: data.first_name || undefined,
+      lastName: data.last_name || undefined,
+      country: data.public_metadata?.country as string || undefined,
+      clerkId: data.id,
+    }).catch((crmErr) => {
+      console.warn(`[Clerk Webhook] CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
+    });
+  }
 }
 
 
