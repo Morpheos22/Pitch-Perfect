@@ -69,3 +69,4 @@ server.log
 /EXECUTION_PLAN.md
 /db/*.db
 ngrok
+.env*.local
