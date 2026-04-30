@@ -242,7 +242,8 @@ export default function ElevatorScriptNewPage() {
   };
 
   // Shared response handler for both file and text paths
-  function handleResponse(data: any, blobUrlForCleanup?: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleResponse(data: Record<string, any>, blobUrlForCleanup?: string) {
     // ── Handle Kal Protocol 2.0 redirect ──
     if (data.kalProtocol && data.kalV2Active && data.kalV2SessionId) {
       toast.info("Analysis is taking longer — let's chat while we process it.");

@@ -34,7 +34,7 @@ function SignInForm() {
           },
         }}
         fallbackRedirectUrl="/dashboard"
-        signUpFallbackRedirectUrl="/dashboard"
+        signUpFallbackRedirectUrl="/onboarding"
       />
     </Card>
   );

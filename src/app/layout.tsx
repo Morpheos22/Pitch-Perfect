@@ -42,8 +42,6 @@ export default function RootLayout({
     <ClerkProvider
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
-      afterSignUpUrl="/onboarding"
-      afterSignInUrl="/dashboard"
       afterSignOutUrl="/sign-in"
     >
       <html lang="en" suppressHydrationWarning>

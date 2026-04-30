@@ -77,9 +77,9 @@ export async function uploadFileToBlob(
       url: blob.url,
       pathname: blob.pathname,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Provide user-friendly error messages based on common failure modes
-    const msg = error?.message || String(error);
+    const msg = error instanceof Error ? error.message : String(error);
 
     if (msg.includes('Unauthorized') || msg.includes('401')) {
       throw new Error('You must be signed in to upload files. Please sign in and try again.');
