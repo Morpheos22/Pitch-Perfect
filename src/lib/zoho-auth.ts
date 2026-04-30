@@ -39,7 +39,7 @@ export const ZOHO_CONFIG = {
   apiDomain: _apiDomain,
   oAuthDomain: deriveOAuthDomain(_apiDomain),
   orgId: process.env.ZOHO_ORG_ID,
-  senderEmail: process.env.ZOHO_SENDER_EMAIL || 'sherwyn@automagikal.co.za',
+  senderEmail: process.env.ZOHO_SENDER_EMAIL || 'akanimohdavid@yahoo.com',
 };
 
 // ============================================

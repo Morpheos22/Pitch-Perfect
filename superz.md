@@ -93,7 +93,9 @@
 | Google AI / Vertex AI | `GOOGLE_GENAI_API_KEY` | `.env.local` + Vercel env |
 | Google Cloud Project | `GOOGLE_CLOUD_PROJECT` | `.env.local` + Vercel env (empty = AI Studio endpoint) |
 | Zoho OAuth | `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_API_DOMAIN`, `ZOHO_ORG_ID` | `.env.local` + Vercel env |
-| Zoho Sender Email | `ZOHO_SENDER_EMAIL` | `.env.local` + Vercel env (sherwyn@automagikal.co.za) |
+| Zoho Sender Email | `ZOHO_SENDER_EMAIL` | `.env.local` + Vercel env (akanimohdavid@yahoo.com) |
+| Resend API Key | `RESEND_API_KEY` | `.env.local` + Vercel env (fallback email provider) |
+| Resend From Email | `RESEND_FROM_EMAIL` | `.env.local` + Vercel env (optional, default: `Pitch Perfect <onboarding@pitchcoachai.tech>`) |
 | Stripe Prices | `STRIPE_PRICE_PITCH_DECK`, `STRIPE_PRICE_ELEVATOR_SCRIPT`, `STRIPE_PRICE_ELEVATOR_LIVE`, `STRIPE_PRICE_PITCH_DECK_LIVE`, `STRIPE_PRICE_MASTER`, `STRIPE_PRICE_FOUNDER`, `STRIPE_PRICE_FOUNDER_READINESS` | `.env.local` + Vercel env |
 
 ### Vercel Deploy Hook
@@ -177,10 +179,15 @@
    - `createModuleAccess()` in payment-service.ts is the single source of truth for which products grant which module access
    - Products 'founder' and 'founder-readiness' map to PROFESSIONAL plan, e5Access=true
 
-10. **Resend is REMOVED — all email via Zoho CRM SendMail API**
-    - `src/lib/email.ts` uses Zoho CRM SendMail for Kal Protocol notifications
-    - Onboarding welcome emails go through `completeOnboardingInCRM()` in `src/lib/zoho-crm.ts`
-    - Zoho OAuth is consolidated in `src/lib/zoho-auth.ts` (shared between zoho-crm.ts and email.ts)
+10. **Resend is BACK as FALLBACK — Zoho CRM is PRIMARY, Resend is BACKUP**
+    - `src/lib/resend-email.ts` — dedicated Resend fallback provider (lazy-loaded, graceful degradation)
+    - `src/lib/email.ts` — tries Zoho CRM SendMail first, falls back to Resend on failure
+    - `src/lib/zoho-crm.ts` — `sendOnboardingEmail()` tries Zoho CRM first, falls back to Resend on failure
+    - Zoho CRM is preferred because it logs emails against CRM leads (activity tracking, open/click stats)
+    - Resend fires only when Zoho fails (OAuth error, API down, credentials issue) — guaranteed delivery
+    - `RESEND_API_KEY` must be set on Vercel for fallback to work
+    - `RESEND_FROM_EMAIL` optional — defaults to `Pitch Perfect <onboarding@pitchcoachai.tech>`
+    - `ZOHO_SENDER_EMAIL` updated to `akanimohdavid@yahoo.com` (must be a verified Zoho CRM user)
 
 11. **Clerk Native API is now ENABLED on Production instance (FIXED — Session 11)**
     - User enabled Native API in Clerk Dashboard → both production issues resolved
@@ -513,6 +520,26 @@
 - **Commit:** `454f2aa` pushed to `main`
 - **HEAD:** `454f2aa` on `main`
 
+### Session 16
+- **User confirmed:** Clerk keys live, Google SSO OAuth verified, payment gateway deferred
+- **Resend wired as FALLBACK** for onboarding email (Zoho CRM remains PRIMARY)
+  - Created `src/lib/resend-email.ts` — lazy-loaded Resend client, `sendOnboardingEmailViaResend()` + `sendEmailViaResend()` + `isResendConfigured()`
+  - Updated `src/lib/zoho-crm.ts` — `sendOnboardingEmail()` now tries Zoho CRM first, falls back to Resend on failure
+  - Updated `src/lib/email.ts` — `sendEmail()` (Kal notifications) now tries Zoho CRM first, falls back to Resend on failure
+  - Added `resend` to `serverExternalPackages` in `next.config.ts`
+  - Added `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to `.env.example`
+  - Installed `resend@^6.12.2` as dependency
+- **Zoho sender email updated** to `akanimohdavid@yahoo.com`
+  - Updated default in `src/lib/zoho-auth.ts`
+  - Updated `.env.example` with new sender email
+- **Original Resend commit identified:** `7c13b45` (Mar 28, Morpheos22) — first wired Resend for onboarding welcome emails
+- **E2E test results:** 41/41 passed across 4 stages
+  - Stage 1: Resend + Dual-Provider Email (12/12)
+  - Stage 2: Infrastructure Handshakes (6/6)
+  - Stage 3: Onboarding Flow (7/7)
+  - Stage 4: Code Integrity (16/16)
+- **Outstanding:** `RESEND_API_KEY` and `ZOHO_SENDER_EMAIL=akanimohdavid@yahoo.com` need to be set on Vercel env vars (no VERCEL_TOKEN available locally)
+
 ---
 
 ## File Map (Key Files)
@@ -533,7 +560,8 @@
 | `src/lib/rate-limit.ts` | Redis-backed rate limiting with circuit breaker fallback |
 | `src/lib/zoho-auth.ts` | **Shared Zoho OAuth module** — getAccessToken(), invalidateAccessToken(), ZOHO_CONFIG |
 | `src/lib/zoho-crm.ts` | Zoho CRM — lead sync + onboarding email via SendMail API |
-| `src/lib/email.ts` | Email via Zoho CRM SendMail — Kal Protocol notifications only |
+| `src/lib/email.ts` | Generic email — Zoho CRM (PRIMARY) → Resend (FALLBACK) for Kal Protocol notifications |
+| `src/lib/resend-email.ts` | Resend fallback provider — `sendOnboardingEmailViaResend()`, `sendEmailViaResend()`, `isResendConfigured()` |
 | `src/lib/blob-upload.ts` | Client-side Vercel Blob upload — uploadFileToBlob() with progress callback |
 | `src/lib/payment-service.ts` | Payment routing — Paystack + Stripe only, createModuleAccess() is single source of truth |
 | `src/lib/entitlement.ts` | Module access enforcement — E1-E5, atomic check-and-increment, monthly lazy reset |

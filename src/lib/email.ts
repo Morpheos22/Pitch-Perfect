@@ -1,10 +1,16 @@
-// Generic email sender via Zoho CRM SendMail API.
-// ALL transactional emails (Kal Protocol notifications, etc.) are sent
-// through Zoho CRM's SendMail API. This keeps all communications within Zoho
-// CRM, providing email tracking, CRM activity history, and template management.
+// Dual-provider email sender: Zoho CRM (PRIMARY) → Resend (FALLBACK).
 //
-// Onboarding welcome emails use the dedicated `sendOnboardingEmail()` in
-// zoho-crm.ts instead, since they're tied to the CRM lead update flow.
+// ALL transactional emails attempt Zoho CRM SendMail first (for CRM
+// activity tracking, email logging, and template management). If Zoho
+// fails, Resend fires as a guaranteed-delivery fallback.
+//
+// Onboarding welcome emails use the dedicated `sendOnboardingEmail()`
+// in zoho-crm.ts (which has its own Resend fallback) since they're
+// tied to the CRM lead update flow.
+//
+// Email provider priority:
+//   1. Zoho CRM SendMail API (PRIMARY — CRM-tracked, logged against lead)
+//   2. Resend (FALLBACK — guaranteed delivery when Zoho is down)
 //
 // Zoho CRM SendMail API:
 // POST /crm/v2/Leads/{leadId}/actions/send_mail
@@ -14,13 +20,14 @@
 
 import { ZOHO_CONFIG, getAccessToken } from '@/lib/zoho-auth';
 import { createOrUpdateLead } from '@/lib/zoho-crm';
+import { sendEmailViaResend } from '@/lib/resend-email';
 
 // ============================================
-// GENERIC EMAIL SENDER
+// GENERIC EMAIL SENDER (DUAL-PROVIDER)
 // ============================================
 
 /**
- * Send a generic email via Zoho CRM's SendMail API.
+ * Send a generic email via Zoho CRM's SendMail API, with Resend fallback.
  * Used by Kal Protocol for completion/failure notifications and any other
  * transactional emails. Onboarding welcome emails use the dedicated
  * `sendOnboardingEmail()` in zoho-crm.ts.
@@ -29,6 +36,7 @@ import { createOrUpdateLead } from '@/lib/zoho-crm';
  * one is created automatically before sending.
  */
 export async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }) {
+  // ── PRIMARY: Zoho CRM SendMail ──
   try {
     // Step 1: Find or create a CRM Lead for the recipient
     const leadResult = await createOrUpdateLead({
@@ -62,14 +70,25 @@ export async function sendEmail({ to, subject, html }: { to: string; subject: st
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Email] Zoho CRM SendMail failed: ${response.status}`, errorText);
-      return { success: false, error: `Zoho CRM SendMail: ${response.status}` };
+      throw new Error(`Zoho CRM SendMail: ${response.status} — ${errorText.substring(0, 200)}`);
     }
 
     console.log(`[Email] Sent via Zoho CRM to ${to}: "${subject}"`);
     return { success: true };
-  } catch (error) {
-    console.error('[Email] Failed to send:', error);
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  } catch (zohoError) {
+    const zohoMessage = zohoError instanceof Error ? zohoError.message : String(zohoError);
+    console.warn(`[Email] Zoho CRM failed for ${to}: ${zohoMessage}`);
+
+    // ── FALLBACK: Resend ──
+    console.log(`[Email] Attempting Resend fallback for ${to}...`);
+    const resendResult = await sendEmailViaResend({ to, subject, html });
+
+    if (resendResult.success) {
+      console.log(`[Email] Resend fallback delivered to ${to}: "${subject}"`);
+      return { success: true };
+    }
+
+    console.error(`[Email] Both providers failed for ${to}. Zoho: ${zohoMessage}; Resend: ${resendResult.error}`);
+    return { success: false, error: `Zoho: ${zohoMessage}; Resend: ${resendResult.error}` };
   }
 }

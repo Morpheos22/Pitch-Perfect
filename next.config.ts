@@ -50,6 +50,7 @@ const nextConfig: any = {
     "pdfjs-dist",
     "mammoth",
     "jszip",
+    "resend",
   ],
 
   // ── Body size limits for large file uploads ──

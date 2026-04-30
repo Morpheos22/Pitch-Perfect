@@ -7,6 +7,7 @@
 // communications during onboarding.
 
 import { ZOHO_CONFIG, getAccessToken } from '@/lib/zoho-auth';
+import { sendOnboardingEmailViaResend } from '@/lib/resend-email';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -179,6 +180,13 @@ export async function sendOnboardingEmail(leadId: string, userData: {
     </div>
   `;
 
+  // ── DUAL-PROVIDER: Zoho CRM (PRIMARY) → Resend (FALLBACK) ──
+  // Zoho CRM SendMail is preferred because it logs the email against
+  // the CRM lead record, providing activity history and tracking.
+  // If Zoho fails (OAuth error, API down, misconfigured credentials),
+  // Resend fires as a guaranteed-delivery fallback so the user always
+  // receives their onboarding welcome email.
+
   try {
     await zohoApiRequest(`/Leads/${leadId}/actions/send_mail`, 'POST', {
       data: [{
@@ -189,11 +197,26 @@ export async function sendOnboardingEmail(leadId: string, userData: {
         mail_format: 'html',
       }],
     });
+    console.log(`[Zoho CRM] Onboarding email sent to ${userData.email}`);
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[Zoho CRM] Send onboarding email failed for ${userData.email}:`, message);
-    return { success: false, error: message };
+    console.warn(`[Zoho CRM] Send onboarding email failed for ${userData.email}: ${message}`);
+
+    // ── FALLBACK: Resend ──
+    console.log(`[Zoho CRM] Attempting Resend fallback for ${userData.email}...`);
+    const resendResult = await sendOnboardingEmailViaResend({
+      email: userData.email,
+      firstName: userData.firstName,
+    });
+
+    if (resendResult.success) {
+      console.log(`[Resend] Fallback onboarding email delivered to ${userData.email}`);
+      return { success: true };
+    }
+
+    console.error(`[Resend] Fallback also failed for ${userData.email}: ${resendResult.error}`);
+    return { success: false, error: `Zoho: ${message}; Resend: ${resendResult.error}` };
   }
 }
 
