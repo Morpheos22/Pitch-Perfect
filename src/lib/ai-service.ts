@@ -1292,16 +1292,27 @@ Provide your analysis as a JSON object with this EXACT structure (no markdown, j
 }
 
 // ============================================
-// DUAL-STRATEGY FALLBACK WRAPPER (E2)
+// MULTI-STRATEGY FALLBACK WRAPPER (E2)
 // ============================================
 
 /**
- * Run script analysis with automatic dual-provider fallback:
+ * Run script analysis with automatic multi-provider fallback:
  *   Strategy 1: Z.ai Gateway (GLM) — PRIMARY
- *   Strategy 2: Google AI / Vertex AI (Gemini) — FALLBACK
+ *   Strategy 2: Kal Agent (Adaptive AI) — FALLBACK
+ *   Strategy 3: Google AI / Vertex AI (Gemini) — LAST RESORT
  *
  * Returns null (instead of throwing) when ALL providers fail,
- * so callers can return a 503 response.
+ * so callers can trigger the Kal Protocol graceful degradation.
+ *
+ * ARCHITECTURE DECISION (Session 22):
+ *   Kal Agent was promoted to Strategy 2 because:
+ *   - Google AI / Vertex AI is 403 SERVICE_DISABLED (Gemini API not enabled
+ *     on project 696443258465 and cannot be authorized without Google Cloud Console)
+ *   - Kal Agent's analyzeScript RPC returns full ScriptAnalysisResult-compatible
+ *     output with 5-element scores, improvements, rewritten script, and hooks
+ *   - Kal Agent health check confirms 200 OK with bridgeStatus=ok
+ *   - Google AI is demoted to Strategy 3 (last resort) for when it can be
+ *     authorized in the future
  *
  * This centralizes the try/catch fallback logic that was previously
  * duplicated across POST /api/coach/script and POST /api/coach/script/iterate.
@@ -1334,22 +1345,194 @@ export async function analyzeScriptWithFallback(
     console.error(`${logPrefix} Z.ai Gateway failed (Strategy 1):`, zaiError?.message);
   }
 
-  // ── Strategy 2: Google AI / Vertex AI (FALLBACK) ──
+  // ── Strategy 2: Kal Agent (FALLBACK) ──
+  // Promoted from Kal Protocol chat-only to full analysis fallback.
+  // The Kal Agent's analyzeScript RPC endpoint returns complete
+  // 5-element scoring, improvements, rewritten script, and hooks.
+  if (!analysis) {
+    try {
+      console.log(`${logPrefix} Strategy 2: Falling back to Kal Agent...`);
+      analysis = await analyzeWithKalAgent(scriptText, targetAudience, targetDuration);
+      console.log(`${logPrefix} Kal Agent analysis succeeded (Strategy 2), model:`, analysis.modelUsed);
+    } catch (kalError: any) {
+      console.error(`${logPrefix} Kal Agent also failed (Strategy 2):`, kalError?.message);
+    }
+  }
+
+  // ── Strategy 3: Google AI / Vertex AI (LAST RESORT) ──
+  // Demoted from Strategy 2 because the Gemini API is 403 SERVICE_DISABLED
+  // on project 696443258465. This will be retried as a last resort in case
+  // the user enables the API in Google Cloud Console.
   if (!analysis) {
     // Dynamic import to avoid circular dependency at module level
     const { analyzeWithVertexAI, isVertexAIConfigured } = await import('./vertex-ai');
     if (isVertexAIConfigured()) {
       try {
-        console.log(`${logPrefix} Strategy 2: Falling back to Google AI / Vertex AI...`);
+        console.log(`${logPrefix} Strategy 3: Last resort — trying Google AI / Vertex AI...`);
         analysis = await analyzeWithVertexAI(scriptText, targetAudience, targetDuration);
-        console.log(`${logPrefix} Google AI analysis succeeded (Strategy 2)`);
+        console.log(`${logPrefix} Google AI analysis succeeded (Strategy 3)`);
       } catch (vertexError: any) {
-        console.error(`${logPrefix} Google AI also failed (Strategy 2):`, vertexError?.message);
+        console.error(`${logPrefix} Google AI also failed (Strategy 3):`, vertexError?.message);
       }
     }
   }
 
   return analysis;
+}
+
+// ============================================
+// KAL AGENT ANALYSIS (Strategy 2 Fallback)
+// ============================================
+
+/**
+ * Analyze a pitch script using the Kal Agent's analyzeScript RPC endpoint.
+ *
+ * The Kal Agent is the adaptive AI that powers the Kal Protocol 2.0.
+ * Its analyzeScript endpoint returns a full script analysis with 5-element
+ * scores, improvements, rewritten script, and alternative hooks.
+ *
+ * This function calls the Kal Agent directly and transforms the response
+ * into the ScriptAnalysisResult format expected by the rest of the app.
+ *
+ * KAL AGENT RESPONSE FORMAT:
+ *   {
+ *     hookScore, problemScore, solutionScore, credibilityScore, ctaScore,
+ *     overallScore, improvements: [{category, suggestion, priority}],
+ *     rewrittenScript, alternativeHooks, tokensUsed, modelUsed
+ *   }
+ *
+ * SCRIPTANALYSISRESULT FORMAT:
+ *   {
+ *     hookScore, problemScore, solutionScore, credibilityScore, ctaScore,
+ *     overallScore, improvements: {hook: [...], problem: [...], ...},
+ *     rewrittenScript, alternativeHooks, wordCount, estimatedDuration,
+ *     tokensUsed, modelUsed
+ *   }
+ */
+async function analyzeWithKalAgent(
+  scriptText: string,
+  targetAudience?: string,
+  targetDuration?: number,
+): Promise<ScriptAnalysisResult> {
+  const KAL_AGENT_URL = process.env.KAL_AGENT_URL || '';
+  const KAL_API_KEY = process.env.KAL_API_KEY || '';
+
+  if (!KAL_AGENT_URL) {
+    throw new Error('Kal Agent not configured (KAL_AGENT_URL not set)');
+  }
+
+  const endpoint = `${KAL_AGENT_URL}/api/rpc/analyzeScript`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (KAL_API_KEY) {
+    headers['x-kal-api-key'] = KAL_API_KEY;
+  }
+
+  const payload = {
+    script: scriptText,
+    moduleType: 'e2',
+    targetAudience: targetAudience || 'investors',
+    targetDuration: targetDuration || 60,
+  };
+
+  console.log(`[KalAgent] Calling analyzeScript at ${KAL_AGENT_URL}...`);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000), // 30s timeout — analysis is heavy
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => 'unknown');
+    throw new Error(`Kal Agent HTTP ${response.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = await response.json();
+
+  // Validate minimum response structure
+  if (typeof data.overallScore !== 'number') {
+    throw new Error('Kal Agent returned invalid response — missing overallScore');
+  }
+
+  // ── Transform Kal Agent response → ScriptAnalysisResult ──
+  const wordCount = scriptText.split(/\s+/).filter(Boolean).length;
+
+  // Transform improvements from array-of-objects to element-keyed object
+  // Kal returns: [{category: "Hook", suggestion: "...", priority: "medium"}, ...]
+  // We need: {hook: ["..."], problem: ["..."], solution: ["..."], credibility: ["..."], cta: ["..."]}
+  const kalImprovements: { hook: string[]; problem: string[]; solution: string[]; credibility: string[]; cta: string[] } = {
+    hook: [], problem: [], solution: [], credibility: [], cta: [],
+  };
+
+  if (Array.isArray(data.improvements)) {
+    for (const imp of data.improvements) {
+      if (!imp || typeof imp !== 'object') continue;
+      const category = String(imp.category || '').toLowerCase();
+      const suggestion = String(imp.suggestion || imp.improvement || '');
+      if (!suggestion) continue;
+
+      // Map Kal category names to ScriptAnalysisResult element keys
+      if (category.includes('hook')) {
+        kalImprovements.hook.push(suggestion);
+      } else if (category.includes('problem')) {
+        kalImprovements.problem.push(suggestion);
+      } else if (category.includes('solution')) {
+        kalImprovements.solution.push(suggestion);
+      } else if (category.includes('credibility') || category.includes('proof')) {
+        kalImprovements.credibility.push(suggestion);
+      } else if (category.includes('cta') || category.includes('ask') || category.includes('call')) {
+        kalImprovements.cta.push(suggestion);
+      } else {
+        // Unknown category — add to the lowest-scoring element for visibility
+        const scores = { hook: data.hookScore, problem: data.problemScore, solution: data.solutionScore, credibility: data.credibilityScore, cta: data.ctaScore };
+        const lowest = Object.entries(scores).reduce((a, b) => (b[1] < a[1] ? b : a), ['hook', 100]);
+        const key = lowest[0] as keyof typeof kalImprovements;
+        kalImprovements[key].push(suggestion);
+      }
+    }
+  } else if (data.improvements && typeof data.improvements === 'object' && !Array.isArray(data.improvements)) {
+    // Already in the right format — use directly
+    const imp = data.improvements as Record<string, unknown>;
+    kalImprovements.hook = validateStringArray(imp.hook);
+    kalImprovements.problem = validateStringArray(imp.problem);
+    kalImprovements.solution = validateStringArray(imp.solution);
+    kalImprovements.credibility = validateStringArray(imp.credibility);
+    kalImprovements.cta = validateStringArray(imp.cta);
+  }
+
+  const result: ScriptAnalysisResult = {
+    hookScore: clampScore(data.hookScore),
+    problemScore: clampScore(data.problemScore),
+    solutionScore: clampScore(data.solutionScore),
+    credibilityScore: clampScore(data.credibilityScore),
+    ctaScore: clampScore(data.ctaScore),
+    overallScore: clampScore(data.overallScore),
+    wordCount,
+    estimatedDuration: Math.round(wordCount / 2.5),
+    improvements: kalImprovements,
+    rewrittenScript: String(data.rewrittenScript || ''),
+    alternativeHooks: validateStringArray(data.alternativeHooks),
+    tokensUsed: data.tokensUsed,
+    modelUsed: data.modelUsed || 'kal-agent',
+  };
+
+  // Quality validation — same as Z.ai path
+  const e2Weighted = computeWeightedOverall(SCORING_WEIGHTS.E2_ELEMENTS, {
+    hook: result.hookScore, problem: result.problemScore, solution: result.solutionScore,
+    credibility: result.credibilityScore, cta: result.ctaScore,
+  });
+  const { validatedOverall } = validateScoreConsistency(
+    result.overallScore, e2Weighted,
+    { hook: result.hookScore, problem: result.problemScore, solution: result.solutionScore,
+      credibility: result.credibilityScore, cta: result.ctaScore },
+    'E2_KAL_AGENT'
+  );
+  result.overallScore = validatedOverall;
+
+  return result;
 }
 
 // ============================================

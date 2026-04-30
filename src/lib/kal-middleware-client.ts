@@ -421,7 +421,7 @@ export async function isKalMiddlewareReady(): Promise<{
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
+    const timeout = setTimeout(() => controller.abort(), 10_000); // 10s — increased from 5s for Vercel cold starts
 
     let response: Response;
 

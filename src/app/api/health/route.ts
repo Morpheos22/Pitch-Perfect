@@ -204,24 +204,14 @@ export async function GET(request: NextRequest) {
   (checks.storage as any).blobStoreReachable = blobStoreReachable;
   (checks.storage as any).blobStoreError = blobStoreError;
 
-  // Google AI / Vertex AI check — verify fallback provider config
-  const vertexAIStatus = getVertexAIConfigStatus();
-  (checks as any).googleAI = {
-    configured: vertexAIStatus.configured,
-    provider: vertexAIStatus.provider,
-    project: vertexAIStatus.project,
-    location: vertexAIStatus.location,
-    hasApiKey: vertexAIStatus.hasApiKey,
-  };
-  if (!vertexAIStatus.configured) {
-    warnings.push('Google AI / Vertex AI not configured — Z.ai fallback unavailable. Set GOOGLE_GENAI_API_KEY.');
-  } else if (vertexAIStatus.provider === 'vertex-ai') {
-    // Vertex AI requires billing — note this as a potential issue
-    warnings.push('Vertex AI endpoint selected (GOOGLE_CLOUD_PROJECT set) — requires billing enabled. If billing is disabled, auto-fallback to AI Studio will be attempted.');
-  }
-
-  // Kal Agent / Middleware check — verify Kal Protocol 2.0 backend
+  // Kal Agent / Middleware check — Strategy 2 fallback for E2 Script Check
+  // Kal Agent is now the PRIMARY fallback (Strategy 2) when Z.ai fails.
+  // Google AI / Vertex AI is demoted to Strategy 3 (last resort).
   const kalBackendInfo = getKalBackendInfo();
+  // Kal health check with extended timeout for Vercel cold starts
+  // The default 5s timeout was too short — Kal Agent may need more time
+  // from Vercel serverless. We still use isKalMiddlewareReady() but with
+  // awareness that timeout from Vercel ≠ timeout from direct access.
   const kalHealth = await isKalMiddlewareReady();
   (checks as any).kal = {
     status: kalHealth.ready ? 'ok' : 'unhealthy',
@@ -233,11 +223,31 @@ export async function GET(request: NextRequest) {
     latencyMs: kalHealth.latencyMs,
     bridgeStatus: kalHealth.bridgeStatus,
     error: kalHealth.error,
+    role: 'strategy2-fallback', // Kal Agent is now Strategy 2 for E2 analysis
   };
   if (!kalHealth.ready) {
-    warnings.push(`Kal backend (${kalHealth.mode}) unreachable — Kal V2 chat will use local Z.ai fallback. Error: ${kalHealth.error || 'unknown'}`);
+    warnings.push(`Kal Agent (Strategy 2 fallback) unreachable from this environment — latency: ${kalHealth.latencyMs}ms, error: ${kalHealth.error || 'unknown'}. Script analysis will fall back to Google AI or Kal Protocol chat.`);
   } else if (kalHealth.mode === 'middleware') {
     warnings.push('Kal Agent not configured (KAL_AGENT_URL not set) — using legacy middleware. Set KAL_AGENT_URL and KAL_API_KEY for authenticated access.');
+  }
+
+  // Google AI / Vertex AI check — Strategy 3 (last resort) fallback provider
+  // Demoted from Strategy 2 because Gemini API is 403 SERVICE_DISABLED.
+  const vertexAIStatus = getVertexAIConfigStatus();
+  (checks as any).googleAI = {
+    configured: vertexAIStatus.configured,
+    provider: vertexAIStatus.provider,
+    project: vertexAIStatus.project,
+    location: vertexAIStatus.location,
+    hasApiKey: vertexAIStatus.hasApiKey,
+    role: 'strategy3-lastresort', // Google AI is now Strategy 3 (last resort)
+  };
+  if (!vertexAIStatus.configured) {
+    // Not a warning anymore — Kal Agent is the primary fallback
+    // Google AI is optional and only used as last resort
+  } else if (vertexAIStatus.provider === 'vertex-ai') {
+    // Vertex AI requires billing — note this as informational
+    warnings.push('Vertex AI endpoint selected (GOOGLE_CLOUD_PROJECT set) — requires billing enabled. Google AI is now Strategy 3 (last resort) behind Kal Agent.');
   }
 
 
