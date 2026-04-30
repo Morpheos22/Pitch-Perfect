@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
-import { getVertexAIConfigStatus, isVertexAIConfigured } from '@/lib/vertex-ai';
 import { isKalMiddlewareReady, getKalBackendInfo } from '@/lib/kal-middleware-client';
 import { prisma } from '@/lib/db';
-import { isStorageConfigured, getStorageBackend, isWorkDriveConfigured, isVercelBlobConfigured } from '@/lib/storage';
+import { isStorageConfigured, getStorageBackend, isVercelBlobConfigured } from '@/lib/storage';
 // isAdminEmail removed — not used in this route
 export const dynamic = 'force-dynamic';
 
@@ -226,28 +225,20 @@ export async function GET(request: NextRequest) {
     role: 'strategy2-fallback', // Kal Agent is now Strategy 2 for E2 analysis
   };
   if (!kalHealth.ready) {
-    warnings.push(`Kal Agent (Strategy 2 fallback) unreachable from this environment — latency: ${kalHealth.latencyMs}ms, error: ${kalHealth.error || 'unknown'}. Script analysis will fall back to Google AI or Kal Protocol chat.`);
+    warnings.push(`Kal Agent (Strategy 2 fallback) unreachable from this environment — latency: ${kalHealth.latencyMs}ms, error: ${kalHealth.error || 'unknown'}. Script analysis will fall back to Kal Protocol chat.`);
   } else if (kalHealth.mode === 'middleware') {
     warnings.push('Kal Agent not configured (KAL_AGENT_URL not set) — using legacy middleware. Set KAL_AGENT_URL and KAL_API_KEY for authenticated access.');
   }
 
-  // Google AI / Vertex AI check — REMOVED from fallback chain (Session 18)
-  // The Gemini API is 403 SERVICE_DISABLED on our GCP project and cannot be
-  // authorized. Kal Agent is the sole fallback after Z.ai. Google AI config
-  // is still shown for informational purposes but is NOT used for analysis.
-  const vertexAIStatus = getVertexAIConfigStatus();
+  // Google AI / Vertex AI — REMOVED from fallback chain.
+  // The Gemini API is 403 SERVICE_DISABLED on our GCP project.
+  // Z.ai (glm-4-plus) is primary, Kal Agent is the sole fallback.
+  // No longer importing vertex-ai to avoid dead dependency in health check.
   (checks as any).googleAI = {
-    configured: vertexAIStatus.configured,
-    provider: vertexAIStatus.provider,
-    project: vertexAIStatus.project,
-    location: vertexAIStatus.location,
-    hasApiKey: vertexAIStatus.hasApiKey,
-    role: 'removed-from-chain', // No longer part of analysis fallback chain
-    reason: 'Gemini API 403 SERVICE_DISABLED — Kal Agent is the sole fallback',
+    configured: false,
+    role: 'removed-from-chain',
+    reason: 'Gemini API 403 SERVICE_DISABLED — removed from fallback chain',
   };
-  if (vertexAIStatus.configured) {
-    warnings.push('Google AI / Vertex AI is configured but REMOVED from the analysis fallback chain. Gemini API is 403 SERVICE_DISABLED on the GCP project. Kal Agent is the sole fallback after Z.ai.');
-  }
 
 
   checks.status = allHealthy ? 'healthy' : 'degraded';

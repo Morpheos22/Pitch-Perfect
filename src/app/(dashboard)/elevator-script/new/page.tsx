@@ -196,7 +196,7 @@ export default function ElevatorScriptNewPage() {
             content: scriptText,
             sessionName,
             targetAudience,
-            targetDuration: parseInt(targetDuration),
+            pitchDuration: parseInt(targetDuration),
           }),
         });
 

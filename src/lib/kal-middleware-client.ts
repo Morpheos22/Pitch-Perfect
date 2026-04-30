@@ -446,18 +446,23 @@ export async function isKalMiddlewareReady(): Promise<{
 
     clearTimeout(timeout);
 
+    // Consume the body to avoid memory leaks, regardless of status
     let bridgeStatus: string | undefined;
-    if (response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
       try {
         const data = await response.json();
         bridgeStatus = data.bridgeStatus ?? data.status;
       } catch {
         // JSON parse failed — still OK, just no bridge status
       }
+    } else if (response.ok) {
+      // Non-JSON 200 response (HTML page from Vercel, CDN redirect, etc.)
+      console.warn(`[KalClient] Health endpoint returned non-JSON content-type: ${contentType}`);
     }
 
     return {
-      ready: response.ok,
+      ready: response.ok && contentType.includes('application/json'),
       latencyMs: Date.now() - start,
       mode,
       bridgeStatus,

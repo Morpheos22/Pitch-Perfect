@@ -29,7 +29,7 @@ export const scriptInputSchema = z.object({
   content: z.string().min(20).max(50000).optional(),
   inputType: z.enum(['text', 'pdf', 'docx']).optional(),
   targetAudience: z.string().max(100).optional(),
-  pitchDuration: z.number().int().min(10).max(600).optional(),
+  pitchDuration: z.coerce.number().int().min(10).max(600).optional(),
   sessionName: z.string().max(200).optional(),
 });
 

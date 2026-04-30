@@ -188,7 +188,7 @@ async function handlePost(request: NextRequest) {
     }
 
 
-    // Run AI analysis with dual-strategy fallback (Z.ai → Vertex AI)
+    // Run AI analysis with dual-strategy fallback (Z.ai → Kal Agent)
     const analysis = await analyzeScriptWithFallback(script, targetAudience, targetDuration);
 
     if (!analysis) {
