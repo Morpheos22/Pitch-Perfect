@@ -360,3 +360,54 @@ Stage Summary:
 - Batch 1 (Dashboard) is prerequisite for testing Batches 2-3
 - No code pushed this task — findings and plan only
 - User consent required before any code changes
+
+---
+Task ID: 19
+Agent: Super Z (main)
+Task: Session 13 — Fix persistent issues: Google SSO 404, country selector, onboarding email, blob upload
+
+Work Log:
+- Read superz.md and worklog.md for full session history context
+- Verified all service handshakes: Clerk ✅, Vercel ✅, Supabase ✅, Z.ai ✅, Kal ✅, GitHub ✅
+- Clerk Native API confirmed ACTIVE (production FAPI returns valid client data)
+- Production health check returns ok
+
+Issue 1 — Google SSO redirect to 404:
+- ROOT CAUSE: sign-up and sign-in pages used flat routes (/sign-up/page.tsx) instead of Clerk's catch-all routes
+- Clerk OAuth (Google SSO) redirects to sub-paths like /sign-up/sso-callback
+- Without catch-all [[...sign-up]] route, Next.js returns 404 for SSO callback URLs
+- FIX: Renamed sign-up/page.tsx → sign-up/[[...sign-up]]/page.tsx and sign-in/page.tsx → sign-in/[[...sign-in]]/page.tsx
+- Added afterSignInUrl="/dashboard" to ClerkProvider in layout.tsx
+- Verified: /sign-up/sso-callback returns 200 (was 404 before)
+
+Issue 2 — Country selector incomplete:
+- COUNTRIES array had only 13 countries + "Other"
+- FIX: Replaced with full list of 193 countries (all recognized nations)
+
+Issue 3 — Onboarding email not sent:
+- Investigated Zoho CRM integration: code path is correct
+- completeOnboardingInCRM() called from both onboarding API and Clerk webhook
+- Zoho OAuth uses region-aware domain derivation (accounts.zoho.eu) — code is correct
+- Outstanding: Zoho client credentials may need regeneration if invalid_client persists
+- Added blob store connectivity check to health endpoint for better diagnostics
+
+Issue 4 — Vercel Blob "could not retrieve client token":
+- Investigated BLOB_READ_WRITE_TOKEN on Vercel: set as vcp_7st6GJERIS4... (encrypted)
+- Found blob store PitchPerfectFiles (***REDACTED_BLOB_STORE_ID***) — Active, Public, lhr1 region
+- contentHint shows type: "blob-read-write-token" — Vercel recognizes it correctly
+- Added BLOB_READ_WRITE_TOKEN pre-check to blob upload route
+- Added detailed error logging with token prefix for diagnostics
+- Added blob store connectivity test to /api/health endpoint
+- Restored BLOB_READ_WRITE_TOKEN on Vercel after investigation
+- Added token to .env.local
+
+Commit: 454f2aa — pushed to origin/main
+Vercel deployment: triggered via deploy hook — BUILDING → READY
+Production verification: all routes return correct status codes
+
+Stage Summary:
+- Google SSO 404 FIXED — catch-all routes now handle OAuth SSO callbacks
+- Country selector FIXED — all 193 countries available
+- Onboarding email — code path verified; Zoho credentials may need regeneration
+- Blob upload — diagnostics improved; BLOB_READ_WRITE_TOKEN restored and pre-check added
+- HEAD: 454f2aa on main
