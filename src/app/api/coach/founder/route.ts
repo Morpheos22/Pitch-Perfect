@@ -54,7 +54,7 @@ PATHWAY CRITERIA:
 Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Evaluate this founder's investor readiness:
 
-
+<user_content>
 Startup Name: ${input.startupName || "Not provided"}
 Industry/Sector: ${input.sector || "Not provided"}
 Stage: ${input.stage || "Pre-seed"}
@@ -62,27 +62,22 @@ Founded: ${input.foundedDate || "Not provided"}
 Team Size: ${input.teamSize || "Not provided"}
 Country: ${input.country || "Not provided"}
 
-
 Has Pitch Deck: ${input.hasDeck ? "Yes" : "No"}
 Deck Score (if available): ${input.deckScore || "Not yet analyzed"}
 
-
 Has Practiced Pitch: ${input.hasPracticed ? "Yes" : "No"}
 Pitch Confidence (self-rated 1-10): ${input.pitchConfidence || "Not rated"}
-
 
 Monthly Revenue: ${input.monthlyRevenue || "Pre-revenue"}
 Active Users: ${input.activeUsers || "N/A"}
 Key Partnerships: ${input.partnerships || "None yet"}
 
-
 Prior Fundraising: ${input.priorFundraising || "None"}
 Target Raise: ${input.targetRaise || "Not specified"}
 
-
 Describe your biggest strength: ${input.biggestStrength || "Not provided"}
 Biggest challenge: ${input.biggestChallenge || "Not provided"}
-
+</user_content>
 
 Provide your assessment as a JSON object:
 {
@@ -138,11 +133,11 @@ Respond ONLY in valid JSON format without any markdown formatting.`,
     user: `Recommend the best pathway for this founder:
 
 
+<user_content>
 Startup: ${input.startupName || "Not provided"}
 Sector: ${input.sector || "Not provided"}
 Stage: ${input.stage || "Pre-seed"}
 Country: ${input.country || "Not provided"}
-
 
 Readiness Scores (if available):
 - Overall: ${input.overallScore || "Not assessed"}
@@ -150,12 +145,11 @@ Readiness Scores (if available):
 - Pitch Confidence: ${input.pitchConfidence || "Not assessed"}
 - Traction: ${input.tractionScore || "Not assessed"}
 
-
 Goals: ${input.goals || "Raise funding, grow network"}
 Timeline: ${input.timeline || "Flexible"}
 Budget for program: ${input.budget || "Limited"}
 Previous startup experience: ${input.previousExperience || "First-time founder"}
-
+</user_content>
 
 Provide your recommendation as JSON:
 {

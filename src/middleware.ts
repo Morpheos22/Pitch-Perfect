@@ -18,8 +18,10 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
-  "/api/user/onboarding",
-  "/api/user/sync",
+  // NOTE: /api/user/onboarding and /api/user/sync removed from public routes.
+  // These routes have their own auth() checks internally, but the middleware
+  // should still enforce auth.protect() to ensure consistent security posture
+  // and prevent unauthenticated requests from reaching the handlers at all.
 ]);
 
 // Routes that should not redirect to onboarding
@@ -119,6 +121,16 @@ export default clerkMiddleware(async (auth, request) => {
       return response;
     }
     // cachedStatus === false → user is valid, continue normally
+  }
+
+  // ── Hard-block dev-only routes in production ──
+  // These routes have their own DEV_MODE guards, but defense-in-depth:
+  // block at the middleware level before any handler code runs.
+  if (pathname.startsWith("/api/dev/") && process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'This endpoint is not available in production.' },
+      { status: 403 },
+    );
   }
 
   // ── Rate Limiting (API routes only) ──

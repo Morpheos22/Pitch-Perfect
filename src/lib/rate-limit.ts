@@ -136,9 +136,16 @@ const RATE_LIMIT_TIERS = {
     identifierType: "both" as const,
     name: "General API",
   },
-  /** Unrestricted — for health checks, webhooks, dev endpoints */
+  /** Dev endpoints — heavily restricted even in dev, blocked in production via middleware */
+  dev: {
+    limit: 5,
+    windowMs: 60_000,
+    identifierType: "ip" as const,
+    name: "Dev Endpoints",
+  },
+  /** Unrestricted — for health checks, webhooks only */
   unrestricted: {
-    limit: 1000,
+    limit: 100,
     windowMs: 60_000,
     identifierType: "ip" as const,
     name: "Unrestricted",
@@ -182,11 +189,15 @@ function getRateLimitConfig(pathname: string): RateLimitConfig {
     return { ...RATE_LIMIT_TIERS.auth };
   }
 
-  // Health checks, webhooks, dev endpoints — effectively unlimited
+  // Dev endpoints — heavily restricted (also hard-blocked in production via middleware)
+  if (pathname.startsWith("/api/dev/")) {
+    return { ...RATE_LIMIT_TIERS.dev };
+  }
+
+  // Health checks, webhooks — effectively unlimited
   if (
     pathname.startsWith("/api/webhooks/") ||
-    pathname === "/api/health" ||
-    pathname.startsWith("/api/dev/")
+    pathname === "/api/health"
   ) {
     return { ...RATE_LIMIT_TIERS.unrestricted };
   }

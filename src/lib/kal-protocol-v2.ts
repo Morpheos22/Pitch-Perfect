@@ -615,7 +615,10 @@ async function generateKalSummary(
 
 You are now generating the final summary after the user has answered your contextual questions. Use the critical thinking framework to produce a structured output.
 
-The user's original script summary: ${inputSummary}
+The user's original script summary:
+<user_content>
+${inputSummary}
+</user_content>
 
 Format your response EXACTLY as:
 SUMMARY: [One sentence stating the core claim and your overall assessment of its strength]

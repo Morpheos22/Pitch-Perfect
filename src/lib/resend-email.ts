@@ -76,7 +76,7 @@ export async function sendOnboardingEmailViaResend(userData: {
         </div>
         <div style="padding: 30px 40px; background-color: #0f172a; border-top: 1px solid #334155;">
           <p style="margin: 0; font-size: 14px; color: #94a3b8;">Questions? We're here to help!</p>
-          <p style="margin: 5px 0 0; font-size: 14px;"><a href="mailto:akanimohdavid@yahoo.com" style="color: #a5b4fc; text-decoration: none;">akanimohdavid@yahoo.com</a></p>
+          <p style="margin: 5px 0 0; font-size: 14px;"><a href="mailto:support@pitchcoachai.tech" style="color: #a5b4fc; text-decoration: none;">support@pitchcoachai.tech</a></p>
         </div>
         <div style="padding: 20px 40px; background-color: #0f172a; text-align: center; border-top: 1px solid #1e293b;">
           <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://automagikal.co.za/" style="color: #a5b4fc; text-decoration: none;">AutomagiKal</a></p>

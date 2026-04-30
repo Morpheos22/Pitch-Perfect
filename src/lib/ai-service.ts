@@ -895,7 +895,9 @@ Respond ONLY in valid JSON format without any markdown formatting.`;
 
   const userPrompt = `${iterationContext}Analyze this pitch deck content thoroughly:
 
+<user_content>
 ${deckContent}
+</user_content>
 
 Provide your analysis as a JSON object with this EXACT structure (no markdown, just pure JSON):
 {
@@ -1196,9 +1198,9 @@ Respond ONLY in valid JSON format without any markdown formatting.`;
 
   const userPrompt = `${iterationContext}Analyze this elevator pitch script:
 
-"""
+<user_content>
 ${scriptText}
-"""
+</user_content>
 
 ${audienceContext}
 ${durationContext}
@@ -1788,9 +1790,11 @@ Respond ONLY in valid JSON format without any markdown formatting.`;
 
   const userPrompt = `${iterationContext}Analyze this full investor pitch.
 
+<user_content>
 Video URL: ${videoUrl}
 Duration: ${Math.floor(duration / 60)}m ${duration % 60}s
 ${deckContext}
+</user_content>
 
 JSON structure (no markdown):
 {
