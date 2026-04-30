@@ -231,8 +231,10 @@ export async function GET(request: NextRequest) {
     warnings.push('Kal Agent not configured (KAL_AGENT_URL not set) — using legacy middleware. Set KAL_AGENT_URL and KAL_API_KEY for authenticated access.');
   }
 
-  // Google AI / Vertex AI check — Strategy 3 (last resort) fallback provider
-  // Demoted from Strategy 2 because Gemini API is 403 SERVICE_DISABLED.
+  // Google AI / Vertex AI check — REMOVED from fallback chain (Session 18)
+  // The Gemini API is 403 SERVICE_DISABLED on our GCP project and cannot be
+  // authorized. Kal Agent is the sole fallback after Z.ai. Google AI config
+  // is still shown for informational purposes but is NOT used for analysis.
   const vertexAIStatus = getVertexAIConfigStatus();
   (checks as any).googleAI = {
     configured: vertexAIStatus.configured,
@@ -240,14 +242,11 @@ export async function GET(request: NextRequest) {
     project: vertexAIStatus.project,
     location: vertexAIStatus.location,
     hasApiKey: vertexAIStatus.hasApiKey,
-    role: 'strategy3-lastresort', // Google AI is now Strategy 3 (last resort)
+    role: 'removed-from-chain', // No longer part of analysis fallback chain
+    reason: 'Gemini API 403 SERVICE_DISABLED — Kal Agent is the sole fallback',
   };
-  if (!vertexAIStatus.configured) {
-    // Not a warning anymore — Kal Agent is the primary fallback
-    // Google AI is optional and only used as last resort
-  } else if (vertexAIStatus.provider === 'vertex-ai') {
-    // Vertex AI requires billing — note this as informational
-    warnings.push('Vertex AI endpoint selected (GOOGLE_CLOUD_PROJECT set) — requires billing enabled. Google AI is now Strategy 3 (last resort) behind Kal Agent.');
+  if (vertexAIStatus.configured) {
+    warnings.push('Google AI / Vertex AI is configured but REMOVED from the analysis fallback chain. Gemini API is 403 SERVICE_DISABLED on the GCP project. Kal Agent is the sole fallback after Z.ai.');
   }
 
 

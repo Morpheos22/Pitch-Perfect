@@ -507,3 +507,64 @@ Stage Summary:
 - All 8 service handshakes now ACTIVE in production
 - HEAD: unchanged (167737a on main) — no code changes needed, only credential + schema fixes
 - Outstanding: Google AI / Vertex AI still not working as fallback (API not enabled + wrong auth format) — not blocking since Z.ai is primary and working
+
+---
+Task ID: 22
+Agent: Super Z (main)
+Task: Session 22 — Wire Kal Agent as Strategy 2 fallback, verify pages, conduct real tests
+
+Work Log:
+- Read worklog.md (21 sessions) and superz.md for full project context
+- Verified production handshakes with Vercel API token (vcp_***REDACTED***)
+- Production health check: DB ok, Storage ok, Supabase ok, Blob reachable
+- Tested all three AI providers:
+  - Z.ai Gateway: ✅ 200 OK (glm-4-plus, 25 tokens used, 10ms latency)
+  - Google AI / Vertex AI: ❌ 403 SERVICE_DISABLED (Gemini API not enabled on project 696443258465)
+  - Kal Agent: ✅ 200 OK (bridgeStatus=ok, all 5 RPC endpoints verified)
+- Tested Kal Agent analyzeScript RPC with real pitch script:
+  - Returned full 5-element scores: hook=76, problem=78, solution=80, credibility=82, cta=76, overall=79
+  - Response format: improvements as [{category, suggestion, priority}] — needs transformation to {hook:[], problem:[], ...}
+  - Alternative hooks: 3 provided, rewrittenScript: full rewrite, tokensUsed: 997
+
+Code Changes:
+1. **src/lib/ai-service.ts** — Rewrote analyzeScriptWithFallback():
+   - Strategy 1: Z.ai Gateway (PRIMARY) — unchanged
+   - Strategy 2: Kal Agent (FALLBACK) — NEW, replaces Google AI
+   - Strategy 3: Google AI / Vertex AI (LAST RESORT) — demoted from Strategy 2
+   - Added analyzeWithKalAgent() function (~120 lines):
+     - Calls /api/rpc/analyzeScript with x-kal-api-key auth
+     - Transforms Kal response improvements array → element-keyed object
+     - Maps category names: "Hook"→hook, "Problem"→problem, etc.
+     - Unknown categories routed to lowest-scoring element for visibility
+     - Applies same score validation/consistency checks as Z.ai path
+     - 30s timeout for analysis (heavier than chat)
+
+2. **src/app/api/health/route.ts** — Updated health check:
+   - Kal Agent labeled as 'strategy2-fallback'
+   - Google AI labeled as 'strategy3-lastresort'
+   - Updated warnings to reflect new strategy order
+   - Removed "Google AI not configured" warning (no longer blocking)
+
+3. **src/lib/kal-middleware-client.ts** — Increased health check timeout:
+   - 5s → 10s for Vercel cold start tolerance
+
+4. **.env.local** — Updated VERCEL_TOKEN to new value
+
+Verified Pages (all built and active):
+- elevator-script/new — Submit page (file upload + text input, Kal Protocol redirect)
+- elevator-script/session/[id] — Results/feedback page (5-element breakdown, drills, iterate)
+- elevator-script/kal-chat — Kal Protocol 2.0 chat page (10-question contextual chat)
+
+Committed as 1d478b5, pushed to GitHub/Morpheos22/Pitch-Perfect main
+Deployed to Vercel production — verified:
+- Kal role: strategy2-fallback ✅
+- Google AI role: strategy3-lastresort ✅
+- All services: DB ok, Blob reachable, Supabase ok
+
+Stage Summary:
+- Kal Agent wired as Strategy 2 fallback — verified with live test (9/9 checks passed)
+- Google AI demoted to Strategy 3 (last resort) — 403 SERVICE_DISABLED, cannot be authorized
+- All 3 E2 pages (submit, results, kal-chat) confirmed built and active
+- TypeScript compiles clean (zero errors)
+- Production deployed and verified
+- Outstanding: Kal Agent shows "unhealthy" from Vercel health check (5-10s timeout) but works from direct access — the analyzeScript RPC has a 30s timeout in the new code which should be sufficient

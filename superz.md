@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 11 — 2026-04-29
+> **Last Updated:** Session 18 — 2026-05-01
 
 ---
 
@@ -27,7 +27,7 @@
 - **Backend:** Next.js API Routes, Prisma ORM 6
 - **Database:** PostgreSQL via Supabase (project ref: `iwbshmshegewmctfucaz`, region: eu-west-2)
 - **Auth:** Clerk (pk_live_ production mode)
-- **AI:** Z.ai Gateway (GLM-4-Plus) with SDK + HTTP fallback
+- **AI:** Z.ai Gateway (GLM-4-Plus) — PRIMARY; Kal Agent — SOLE FALLBACK (Google AI/Vertex AI REMOVED Session 18)
 - **Kal Protocol:** Dual-layer AI behavioral framework (V1 background retry + V2 contextual chat)
 - **Kal Agent:** Authenticated agent at `kal-agent-morpheos255918280.on.adaptive.ai` (PRIMARY)
 - **Kal Middleware:** Legacy unauthenticated fallback at `kal-middleware-morpheos255918280.adaptive.ai`
@@ -120,9 +120,9 @@
 | 4b | **Z.ai Vision** | `GET /api/health/vision` with x-health-token | ✅ ACTIVE (dedicated endpoint at /api/health/vision) |
 | 5 | **Vercel** | REST API project lookup | ✅ ACTIVE |
 | 6 | **GitHub** | API repos lookup with PAT | ✅ ACTIVE |
-| 7 | **Google AI** | `GET /v1beta/models?key=` | ⚠️ Region-blocked from dev (works from Vercel US/EU) |
+| 7 | **Google AI** | `GET /v1beta/models?key=` | ❌ REMOVED — 403 SERVICE_DISABLED on GCP project. Removed from fallback chain Session 18. |
 | 8 | **Clerk Auth** | FAPI `/v1/client?_is_native=1` + CSP `connect-src` | ✅ ACTIVE (Native API enabled + CSP connect-src FIXED in Session 12) |
-| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ⚠️ REGION FIX APPLIED — OAuth hits accounts.zoho.eu. If `invalid_client` persists, credentials need regeneration in Zoho API Console. |
+| 9 | **Zoho CRM** | `POST /oauth/v2/token` with refresh_token | ✅ ACTIVE (Session 18 verified: token refresh works, scope: modules.ALL + settings.ALL + messages.CREATE. OAUTH_SCOPE_MISMATCH on /org is expected — scope lacks org.READ) |
 
 ---
 
@@ -368,8 +368,8 @@
 - [x] **~~Country selector incomplete~~** — FIXED in Session 13. Populated with all 193 countries.
 - [ ] **P0.5: Verify `CLERK_SECRET_KEY` on Vercel starts with `sk_live_`** — If it's a Development `sk_test_` key, replace with Production `sk_live_` key from Clerk Dashboard.
 - [ ] **P0.5: Verify Google OAuth redirect URL** — In Clerk Dashboard (Production) + Google Cloud Console, confirm redirect URL is `https://clerk.pitchcoachai.tech/v1/oauth_callback`
-- [ ] **Zoho CRM OAuth** — Region fix deployed. If `invalid_client` persists, client ID/secret need regeneration at `api-console.zoho.eu`.
-- [ ] **BLOB_READ_WRITE_TOKEN verification** — Token is set on Vercel. After auth is working, test Script Check upload end-to-end. Health check now includes blob store connectivity test.
+- [x] **~~Zoho CRM OAuth~~** — RESOLVED in Session 18. Token refresh WORKS (access_token obtained, scope: ZohoCRM.modules.ALL ZohoCRM.settings.ALL ZohoMail.messages.CREATE). The `OAUTH_SCOPE_MISMATCH` on `/crm/v2/org` is NOT an auth failure — the refresh token simply lacks `ZohoCRM.org.READ` scope. Current scopes are sufficient for lead sync, onboarding email (SendMail API), and CRM module operations. If org.READ is needed in future, regenerate the refresh token at `api-console.zoho.eu` with that scope added. Credentials do NOT need regeneration.
+- [x] **~~BLOB_READ_WRITE_TOKEN verification~~** — VERIFIED in Session 18. Production health check shows blob token configured (vercel_blo...), blob store reachable.
 - [ ] **Clerk Dashboard password settings must match code policy** — min 6 chars, uppercase, lowercase, number, special char (Dashboard-only, cannot be set in code)
 - [ ] **STRIPE_PRICE_FOUNDER and STRIPE_PRICE_FOUNDER_READINESS** — Added to code but env vars may not be set in `.env.local` or Vercel yet.
 - [ ] Test: sign up → verify DB record created → verify Clerk webhook fires → verify CRM sync → verify onboarding email
@@ -378,7 +378,7 @@
 - [x] **~~Z.ai Vision health endpoint~~** — Created `/api/health/vision/route.ts`. Live on production.
 - [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
-- [ ] Google AI / Vertex AI region-blocked from certain dev locations — works from Vercel
+- [x] **~~Google AI / Vertex AI~~** — REMOVED from fallback chain in Session 18. The Gemini API is 403 SERVICE_DISABLED on GCP project 696443258465 and cannot be authorized without Google Cloud Console access. Kal Agent is the sole fallback after Z.ai. Config still shown in health check for informational purposes but NOT used for analysis.
 - [ ] Babel parser issues in test files (TypeScript generics in .test.ts) — pre-existing, not blocking
 
 ---
@@ -484,6 +484,29 @@
 - **Clerk FAPI confirmed working** — Native API returns valid client data with sign_up and sign_in objects
 - **Commit:** `0c5ffd3` pushed to `main`, Vercel deployment READY
 - **HEAD:** `0c5ffd3` on `main`
+
+### Session 18
+- **Full service audit conducted** — all 5 core services tested with real API calls:
+  - Z.ai Gateway: ✅ LIVE (glm-4-plus returns chat completions)
+  - Kal Agent: ✅ LIVE (health ok, analyzeScript returns real scores, coachingChat works)
+  - Zoho CRM OAuth: ✅ LIVE (token refresh succeeds, access_token obtained)
+  - Supabase: ✅ LIVE (production health ok)
+  - Vercel Blob: ✅ LIVE (store reachable)
+  - Google AI/Vertex AI: ❌ DEAD (403 SERVICE_DISABLED)
+- **Zoho CRM credentials VALID** — no regeneration needed. `OAUTH_SCOPE_MISMATCH` on `/crm/v2/org` is expected (refresh token lacks org.READ scope but has modules.ALL + settings.ALL + messages.CREATE)
+- **Kal Agent Integration Spec v1 applied** — updated `analyzeWithKalAgent()` to match spec:
+  - Made `x-kal-api-key` header REQUIRED (throws if not set)
+  - Added optional `userName` and `sessionId` fields per spec
+  - Added spec reference comments
+  - No JSON-RPC envelopes (plain POST with input object)
+- **Google AI/Vertex AI REMOVED from fallback chain** — dead provider, replaced by Kal Agent as sole fallback
+- **Fallback chain is now:** Z.ai (Strategy 1) → Kal Agent (Strategy 2) → Kal Protocol graceful degradation
+- **Feedback analysis and Kal chat pages ALREADY BUILT and active:**
+  - `/elevator-script/session/[id]` — full analysis with KAL_PENDING/KAL_FAILED handling
+  - `/elevator-script/kal-chat` — Kal Protocol 2.0 contextual chat with KalChatWidget
+- **Production health check:** Status `degraded` — AI `status` field missing (Z.ai SDK init issue on Vercel), but direct API calls work
+- **Files modified:** `ai-service.ts`, `health/route.ts`
+- **TypeScript:** Zero errors on `tsc --noEmit`
 
 ### Session 13
 - **4 persistent issues from user — all investigated and 2 fixed at root cause level**
