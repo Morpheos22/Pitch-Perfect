@@ -125,6 +125,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Token format validation: BLOB_READ_WRITE_TOKEN must be a Vercel blob token
+  // (vercel_blob_rw_...) or a Vercel platform token (vcp_...).
+  // A Vercel API token (bearer format) will fail with "could not retrieve client token".
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobToken.startsWith('vercel_blob_rw_') && !blobToken.startsWith('vcp_')) {
+    console.error(`[Blob Upload] BLOB_READ_WRITE_TOKEN has unexpected format (prefix: ${blobToken.substring(0, 12)}...). Expected vercel_blob_rw_* or vcp_*. This usually means a Vercel API token was set instead of a Blob store token.`);
+    return NextResponse.json(
+      { error: "Storage token misconfigured. Please contact support." },
+      { status: 500 }
+    );
+  }
+
   try {
     const result = await handleUpload({
       body: requestBody,

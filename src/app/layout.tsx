@@ -43,6 +43,8 @@ export default function RootLayout({
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
       afterSignOutUrl="/sign-in"
+      afterSignUpUrl="/onboarding"
+      afterSignInUrl="/dashboard"
     >
       <html lang="en" suppressHydrationWarning>
         <body
