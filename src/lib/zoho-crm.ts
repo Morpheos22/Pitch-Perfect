@@ -5,6 +5,10 @@
 // Zoho CRM can send template-based emails to leads, which ensures
 // the CRM is the single source of truth for all user-facing
 // communications during onboarding.
+//
+// If Zoho CRM SendMail fails (OAuth error, API down, misconfigured credentials),
+// Resend fires as a guaranteed-delivery fallback so the user always
+// receives their onboarding welcome email.
 
 import { ZOHO_CONFIG, getAccessToken } from '@/lib/zoho-auth';
 import { sendOnboardingEmailViaResend } from '@/lib/resend-email';
@@ -118,7 +122,7 @@ export async function syncUserToCRM(userData: {
 }
 
 // ============================================
-// ONBOARDING EMAIL VIA ZOHO CRM
+// ONBOARDING EMAIL VIA ZOHO CRM → RESEND FALLBACK
 // ============================================
 //
 // When a new user completes onboarding, we update the CRM lead with
@@ -129,6 +133,9 @@ export async function syncUserToCRM(userData: {
 // - CRM activity history (every email logged against the lead)
 // - Template management (update email content without code changes)
 // - Deliverability via Zoho's email infrastructure
+//
+// If Zoho CRM SendMail fails, Resend is used as a guaranteed-delivery
+// fallback so the user always receives their welcome email.
 //
 // Zoho CRM SendMail API:
 // POST /crm/v2/Leads/{leadId}/actions/send_mail
@@ -232,6 +239,7 @@ export async function completeOnboardingInCRM(userData: {
   firstName?: string;
   lastName?: string;
   country?: string;
+  company?: string;
   clerkId: string;
   primaryUseCase?: string;
 }): Promise<{ leadId: string; isNew: boolean; emailSent: boolean }> {
@@ -249,7 +257,7 @@ export async function completeOnboardingInCRM(userData: {
 
   const result = await createOrUpdateLead(lead);
 
-  // 2. Send onboarding welcome email via Zoho CRM
+  // 2. Send onboarding welcome email via Zoho CRM → Resend fallback
   const emailResult = await sendOnboardingEmail(result.id, {
     email: userData.email,
     firstName: userData.firstName,

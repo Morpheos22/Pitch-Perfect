@@ -111,23 +111,22 @@ export function isBlockedEmail(email: string): boolean {
   const domain = email.split('@')[1]?.toLowerCase();
   if (!domain) return true; // No domain = block
 
-  // Check against blocked domains
+  // Check against known disposable/temporary email domains
   if (BLOCKED_EMAIL_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))) {
     return true;
   }
 
-  // Subdomain detection: block emails where the local part of the domain
-  // has more than one dot (e.g., user@sub.domain.com)
-  // But allow second-level TLDs (e.g., user@company.co.uk)
-  const domainParts = domain.split('.');
-  if (domainParts.length > 2) {
-    // Allow known second-level TLDs (co.uk, com.au, co.za, etc.)
-    const secondLevelTLDs = ['co.uk', 'com.au', 'co.za', 'co.nz', 'co.in', 'com.br', 'com.mx', 'co.jp', 'or.jp', 'ac.uk', 'org.uk'];
-    const lastTwoParts = domainParts.slice(-2).join('.');
-    if (!secondLevelTLDs.includes(lastTwoParts)) {
-      return true; // This looks like a subdomain
-    }
-  }
+  // NOTE: Subdomain blocking was REMOVED because it was too aggressive.
+  // Previously, any email with 3+ domain parts (e.g., user@dept.company.com)
+  // was blocked unless the last two parts matched a known second-level TLD.
+  // This blocked legitimate corporate emails like:
+  //   - user@engineering.google.com
+  //   - user@mail.company.com
+  //   - user@dept.university.edu
+  // The disposable email domain list above is sufficient for blocking abuse.
+  // If subdomain blocking is needed again, consider a warning log instead
+  // of hard blocking — users with corporate subdomains should not be prevented
+  // from signing up.
 
   return false;
 }
