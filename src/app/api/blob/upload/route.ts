@@ -125,16 +125,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Token format validation: BLOB_READ_WRITE_TOKEN must be a Vercel blob token
-  // (vercel_blob_rw_...) or a Vercel platform token (vcp_...).
-  // A Vercel API token (bearer format) will fail with "could not retrieve client token".
+  // Token format validation: BLOB_READ_WRITE_TOKEN should be a Vercel blob token
+  // (vercel_blob_rw_...), a Vercel platform token (vcp_...), or a Vercel-encrypted
+  // env var (eyJ...). The Vercel runtime auto-decrypts encrypted env vars to the
+  // real vercel_blob_rw_... value before the function runs.
+  // We log a warning for unexpected formats but don't hard-block — the @vercel/blob
+  // SDK will return its own error if the token is genuinely invalid.
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobToken.startsWith('vercel_blob_rw_') && !blobToken.startsWith('vcp_')) {
-    console.error(`[Blob Upload] BLOB_READ_WRITE_TOKEN has unexpected format (prefix: ${blobToken.substring(0, 12)}...). Expected vercel_blob_rw_* or vcp_*. This usually means a Vercel API token was set instead of a Blob store token.`);
-    return NextResponse.json(
-      { error: "Storage token misconfigured. Please contact support." },
-      { status: 500 }
-    );
+  const isValidPrefix = blobToken.startsWith('vercel_blob_rw_')
+    || blobToken.startsWith('vcp_')
+    || blobToken.startsWith('eyJ'); // Vercel encrypted env var (auto-decrypted at runtime)
+  if (!isValidPrefix) {
+    console.warn(`[Blob Upload] BLOB_READ_WRITE_TOKEN has unexpected format (prefix: ${blobToken.substring(0, 12)}...). Expected vercel_blob_rw_*, vcp_*, or eyJ*. The upload will proceed but may fail.`);
   }
 
   try {
