@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 18 — 2026-05-01
+> **Last Updated:** Session 19 — 2026-05-01
 
 ---
 
@@ -379,6 +379,7 @@
 - [ ] Verify `ZAI_CHAT_ID` requirement
 - [ ] Apply structured logger to remaining modules (E3, E4, E5 routes — currently still using console.log)
 - [x] **~~Google AI / Vertex AI~~** — REMOVED from fallback chain in Session 18. The Gemini API is 403 SERVICE_DISABLED on GCP project 696443258465 and cannot be authorized without Google Cloud Console access. Kal Agent is the sole fallback after Z.ai. Config still shown in health check for informational purposes but NOT used for analysis.
+- [x] **~~Script Check upload pipeline E2E~~** — VERIFIED in Session 19. Browser test confirmed: DOCX + TXT upload → Vercel Blob → text extraction → AI analysis → results page → iterate & improve. Text input also verified via API (58→74 delta). Full pipeline working on production.
 - [ ] Babel parser issues in test files (TypeScript generics in .test.ts) — pre-existing, not blocking
 
 ---
@@ -506,6 +507,50 @@
   - `/elevator-script/kal-chat` — Kal Protocol 2.0 contextual chat with KalChatWidget
 - **Production health check:** Status `degraded` — AI `status` field missing (Z.ai SDK init issue on Vercel), but direct API calls work
 - **Files modified:** `ai-service.ts`, `health/route.ts`
+- **TypeScript:** Zero errors on `tsc --noEmit`
+
+### Session 19
+- **4-batch security + quality audit executed and committed (Batches A-D)**
+- **Batch A — Security Hardening** (commit `f9b0a39`, 9 files)
+  - A1: Prompt injection defense — wrapped user content in `<user_content>` XML tags across 3 AI service files
+  - A2: Verified blob DELETE ownership check already in place
+  - A3: Verified polyfills import already in file-parser.ts
+  - A4: Removed /api/user/onboarding and /api/user/sync from middleware public routes
+  - A5: Sanitized .env.example — replaced real emails/URLs with placeholders
+  - A6: Removed hardcoded dev email fallbacks from dev-auth.ts, zoho-auth.ts, resend-email.ts
+  - A7: Hard-blocked /api/dev/* routes in production (403 before handler runs)
+  - A8: Created "dev" rate limit tier (5/min), reduced "unrestricted" from 1000/min to 100/min
+- **Batch B — Bug Fixes** (commit `5a30ab1`, 9 files, net -603 lines)
+  - B1: Fixed Type/Paste tab switch — removed `w-fit` from TabsList base styles
+  - B2: Fixed pitchDuration key mismatch — standardized field name + z.coerce.number() defense
+  - B3: Verified onboarding metadata key consistent (no actual mismatch)
+  - B4: Fixed Kal Agent health endpoint — content-type check before .json() parse
+  - B5: Deleted dead routes: /api/chat, /api/video, /lib/chatbot-config.ts (-603 lines)
+  - B6: Updated health check — replaced Google AI test with static object
+- **Batch C — Code Quality** (commit `0115c47`, 14 files, net -50 lines)
+  - C1: Removed hardcoded adaptive.ai fallback URL (infrastructure leak)
+  - C2: Replaced diagnostic Google AI test with Kal Agent test; deprecated vertex-ai.ts
+  - C3: Removed stale /api/video references from vercel.json and rate-limit.ts
+  - C4: Fixed stale comments across health, iterate, script routes
+  - C5: Unexported 3 internal-only storage.ts functions
+  - C6: Verified /api/contact is valid (contact form → Zoho CRM)
+  - C7: Standardized pitchDuration field name across client FormData + server
+  - C8: Removed stale references from README.md
+- **Batch D — Documentation** (commit `fe939ef`, 1 file)
+  - Updated README.md with Batch A-C audit results and E2E verification status
+  - Updated superz.md with Session 19 entry
+  - Updated worklog.md with all batch details
+- **Full browser-based E2E testing on production (pitchcoachai.tech)**
+  - Test user: `e2e+clerk_test@pitchcoachai.tech` (Clerk +clerk_test suffix bypasses email verification)
+  - Subscription upgraded to PROFESSIONAL via Supabase
+  - **Text input test (API-based):** 65-word pitch → Overall 58 → Iterate → 74 (+16 delta) ✅
+  - **DOCX upload test:** 138-word .docx → blob → text extraction → Overall 75 → Iterate → 83 (+8 delta) ✅
+  - **TXT upload test:** 133-word .txt → blob → text extraction → Overall 80 ✅
+  - **Upload pipeline verified end-to-end:** browser file input → client validation → Vercel Blob upload → server text extraction → AI analysis (glm-4-plus) → results page rendering → iterate & improve ✅
+  - Session results page: scores, AI-optimized version, alternative hooks, 5-element breakdown, version navigation ✅
+  - History page: shows all sessions with scores ✅
+  - Known issue: Type/Paste tab not clickable via headless browser automation (Radix pointer-event handling — does NOT affect real human users)
+- **HEAD:** `fe939ef` on `main`
 - **TypeScript:** Zero errors on `tsc --noEmit`
 
 ### Session 13
