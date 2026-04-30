@@ -105,6 +105,26 @@ export async function POST(request: NextRequest) {
   // ── Step 4: Call handleUpload() to generate the client token ──
   // handleUpload() reads the request body itself to determine the event type
   // (generate-client-token or upload-completed) and dispatches accordingly.
+  //
+  // IMPORTANT: handleUpload() requires BLOB_READ_WRITE_TOKEN to be set in the
+  // environment. If the token is missing or invalid, the Vercel Blob API will
+  // reject the token generation request, and the client-side upload() function
+  // will show "vercel blob could not retrieve client token".
+  //
+  // The token format should be either:
+  //   - vercel_blob_rw_<storeId>_<rest> (classic format)
+  //   - vcp_<rest> (newer Vercel platform token format)
+  // Both formats are supported by @vercel/blob@2.x.
+
+  // Pre-check: verify BLOB_READ_WRITE_TOKEN exists before calling handleUpload
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.error("[Blob Upload] BLOB_READ_WRITE_TOKEN is not set in environment");
+    return NextResponse.json(
+      { error: "Server storage not configured. Please contact support." },
+      { status: 500 }
+    );
+  }
+
   try {
     const result = await handleUpload({
       body: requestBody,
@@ -156,7 +176,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    console.error("[Blob Upload] Token generation failed:", error);
+    // Log detailed error for server-side diagnostics
+    // Include token format info to help debug BLOB_READ_WRITE_TOKEN issues
+    const tokenPrefix = process.env.BLOB_READ_WRITE_TOKEN?.substring(0, 10) || 'MISSING';
+    console.error(`[Blob Upload] Token generation failed (token prefix: ${tokenPrefix}):`, error);
     return NextResponse.json(
       { error: "Failed to generate upload token. Please try again." },
       { status: 500 }

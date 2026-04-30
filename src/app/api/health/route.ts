@@ -179,10 +179,30 @@ export async function GET(request: NextRequest) {
   if (checks.ai.visionStatus === 'degraded') warnings.push('Vision model endpoint degraded — E1/E3/E4 may return poor results');
 
 
-  // Vercel Blob check — verify BLOB_READ_WRITE_TOKEN is set for private blob reads
+  // Vercel Blob check — verify BLOB_READ_WRITE_TOKEN is set and blob store is reachable
   const blobTokenSet = !!process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — private blob uploads will fail to be read back');
+  const blobTokenPrefix = process.env.BLOB_READ_WRITE_TOKEN?.substring(0, 10) || 'MISSING';
+  let blobStoreReachable = false;
+  let blobStoreError: string | undefined;
+
+  if (blobTokenSet) {
+    // Test blob store connectivity by listing blobs (0 results, just checks auth)
+    try {
+      const { list } = await import('@vercel/blob');
+      await list({ limit: 1, token: process.env.BLOB_READ_WRITE_TOKEN });
+      blobStoreReachable = true;
+    } catch (err: unknown) {
+      blobStoreError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — blob uploads will fail');
+  if (blobTokenSet && !blobStoreReachable) warnings.push(`BLOB_READ_WRITE_TOKEN is set (${blobTokenPrefix}...) but blob store is unreachable: ${blobStoreError || 'unknown error'}`);
+
   (checks.storage as any).blobTokenConfigured = blobTokenSet;
+  (checks.storage as any).blobTokenPrefix = blobTokenPrefix;
+  (checks.storage as any).blobStoreReachable = blobStoreReachable;
+  (checks.storage as any).blobStoreError = blobStoreError;
 
   // Google AI / Vertex AI check — verify fallback provider config
   const vertexAIStatus = getVertexAIConfigStatus();
