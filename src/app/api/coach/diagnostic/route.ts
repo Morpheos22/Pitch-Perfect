@@ -447,98 +447,43 @@ async function testDatabase(): Promise<TestResult> {
 
 
 // ════════════════════════════════════════════════════════════════
-// TEST 6: Google AI / Gemini Connectivity (Vertex AI or AI Studio)
+// TEST 6: Kal Agent Connectivity (Strategy 2 fallback)
+// Google AI / Vertex AI was removed from the fallback chain.
+// Kal Agent is now the sole fallback after Z.ai.
 // ════════════════════════════════════════════════════════════════
-async function testGoogleAI(): Promise<TestResult> {
+async function testKalAgent(): Promise<TestResult> {
   const start = Date.now();
 
-  const apiKey = process.env.GOOGLE_GENAI_API_KEY || '';
-  const project = process.env.GOOGLE_CLOUD_PROJECT || '';
-  const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
-  const model = 'gemini-2.0-flash';
-
-  if (!apiKey) {
-    return {
-      test: '6. Google AI / Gemini Connectivity',
-      status: 'SKIP',
-      durationMs: Date.now() - start,
-      detail: 'GOOGLE_GENAI_API_KEY not set — cannot test Google AI.',
-    };
-  }
-
-  // Build the correct endpoint based on configuration
-  let endpoint: string;
-  let provider: string;
-  if (project) {
-    endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
-    provider = `Vertex AI (${project}/${location})`;
-  } else {
-    endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    provider = 'AI Studio';
-  }
-
   try {
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'Say hello' }] }],
-        generationConfig: { maxOutputTokens: 32 },
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    const { isKalMiddlewareReady, getKalBackendInfo } = await import('@/lib/kal-middleware-client');
+    const kalInfo = getKalBackendInfo();
+    const kalHealth = await isKalMiddlewareReady();
 
-    const body = await resp.text();
-    let responseSnippet = body.slice(0, 300);
-
-    try {
-      const parsed = JSON.parse(body);
-      const content = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (content) responseSnippet = `Gemini response: "${content.slice(0, 100)}" (HTTP ${resp.status})`;
-      else if (parsed?.error) responseSnippet = `HTTP ${resp.status} — ${parsed.error.message?.slice(0, 200) || JSON.stringify(parsed.error).slice(0, 200)}`;
-      else responseSnippet = `HTTP ${resp.status} — no content in response. Body: ${body.slice(0, 200)}`;
-    } catch {
-      responseSnippet = `HTTP ${resp.status} — non-JSON response: ${responseSnippet}`;
-    }
-
-    // Classify errors with actionable guidance
-    let status: TestResult['status'] = resp.ok ? 'PASS' : 'FAIL';
-    if (!resp.ok) {
-      try {
-        const parsed = JSON.parse(body);
-        const reason = parsed?.error?.details?.[0]?.reason;
-        if (reason === 'API_KEY_SERVICE_BLOCKED') {
-          status = 'WARN';
-          responseSnippet += '\n\n⚠️ Generative Language API not enabled. Enable at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com';
-        } else if (reason === 'BILLING_DISABLED') {
-          status = 'WARN';
-          responseSnippet += '\n\n⚠️ Billing not enabled on the Google Cloud project. Enable at: https://console.developers.google.com/billing/enable?project=' + project;
-        } else if (resp.status === 429) {
-          status = 'WARN';
-          responseSnippet += '\n\n⚠️ Quota exhausted — need to enable billing or use a different project.';
-        } else if (resp.status === 404) {
-          status = 'WARN';
-          responseSnippet += '\n\n⚠️ Model not found — the model name may be incorrect or not available for this endpoint/key.';
-        }
-      } catch { /* ignore */ }
-    }
+    const detail = [
+      `Mode: ${kalInfo.mode}`,
+      `Active URL: ${kalInfo.activeUrl || '(not configured)'}`,
+      `Agent configured: ${kalInfo.agentConfigured}`,
+      `Agent has API key: ${kalInfo.agentHasApiKey}`,
+      `Middleware configured: ${kalInfo.middlewareConfigured}`,
+      `Ready: ${kalHealth.ready}`,
+      `Latency: ${kalHealth.latencyMs}ms`,
+      kalHealth.bridgeStatus ? `Bridge status: ${kalHealth.bridgeStatus}` : null,
+      kalHealth.error ? `Error: ${kalHealth.error}` : null,
+    ].filter(Boolean).join('\n');
 
     return {
-      test: '6. Google AI / Gemini Connectivity',
-      status,
+      test: '6. Kal Agent Connectivity (Strategy 2 fallback)',
+      status: kalHealth.ready ? 'PASS' : (kalInfo.agentConfigured || kalInfo.middlewareConfigured ? 'WARN' : 'SKIP'),
       durationMs: Date.now() - start,
-      detail: `Provider: ${provider}\nModel: ${model}\nKey: ${apiKey.slice(0, 8)}...\n${responseSnippet}`,
-      error: resp.ok ? undefined : `Google AI (${provider}) returned HTTP ${resp.status}`,
+      detail,
+      error: kalHealth.ready ? undefined : (kalHealth.error || 'Kal Agent not reachable'),
     };
   } catch (err: any) {
     return {
-      test: '6. Google AI / Gemini Connectivity',
+      test: '6. Kal Agent Connectivity (Strategy 2 fallback)',
       status: 'FAIL',
       durationMs: Date.now() - start,
-      detail: `Provider: ${provider}\nCould not reach Google AI API.`,
+      detail: 'Could not test Kal Agent connectivity.',
       error: err?.message || String(err),
     };
   }
@@ -575,19 +520,30 @@ async function testE2Pipeline(): Promise<TestResult> {
       analysis = null;
     }
 
-    // Step 2b: Try Strategy 2 — Google AI / Vertex AI (FALLBACK)
+    // Step 2b: Try Strategy 2 — Kal Agent (FALLBACK)
     if (!analysis) {
-      const { analyzeWithVertexAI, isVertexAIConfigured } = await import('@/lib/vertex-ai');
-      if (isVertexAIConfigured()) {
-        try {
-          analysis = await analyzeWithVertexAI(extractedText, 'investor', 60);
-          strategyUsed = 'Strategy 2 (Google AI / Vertex AI — FALLBACK)';
-          steps.push(`✅ Strategy 2 (Vertex AI): succeeded — overall=${analysis.overallScore}, model=${analysis.modelUsed}`);
-        } catch (vertexErr: any) {
-          steps.push(`❌ Strategy 2 (Vertex AI): failed — ${vertexErr?.message?.slice(0, 150)}`);
+      try {
+        const { isKalMiddlewareReady, kalMiddlewareAnalyze } = await import('@/lib/kal-middleware-client');
+        const kalHealth = await isKalMiddlewareReady();
+        if (kalHealth.ready) {
+          const kalResult = await kalMiddlewareAnalyze({
+            script: extractedText,
+            moduleType: 'e2',
+            targetAudience: 'investor',
+            targetDuration: 60,
+          });
+          if (kalResult.success && kalResult.quickFeedback) {
+            // Kal middleware returned partial analysis — mark as Strategy 2
+            strategyUsed = 'Strategy 2 (Kal Agent — FALLBACK)';
+            steps.push(`✅ Strategy 2 (Kal Agent): succeeded — got feedback response`);
+          } else {
+            steps.push(`⚠️ Strategy 2 (Kal Agent): reached but no useful analysis returned`);
+          }
+        } else {
+          steps.push(`⏭️ Strategy 2 (Kal Agent): skipped — not reachable (${kalHealth.error || 'unknown'})`);
         }
-      } else {
-        steps.push('⏭️ Strategy 2 (Vertex AI): skipped — not configured');
+      } catch (kalErr: any) {
+        steps.push(`❌ Strategy 2 (Kal Agent): failed — ${kalErr?.message?.slice(0, 150)}`);
       }
     }
 
@@ -597,7 +553,7 @@ async function testE2Pipeline(): Promise<TestResult> {
         status: 'FAIL',
         durationMs: Date.now() - start,
         detail: steps.join('\n'),
-        error: 'All AI strategies failed — neither Google AI nor Z.ai Gateway could analyze the script.',
+        error: 'All AI strategies failed — Z.ai Gateway and Kal Agent could not analyze the script.',
       };
     }
 
@@ -694,7 +650,7 @@ export async function GET(request: NextRequest) {
   results.push(await testVercelBlob());
   results.push(await testPdfParse());
   results.push(await testDatabase());
-  results.push(await testGoogleAI());
+  results.push(await testKalAgent());
   results.push(await testE2Pipeline());
 
 

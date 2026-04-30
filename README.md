@@ -72,7 +72,6 @@ src/
 │   │   └── founder/             # E5: Founder readiness, pathway, research, narration
 │   ├── error.tsx                # Root error boundary
 │   └── api/
-│       ├── chat/                # General chatbot
 │       ├── kal/chat/            # Kal Protocol 2.0 contextual chat
 │       ├── kal/prewarm/         # Z.ai gateway pre-warm
 │       ├── coach/deck/          # E1 AI analysis
@@ -95,7 +94,6 @@ src/
     ├── kal-protocol.ts          # Kal Protocol 1.0 (background retry)
     ├── kal-protocol-v2.ts       # Kal Protocol 2.0 (contextual chat, 702 lines)
     ├── kal-middleware-client.ts # Adaptive middleware RPC client (297 lines)
-    ├── chatbot-config.ts        # Chatbot configuration
     ├── clerk-config.ts          # Clerk auth configuration
     ├── payment-service.ts       # Payment processing
     ├── entitlement.ts           # Feature access / subscription logic (with grace period)

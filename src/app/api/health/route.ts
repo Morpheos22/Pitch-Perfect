@@ -204,8 +204,8 @@ export async function GET(request: NextRequest) {
   (checks.storage as any).blobStoreError = blobStoreError;
 
   // Kal Agent / Middleware check — Strategy 2 fallback for E2 Script Check
-  // Kal Agent is now the PRIMARY fallback (Strategy 2) when Z.ai fails.
-  // Google AI / Vertex AI is demoted to Strategy 3 (last resort).
+  // Kal Agent is the sole fallback (Strategy 2) when Z.ai fails.
+  // Google AI / Vertex AI has been removed from the fallback chain.
   const kalBackendInfo = getKalBackendInfo();
   // Kal health check with extended timeout for Vercel cold starts
   // The default 5s timeout was too short — Kal Agent may need more time

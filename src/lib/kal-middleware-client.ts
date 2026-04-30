@@ -50,7 +50,7 @@
 /**
  * Kal Agent URL — the authenticated, preferred service.
  * Set via KAL_AGENT_URL env var.
- * Example: https://kal-agent-morpheos255918280.on.adaptive.ai
+ * Example: https://your-kal-agent.on.adaptive.ai
  */
 const KAL_AGENT_URL = process.env.KAL_AGENT_URL || '';
 
@@ -65,10 +65,9 @@ const KAL_API_KEY = process.env.KAL_API_KEY || '';
  * Kal Middleware URL — the legacy, unauthenticated fallback.
  * Only used when KAL_AGENT_URL is not configured.
  * Set via KAL_MIDDLEWARE_URL env var.
+ * SECURITY: No hardcoded fallback — the env var is REQUIRED.
  */
-const KAL_MIDDLEWARE_BASE_URL =
-  process.env.KAL_MIDDLEWARE_URL ||
-  'https://kal-middleware-morpheos255918280.adaptive.ai';
+const KAL_MIDDLEWARE_BASE_URL = process.env.KAL_MIDDLEWARE_URL || '';
 
 /**
  * Determine which backend to use.

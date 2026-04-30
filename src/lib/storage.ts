@@ -84,8 +84,8 @@ let tokenExpiresAt = 0;
 // CONFIGURATION CHECK
 // ============================================
 
-/** Check if Zoho WorkDrive is properly configured */
-export function isWorkDriveConfigured(): boolean {
+/** Check if Zoho WorkDrive is properly configured (internal use only) */
+function isWorkDriveConfigured(): boolean {
   return !!(
     WORKDRIVE_CLIENT_ID &&
     WORKDRIVE_CLIENT_SECRET &&
@@ -223,7 +223,7 @@ export interface UploadResult {
  * @param folderId - WorkDrive folder ID to upload into
  * @returns Object with file ID, name, and download URL
  */
-export async function uploadToWorkDrive(
+async function uploadToWorkDrive(
   file: Buffer,
   fileName: string,
   folderId: string
@@ -283,7 +283,7 @@ export async function uploadToWorkDrive(
  * @param fileId - The WorkDrive file ID
  * @returns The download URL string
  */
-export function getWorkDriveFileUrl(fileId: string): string {
+function getWorkDriveFileUrl(fileId: string): string {
   return `https://workdrive.zoho.com/api/v1/download/${fileId}`;
 }
 

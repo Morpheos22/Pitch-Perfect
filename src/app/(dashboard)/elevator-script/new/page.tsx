@@ -176,7 +176,7 @@ export default function ElevatorScriptNewPage() {
         formData.append("fileName", file.name);
         formData.append("sessionName", sessionName);
         formData.append("targetAudience", targetAudience);
-        formData.append("targetDuration", targetDuration);
+        formData.append("pitchDuration", targetDuration);
 
         const response = await fetch("/api/coach/script", {
           method: "POST",

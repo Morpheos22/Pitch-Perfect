@@ -1420,7 +1420,7 @@ async function analyzeWithKalAgent(
   }
 
   // Per Kal Agent Integration Spec v1:
-  // - Base URL: https://kal-agent-morpheos255918280.on.adaptive.ai
+  // - Base URL: (configured via KAL_AGENT_URL env var)
   // - Header: x-kal-api-key (REQUIRED on every call)
   // - NO JSON-RPC envelopes — POST the input object directly
   // - Method name goes in the URL path: /api/rpc/<methodName>

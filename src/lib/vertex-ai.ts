@@ -1,9 +1,13 @@
 // src/lib/vertex-ai.ts
-// Google AI (Gemini) integration for Pitch Perfect — FALLBACK for E2 Script Check
+// ⚠️ DEPRECATED — Google AI / Vertex AI is REMOVED from the analysis fallback chain.
+// The Gemini API is 403 SERVICE_DISABLED on our GCP project and cannot be authorized.
+// Z.ai (glm-4-plus) is now the primary strategy, with Kal Agent as the sole fallback.
+// This file is retained only for the standalone e2e test script (scripts/e2e-script-check.ts).
+// Do NOT add new callers — this module will be removed in a future cleanup.
 //
-// AI Strategy Chain for E2 Script Check:
+// Previous strategy chain (deprecated):
 //   Strategy 1: Z.ai Gateway (GLM models) — PRIMARY for ALL modules
-//   Strategy 2: Google AI / Vertex AI (this module) — FALLBACK for E2
+//   Strategy 2: Google AI / Vertex AI (this module) — REMOVED from fallback chain
 //
 // ENDPOINT ROUTING:
 //   If GOOGLE_CLOUD_PROJECT is set → Vertex AI endpoint:

@@ -54,13 +54,13 @@ async function handlePost(request: NextRequest) {
       const blobFileName = formData.get("fileName") as string | null;
       sessionName = formData.get("sessionName") as string | null;
       targetAudience = (formData.get("targetAudience") as string) || undefined;
-      const rawDurationStr = formData.get("targetDuration") as string | null;
+      const rawDurationStr = formData.get("pitchDuration") as string | null;
       const rawDuration = rawDurationStr ? parseInt(rawDurationStr, 10) : NaN;
       // Clamp to Zod schema bounds (min 10, max 600) — parity with JSON path
       if (Number.isFinite(rawDuration)) {
         targetDuration = Math.max(10, Math.min(600, rawDuration));
         if (rawDuration !== targetDuration) {
-          log.debug('FormData targetDuration clamped:', rawDuration, '→', targetDuration);
+          log.debug('FormData pitchDuration clamped:', rawDuration, '→', targetDuration);
         }
       } else {
         targetDuration = undefined;

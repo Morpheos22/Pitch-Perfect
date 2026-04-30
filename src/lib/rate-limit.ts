@@ -159,11 +159,7 @@ const RATE_LIMIT_TIERS = {
  */
 function getRateLimitConfig(pathname: string): RateLimitConfig {
   // AI analysis routes (most expensive — limit aggressively)
-  if (
-    pathname.startsWith("/api/coach/") ||
-    pathname === "/api/video" ||
-    pathname.startsWith("/api/video/")
-  ) {
+  if (pathname.startsWith("/api/coach/")) {
     return { ...RATE_LIMIT_TIERS.ai };
   }
 

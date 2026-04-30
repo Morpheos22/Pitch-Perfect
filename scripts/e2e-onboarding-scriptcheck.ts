@@ -202,7 +202,7 @@ async function stage3() {
     const { res, ms } = await timedFetch(`${PRODUCTION}/api/coach/script`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "Test script content for analysis", targetAudience: "investors", targetDuration: "60" }),
+      body: JSON.stringify({ content: "Test script content for analysis", targetAudience: "investors", pitchDuration: 60 }),
     });
     [401, 403].includes(res.status)
       ? pass("3.2 Coach script POST auth-protected", `HTTP ${res.status}`, ms)

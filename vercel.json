@@ -6,9 +6,6 @@
     "src/app/api/coach/**": {
       "maxDuration": 60
     },
-    "src/app/api/video/**": {
-      "maxDuration": 60
-    },
     "src/app/api/user/**": {
       "maxDuration": 30
     },

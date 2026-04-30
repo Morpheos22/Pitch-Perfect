@@ -129,7 +129,7 @@ async function handlePost(request: NextRequest) {
     });
     const nextVersion = (latestVersion?.version || parentScript.version || 1) + 1;
 
-    // Run AI analysis with dual-strategy fallback (Z.ai → Vertex AI)
+    // Run AI analysis with dual-strategy fallback (Z.ai → Kal Agent)
     const analysis = await analyzeScriptWithFallback(
       scriptText,
       parentScript.targetAudience || undefined,
