@@ -107,6 +107,12 @@ const nextConfig: any = {
                 'https://clerk.telemetry.cloudflare.com',
                 'https://clerk.com',
                 'https://z.ai',
+                // @vercel/blob client upload: the SDK's upload() function sends the
+                // file to https://vercel.com/api/blob (default VERCEL_BLOB_API_URL).
+                // Without this in connect-src, the browser blocks the PUT request
+                // due to CSP violation — this was the root cause of Script Check
+                // uploads silently failing (no blob URL = no feedback to give).
+                'https://vercel.com',
                 'https://blob.vercel-storage.com',
                 'https://*.blob.vercel-storage.com',
                 'https://*.public.blob.vercel-storage.com',
