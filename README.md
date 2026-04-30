@@ -4,12 +4,13 @@ AI-powered pitch coaching platform for founders and entrepreneurs — built by A
 
 ---
 
-## Current Status (Last Updated: Session 4 — Full Codebase Audit Complete)
+## Current Status (Last Updated: Session 7 — Security Hardening + Bug Fixes + E2E Verified)
 
 **Deployment: LIVE** at [pitchcoachai.tech](https://pitchcoachai.tech)
 **Health Check:** `{"status":"ok"}` at `/api/health`
 **TypeScript:** Zero errors (strict mode)
-**Completion:** ~95%
+**Completion:** ~97%
+**Last E2E Test:** Full browser test passed (DOCX + TXT upload, text input, AI analysis, iterate, version navigation)
 
 ### What's Working
 - Full Next.js 16 deployment on Vercel (App Router + React 19)
@@ -33,6 +34,11 @@ AI-powered pitch coaching platform for founders and entrepreneurs — built by A
 ### What's NOT Working Yet
 - `CLERK_WEBHOOK_SECRET` missing — new user sign-ups won't auto-create DB records (user must create webhook in Clerk Dashboard)
 - Jest test suite has pre-existing Babel config issue (TypeScript syntax not parsed correctly)
+
+### Known Issues (Low Priority)
+- Z.ai model names: only `glm-4-plus` works; `glm-4-flash` and `glm-4` return errors. Mitigated by deduplication in `executeWithFallback()`.
+- Clerk deprecation warning: `afterSignUpUrl` prop should be replaced with `fallbackRedirectUrl`/`forceRedirectUrl`
+- `/api/billing/portal` has no UI trigger (feature addition, out of scope for current pass)
 
 ---
 
@@ -274,6 +280,46 @@ npm run test       # Run tests
 ### Batch 6 — Documentation & Deployment (COMPLETED)
 - Updated worklog.md and README.md
 - Verified: tsc --noEmit zero errors, tsc --noEmit --strict zero errors
+
+### Batch 7 — Security Hardening, Bug Fixes, Code Quality (COMMITTED)
+Three batches committed and pushed to origin/main:
+
+**Batch A — Security Hardening** (commit `f9b0a39`, 9 files)
+- A1: Prompt injection defense — wrapped user content in `<user_content>` XML tags across 3 AI service files
+- A2: Verified blob DELETE ownership check already in place
+- A3: Verified polyfills import already in file-parser.ts
+- A4: Removed /api/user/onboarding and /api/user/sync from middleware public routes
+- A5: Sanitized .env.example — replaced real emails/URLs with placeholders
+- A6: Removed hardcoded dev email fallbacks from dev-auth.ts, zoho-auth.ts, resend-email.ts
+- A7: Hard-blocked /api/dev/* routes in production (403 before handler runs)
+- A8: Created "dev" rate limit tier (5/min), reduced "unrestricted" from 1000/min to 100/min
+
+**Batch B — Bug Fixes** (commit `5a30ab1`, 9 files, net -603 lines)
+- B1: Fixed Type/Paste tab switch — removed `w-fit` from TabsList base styles
+- B2: Fixed pitchDuration key mismatch — standardized field name + z.coerce.number() defense
+- B3: Verified onboarding metadata key consistent (no actual mismatch)
+- B4: Fixed Kal Agent health endpoint — content-type check before .json() parse
+- B5: Deleted dead routes: /api/chat, /api/video, /lib/chatbot-config.ts (-603 lines)
+- B6: Updated health check — replaced Google AI test with static object
+
+**Batch C — Code Quality** (commit `0115c47`, 14 files, net -50 lines)
+- C1: Removed hardcoded adaptive.ai fallback URL (infrastructure leak)
+- C2: Replaced diagnostic Google AI test with Kal Agent test; deprecated vertex-ai.ts
+- C3: Removed stale /api/video references from vercel.json and rate-limit.ts
+- C4: Fixed stale comments across health, iterate, script routes
+- C5: Unexported 3 internal-only storage.ts functions
+- C6: Verified /api/contact is valid (contact form → Zoho CRM)
+- C7: Standardized pitchDuration field name across client FormData + server
+- C8: Removed stale references from README.md
+
+**E2E Verification** (browser-based, production at pitchcoachai.tech)
+- DOCX upload: file → blob → text extraction → AI analysis → results page ✅
+- TXT upload: same pipeline ✅
+- Text input (via API): analysis + iterate ✅
+- Iterate & Improve: DOCX 75→83, Text 58→74 ✅
+- Version navigation (v1 ↔ v2) ✅
+- History page with scores ✅
+- AI model: glm-4-plus (direct), ~10-12s response time ✅
 
 ---
 
