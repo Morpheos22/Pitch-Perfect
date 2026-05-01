@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   authors: [{ name: "Pitch Perfect" }],
   icons: {
     icon: "/favicon.png",
-    apple: "/logo.png",
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
     title: "Pitch Perfect - Master Your Pitch",

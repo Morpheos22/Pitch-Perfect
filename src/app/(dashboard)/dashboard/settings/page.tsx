@@ -24,6 +24,11 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  AtSign,
+  Building2,
+  Briefcase,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -47,6 +52,10 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [role, setRole] = useState("");
+  const [socialUrl, setSocialUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -80,6 +89,11 @@ export default function SettingsPage() {
   const handleEdit = () => {
     setFirstName(clerkUser?.firstName || "");
     setLastName(clerkUser?.lastName || "");
+    const meta = (clerkUser?.unsafeMetadata || {}) as Record<string, string>;
+    setUsername((meta.username as string) || "");
+    setOrganization((meta.organization as string) || "");
+    setRole((meta.role as string) || "");
+    setSocialUrl((meta.socialUrl as string) || "");
     setEditing(true);
     setSaveMessage(null);
   };
@@ -87,17 +101,59 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     setSaveMessage(null);
+
+    // Validate username (optional, but if provided must be alphanumeric + underscores, 3-30 chars)
+    const trimmedUsername = username.trim();
+    if (trimmedUsername && !/^[a-zA-Z0-9_]{3,30}$/.test(trimmedUsername)) {
+      setSaveMessage({ type: "error", text: "Username must be 3-30 characters: letters, numbers, and underscores only." });
+      setSaving(false);
+      return;
+    }
+
+    // Validate social URL (optional, but if provided must start with http:// or https://)
+    const trimmedSocialUrl = socialUrl.trim();
+    if (trimmedSocialUrl && !/^https?:\/\/.+/.test(trimmedSocialUrl)) {
+      setSaveMessage({ type: "error", text: "Social URL must start with http:// or https://" });
+      setSaving(false);
+      return;
+    }
+
     try {
+      // Update firstName/lastName via Clerk's native fields
       await clerkUser?.update({
         firstName: firstName.trim() || undefined,
         lastName: lastName.trim() || undefined,
+        unsafeMetadata: {
+          ...clerkUser?.unsafeMetadata,
+          username: trimmedUsername || "",
+          organization: organization.trim(),
+          role: role.trim(),
+          socialUrl: trimmedSocialUrl || "",
+        },
       });
-      setSaveMessage({ type: "success", text: "Name updated successfully." });
+
+      // Sync profile data to Zoho CRM via dedicated profile API (fire-and-forget)
+      fetch("/api/user/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: firstName.trim() || undefined,
+          lastName: lastName.trim() || undefined,
+          username: trimmedUsername || undefined,
+          organization: organization.trim() || undefined,
+          role: role.trim() || undefined,
+          socialUrl: trimmedSocialUrl || undefined,
+        }),
+      }).catch(() => {
+        // Non-critical — CRM sync is best-effort
+      });
+
+      setSaveMessage({ type: "success", text: "Profile updated successfully." });
       setEditing(false);
       // Refresh user data
       fetchUserData();
     } catch {
-      setSaveMessage({ type: "error", text: "Failed to update name. Please try again." });
+      setSaveMessage({ type: "error", text: "Failed to update profile. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -275,9 +331,10 @@ export default function SettingsPage() {
 
               <Separator />
 
-              {/* Edit Name Form */}
+              {/* Profile Details */}
               {editing ? (
                 <div className="space-y-4">
+                  {/* First Name / Last Name — 2-column grid */}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">First Name</label>
@@ -296,6 +353,65 @@ export default function SettingsPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Username — full width */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-1.5">
+                      <AtSign className="w-3.5 h-3.5 text-muted-foreground" />
+                      Username
+                      <span className="text-muted-foreground font-normal">(optional)</span>
+                    </label>
+                    <Input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="e.g. jane_doe"
+                    />
+                    <p className="text-xs text-muted-foreground">3-30 characters, letters, numbers, and underscores only.</p>
+                  </div>
+
+                  {/* Organization / Role — 2-column grid */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        Organization / Company
+                        <span className="text-muted-foreground font-normal">(optional)</span>
+                      </label>
+                      <Input
+                        value={organization}
+                        onChange={(e) => setOrganization(e.target.value)}
+                        placeholder="e.g. Acme Inc."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-muted-foreground" />
+                        Role / Occupation
+                        <span className="text-muted-foreground font-normal">(optional)</span>
+                      </label>
+                      <Input
+                        value={role}
+                        onChange={(e) => setRole(e.target.value)}
+                        placeholder="e.g. CEO"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Social URL — full width */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                      Social Media / Portfolio URL
+                      <span className="text-muted-foreground font-normal">(optional)</span>
+                    </label>
+                    <Input
+                      value={socialUrl}
+                      onChange={(e) => setSocialUrl(e.target.value)}
+                      placeholder="https://yourportfolio.com"
+                    />
+                    <p className="text-xs text-muted-foreground">Must start with http:// or https://</p>
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <Button onClick={handleSave} disabled={saving} className="gap-2">
                       <Save className="w-4 h-4" />
@@ -313,11 +429,68 @@ export default function SettingsPage() {
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={handleEdit}>
-                    Edit Name
-                  </Button>
-                </div>
+                <>
+                  {/* Read-only profile details */}
+                  <div className="space-y-3">
+                    {/* Username */}
+                    {(() => {
+                      const meta = (clerkUser?.unsafeMetadata || {}) as Record<string, string>;
+                      const displayUsername = (meta.username as string) || "";
+                      const displayOrg = (meta.organization as string) || "";
+                      const displayRole = (meta.role as string) || "";
+                      const displaySocial = (meta.socialUrl as string) || "";
+                      return (
+                        <>
+                          {displayUsername && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <AtSign className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="text-muted-foreground">Username:</span>
+                              <span>@{displayUsername}</span>
+                            </div>
+                          )}
+                          {displayOrg && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="text-muted-foreground">Organization:</span>
+                              <span>{displayOrg}</span>
+                            </div>
+                          )}
+                          {displayRole && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="text-muted-foreground">Role:</span>
+                              <span>{displayRole}</span>
+                            </div>
+                          )}
+                          {displaySocial && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="text-muted-foreground">Social:</span>
+                              <a
+                                href={displaySocial}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline flex items-center gap-1"
+                              >
+                                {displaySocial}
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          )}
+                          {!displayUsername && !displayOrg && !displayRole && !displaySocial && (
+                            <p className="text-sm text-muted-foreground italic">No additional profile info added yet.</p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={handleEdit}>
+                      Edit Profile
+                    </Button>
+                  </div>
+                </>
               )}
 
               {saveMessage && !editing && (

@@ -34,6 +34,10 @@ interface ZohoLead {
   Last_Session_Date?: string;
   Last_Session_Score?: number;
   Customer_Type?: 'Free' | 'Paid' | 'Gifted';
+  // Profile fields
+  username?: string;
+  role?: string;
+  socialUrl?: string;
 }
 
 async function zohoApiRequest(
@@ -104,6 +108,9 @@ export async function syncUserToCRM(userData: {
   company?: string;
   clerkId: string;
   primaryUseCase?: string;
+  username?: string;
+  role?: string;
+  socialUrl?: string;
 }): Promise<{ leadId: string; isNew: boolean }> {
   const lead: ZohoLead = {
     email: userData.email,
@@ -113,7 +120,7 @@ export async function syncUserToCRM(userData: {
     company: userData.company,
     leadSource: 'App Registration',
     leadStatus: 'New',
-    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}`,
+    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}${userData.username ? ` | Username: ${userData.username}` : ''}${userData.role ? ` | Role: ${userData.role}` : ''}${userData.socialUrl ? ` | Social: ${userData.socialUrl}` : ''}`,
     Customer_Type: 'Free',
   };
 
@@ -184,7 +191,7 @@ export async function sendOnboardingEmail(leadId: string, userData: {
               <tr><td style="padding: 4px 0; color: #94a3b8;">Free</td><td style="padding: 4px 0; text-align: right;">$0/mo — 2 deck + 2 script sessions</td></tr>
               <tr><td style="padding: 4px 0; color: #94a3b8;">Starter</td><td style="padding: 4px 0; text-align: right;">$29/mo — Deck, Script, Live, Founder</td></tr>
               <tr style="background-color: rgba(99,102,241,0.15);"><td style="padding: 4px 0; color: #a5b4fc; font-weight: 600;">Professional</td><td style="padding: 4px 0; text-align: right; color: #a5b4fc; font-weight: 600;">$79/mo — Most popular, all modules</td></tr>
-              <tr><td style="padding: 4px 0; color: #94a3b8;">Enterprise</td><td style="padding: 4px 0; text-align: right;">$199/mo — Unlimited everything</td></tr>
+              <tr><td style="padding: 4px 0; color: #94a3b8;">Enterprise</td><td style="padding: 4px 0; text-align: right;">$400 one-time — Lifetime + Network</td></tr>
             </table>
           </div>
         </div>
@@ -255,6 +262,9 @@ export async function completeOnboardingInCRM(userData: {
   company?: string;
   clerkId: string;
   primaryUseCase?: string;
+  username?: string;
+  role?: string;
+  socialUrl?: string;
 }): Promise<{ leadId: string; isNew: boolean; emailSent: boolean }> {
   // 1. Update CRM lead with complete profile
   const lead: ZohoLead = {
@@ -264,7 +274,7 @@ export async function completeOnboardingInCRM(userData: {
     country: userData.country,
     leadSource: 'App Registration',
     leadStatus: 'Contacted', // Upgraded from 'New' — user has completed onboarding
-    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}`,
+    description: `Clerk ID: ${userData.clerkId}${userData.primaryUseCase ? ` | Use Case: ${userData.primaryUseCase}` : ''}${userData.username ? ` | Username: ${userData.username}` : ''}${userData.role ? ` | Role: ${userData.role}` : ''}${userData.socialUrl ? ` | Social: ${userData.socialUrl}` : ''}`,
     Customer_Type: 'Free',
   };
 

@@ -102,10 +102,10 @@ const plans = [
   {
     id: "ENTERPRISE" as PlanId,
     name: "Enterprise",
-    price: 199,
-    priceDisplay: "$199",
-    period: "/month",
-    description: "Unlimited access for accelerators, funds, and serious founders.",
+    price: 400,
+    priceDisplay: "$400",
+    period: "one-time",
+    description: "Lifetime access with inclusion in the Automagikal Founder and Partner Network. Hands-on support and assistance.",
     icon: Crown,
     color: "text-amber-600",
     bgColor: "bg-amber-500/10",
@@ -114,8 +114,10 @@ const plans = [
       { label: "Pitch Deck Analyses", value: "Unlimited" },
       { label: "Script Coach Sessions", value: "Unlimited" },
       { label: "Live Pitch Sessions", value: "Unlimited" },
-      { label: "Full Pitch Sessions", value: "10" },
+      { label: "Full Pitch Sessions", value: "Unlimited" },
       { label: "Founder Coaching (E5)", value: true },
+      { label: "Automagikal Network Access", value: true },
+      { label: "Hands-On Support & Assistance", value: true },
     ],
   },
 ];
@@ -126,7 +128,7 @@ const comparisonRows: PlanFeature[] = [
   { label: "Pitch Deck Analyses (E1)", free: "2", starter: "5", pro: "15", enterprise: "Unlimited" },
   { label: "Script Coach Sessions (E2)", free: "2", starter: "10", pro: "30", enterprise: "Unlimited" },
   { label: "Live Pitch Sessions (E3)", free: false, starter: "3", pro: "10", enterprise: "Unlimited" },
-  { label: "Full Pitch Sessions (E4)", free: false, starter: false, pro: "3", enterprise: "10" },
+  { label: "Full Pitch Sessions (E4)", free: false, starter: false, pro: "3", enterprise: "Unlimited" },
   { label: "Founder Coaching (E5)", free: false, starter: false, pro: false, enterprise: true },
   { label: "10-Slide Framework Scoring", free: true, starter: true, pro: true, enterprise: true },
   { label: "Visual Design Audit", free: true, starter: true, pro: true, enterprise: true },
@@ -146,6 +148,8 @@ const comparisonRows: PlanFeature[] = [
   { label: "Priority Support", free: false, starter: false, pro: true, enterprise: true },
   { label: "Dedicated Support", free: false, starter: false, pro: false, enterprise: true },
   { label: "Custom Integrations", free: false, starter: false, pro: false, enterprise: true },
+  { label: "Automagikal Network Access", free: false, starter: false, pro: false, enterprise: true },
+  { label: "Hands-On Support & Assistance", free: false, starter: false, pro: false, enterprise: true },
 ];
 
 // ─── Helper ──────────────────────────────────────────────────────────
@@ -170,7 +174,12 @@ export default function PricingPage() {
       toast.error("Please enter a gift code");
       return;
     }
-    toast.success("Gift code applied successfully!");
+    if (giftCode.trim().toLowerCase() === "small axe") {
+      toast.success("Gift code applied! 20% discount unlocked.");
+    } else {
+      toast.error("Invalid gift code. Please check and try again.");
+      return;
+    }
     setGiftCode("");
   };
 
@@ -297,7 +306,7 @@ export default function PricingPage() {
                 </h3>
               </div>
               <p className="text-sm text-muted-foreground mb-4">
-                Enter your gift code to unlock free access. For influencers, students,
+                Enter your gift code to unlock a discount. For influencers, students,
                 and incubator cohorts.
               </p>
               <div className="flex gap-2">
@@ -397,15 +406,6 @@ export default function PricingPage() {
                   <div className="text-left">
                     <p className="text-xs font-semibold text-foreground">Stripe</p>
                     <p className="text-[10px] text-muted-foreground">International</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
-                  <div className="w-8 h-8 rounded bg-[#D7282D] flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">Z</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="text-xs font-semibold text-foreground">Zoho Billing</p>
-                    <p className="text-[10px] text-muted-foreground">India</p>
                   </div>
                 </div>
               </div>
