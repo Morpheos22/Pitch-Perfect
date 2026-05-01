@@ -377,21 +377,33 @@ export async function getZai(): Promise<ZAIInstance | null> {
 // ============================================
 
 export const AI_MODELS = {
-  // ── TEXT MODELS (upgraded 2026-05-01 — best performance, cost no object) ──
-  // glm-5.1 = Z.ai flagship, matches Claude Opus 4.6, supports 8-hour autonomous work
-  // glm-5   = stronger coding + reliable multi-step reasoning
-  // glm-5-turbo = optimized for complex, dynamic, long-chain tasks
-  // glm-4.7 = enhanced programming + stable reasoning (failsafe)
-  PRIMARY_TEXT:     'glm-5.1',               // Flagship text — best reasoning/coding/agent
+  // ═══════════════════════════════════════════════════════════════════════
+  // TEXT MODELS — Best performance, cost no object (2026-05-01)
+  // ═══════════════════════════════════════════════════════════════════════
+  // glm-5.1       = Flagship, ¥24-28/M output, matches Claude Opus 4.6
+  //                 200K context, 128K output, 8-hour autonomous work
+  // glm-5         = Strong coding + multi-step reasoning, ¥18-22/M output
+  // glm-5-turbo   = Optimized for complex dynamic tasks, ¥22-26/M output
+  // glm-4.7       = Enhanced programming + stable reasoning, ¥8-16/M output
+  // glm-4.7-FlashX= Lightweight & fast, ¥3/M output (chatbot only)
+  PRIMARY_TEXT:     'glm-5.1',               // Flagship — best reasoning/coding/agent
   UPGRADE_TEXT:     'glm-5.1',               // Deeper analysis — same flagship
   GLM_FLAGSHIP:     'glm-5',                 // Strong coding + multi-step reasoning
   GLM_FAST:         'glm-5-turbo',           // Optimized for complex dynamic tasks
   FAILSAFE_TEXT:    'glm-4.7',               // Enhanced programming + stable reasoning
 
-  // ── VISION MODELS (Z.ai VLM — same /chat/completions endpoint, vision model name) ──
-  PRIMARY_VISION:   'glm-4.5v',              // Full-featured VLM (vision + thinking)
-  GLM_VISION:       'glm-4.5v',              // Vision + thinking (same as primary)
-  FAST_VISION:      'glm-5v-turbo',          // Newest fastest vision model
+  // ═══════════════════════════════════════════════════════════════════════
+  // VISION MODELS — Best performance, cost no object (2026-05-01)
+  // ═══════════════════════════════════════════════════════════════════════
+  // glm-5v-turbo  = Premium multimodal coding + vision, ¥22-26/M output
+  //                 Supports image, video, file, text. 200K context.
+  // glm-4.5v      = Visual understanding + thinking, ¥6-12/M output
+  //                 64K context. Full-featured VLM.
+  // glm-4.6v      = Visual reasoning, ¥3-6/M output. 128K context.
+  //                 Proven stable failsafe.
+  PRIMARY_VISION:   'glm-5v-turbo',          // Premium multimodal coding + vision
+  GLM_VISION:       'glm-4.5v',              // Visual understanding + thinking
+  FAST_VISION:      'glm-5v-turbo',          // Same as primary — fastest vision
   FAILSAFE_VISION:  'glm-4.6v',              // Vision failsafe (proven stable)
 
   // ── SPECIALIZED (Z.ai capability suite) ─────────────────────────────────
@@ -452,7 +464,7 @@ export const MODULE_MODEL_MAP = {
   // E3: LIVE ELEVATOR PITCH COACH (video ≤3 min)
   // ═══════════════════════════════════════════════════════════════════════
   E3_LIVE_PITCH: {
-    models: [AI_MODELS.GLM_VISION, AI_MODELS.PRIMARY_VISION, AI_MODELS.FAST_VISION, AI_MODELS.FAILSAFE_VISION],
+    models: [AI_MODELS.PRIMARY_VISION, AI_MODELS.GLM_VISION, AI_MODELS.FAILSAFE_VISION],
     temperature: 0.3,
     thinkingEnabled: true,
     method: 'vision' as const,
@@ -469,7 +481,7 @@ export const MODULE_MODEL_MAP = {
   // E4: FULL PITCH SESSION (video ≤30 min + deck)
   // ═══════════════════════════════════════════════════════════════════════
   E4_FULL_SESSION: {
-    models: [AI_MODELS.PRIMARY_VISION, AI_MODELS.GLM_VISION, AI_MODELS.FAILSAFE_VISION],
+    models: [AI_MODELS.PRIMARY_VISION, AI_MODELS.GLM_VISION, AI_MODELS.FAST_VISION, AI_MODELS.FAILSAFE_VISION],
     temperature: 0.3,
     thinkingEnabled: true,
     method: 'vision' as const,
@@ -703,8 +715,71 @@ export async function executeWithFallback(
     }
   }
 
+  // ── STRATEGY 3: Kal Agent fallback (last resort before total failure) ──
+  // When ALL Z.ai models fail (SDK + direct HTTP), the Kal Agent provides
+  // a final fallback path. The Kal Agent is a separate adaptive AI service
+  // that can handle analysis tasks independently. If the Kal Agent is also
+  // unreachable, the error is thrown to the caller which may then activate
+  // the Kal Protocol (graceful degradation) for the user-facing response.
+  const kalAgentUrl = process.env.KAL_AGENT_URL;
+  const kalApiKey = process.env.KAL_API_KEY;
+
+  if (kalAgentUrl && kalApiKey) {
+    console.warn(`[ZAI] All Z.ai models failed for ${moduleKey}. Trying Kal Agent fallback at ${kalAgentUrl}...`);
+    try {
+      // Build the request using the primary model name for context
+      const request = buildRequest(uniqueModels[0]);
+
+      // Determine which Kal RPC endpoint to use based on module method
+      const kalEndpoint = config.method === 'vision'
+        ? '/api/rpc/analyzeScript'  // Kal agent handles vision via script analysis
+        : '/api/rpc/analyzeScript';
+
+      const kalPayload = {
+        script: config.method === 'chat'
+          ? (request as ChatRequest).messages.map((m: any) => m.content).join('\n')
+          : JSON.stringify((request as VisionRequest).messages),
+        moduleType: moduleKey.startsWith('E1') ? 'e1'
+          : moduleKey.startsWith('E2') ? 'e2'
+          : moduleKey.startsWith('E3') ? 'e3'
+          : moduleKey.startsWith('E4') ? 'e4'
+          : moduleKey.startsWith('E5') ? 'e5'
+          : 'e2',
+        originalModuleKey: moduleKey,
+        method: config.method,
+        temperature: config.temperature,
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+
+      const kalResponse = await fetch(`${kalAgentUrl}${kalEndpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-kal-api-key': kalApiKey,
+        },
+        body: JSON.stringify(kalPayload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (kalResponse.ok) {
+        const kalData = await kalResponse.json();
+        console.log(`[ZAI] Kal Agent succeeded for ${moduleKey} as fallback`);
+        return { response: kalData, modelUsed: `kal-agent (fallback for ${uniqueModels[0]})`, moduleKey };
+      } else {
+        const errorBody = await kalResponse.text().catch(() => 'unknown');
+        console.warn(`[ZAI] Kal Agent returned ${kalResponse.status}: ${errorBody.slice(0, 200)}`);
+      }
+    } catch (kalErr: any) {
+      console.warn(`[ZAI] Kal Agent fallback failed for ${moduleKey}: ${kalErr?.message}`);
+    }
+  }
+
   throw new Error(
-    `All models failed for ${moduleKey} (SDK + direct HTTP): ${lastError.map(e => e.message).join(' → ')}`
+    `All models failed for ${moduleKey} (SDK + direct HTTP + Kal Agent): ${lastError.map(e => e.message).join(' → ')}`
   );
 }
 

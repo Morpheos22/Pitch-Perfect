@@ -55,13 +55,17 @@ export async function sendOnboardingEmailViaResend(userData: {
         <div style="padding: 40px;">
           <p style="font-size: 18px; line-height: 1.6; color: #e2e8f0;">Hi ${displayName},</p>
           <p style="font-size: 16px; line-height: 1.6; color: #cbd5e1;">Welcome aboard! You've just unlocked access to your personal AI pitch coach. Whether you're preparing for investor meetings, sales presentations, or startup competitions, we're here to help you deliver pitches that captivate and convert.</p>
+          <div style="background-color: #4f46e5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+            <h3 style="margin: 0 0 8px; font-size: 18px; color: #ffffff;">Your Free Explorer Sessions</h3>
+            <p style="margin: 0; font-size: 14px; color: rgba(255,255,255,0.9);">You get <strong>2 free sessions</strong> each on Pitch Deck Analyser and Script Check to test and explore the platform. To unlock Live Pitch, Full Pitch Session, and Founder Coaching, upgrade to a paid plan.</p>
+          </div>
           <h2 style="font-size: 20px; color: #ffffff; border-left: 4px solid #6366f1; padding-left: 15px;">Your 5 Powerful Modules</h2>
           <ul style="color: #cbd5e1; font-size: 14px; line-height: 2;">
-            <li><strong style="color: #a5b4fc;">Pitch Deck Analyser</strong> — Upload your deck for content and visual analysis</li>
-            <li><strong style="color: #a5b4fc;">Script Check</strong> — Refine your pitch script with AI suggestions</li>
-            <li><strong style="color: #a5b4fc;">Elevator Live</strong> — Practice your elevator pitch with instant feedback</li>
-            <li><strong style="color: #a5b4fc;">Full Pitch Session</strong> — Complete 30-min session with deck + video analysis</li>
-            <li><strong style="color: #a5b4fc;">Founder Coaching</strong> — Readiness, pathway, research, and narration</li>
+            <li><strong style="color: #a5b4fc;">Pitch Deck Analyser</strong> — Upload your deck for content and visual analysis <span style=\"color: #fbbf24; font-size: 12px;\">(2 FREE sessions)</span></li>
+            <li><strong style="color: #a5b4fc;">Script Check</strong> — Refine your pitch script with AI suggestions <span style=\"color: #fbbf24; font-size: 12px;\">(2 FREE sessions)</span></li>
+            <li><strong style="color: #a5b4fc;">Elevator Live</strong> — Practice your elevator pitch with instant feedback <span style=\"color: #94a3b8; font-size: 12px;\">(Starter+)</span></li>
+            <li><strong style="color: #a5b4fc;">Full Pitch Session</strong> — Complete 30-min session with deck + video analysis <span style=\"color: #94a3b8; font-size: 12px;\">(Professional+)</span></li>
+            <li><strong style="color: #a5b4fc;">Founder Coaching</strong> — Readiness, pathway, research, and narration <span style=\"color: #94a3b8; font-size: 12px;\">(Starter+/Professional+)</span></li>
           </ul>
           <a href="https://pitchcoachai.tech/dashboard" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600;">Start Your First Pitch Analysis</a>
           <div style="background-color: #1e293b; border: 1px solid #475569; border-radius: 8px; padding: 20px; margin-top: 30px;">
@@ -69,9 +73,18 @@ export async function sendOnboardingEmailViaResend(userData: {
             <ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 14px; line-height: 1.8;">
               <li>Start with the Pitch Deck Analyser to get baseline feedback</li>
               <li>Use Script Check to refine your narrative before practicing</li>
-              <li>Try Elevator Live for quick, iterative practice sessions</li>
-              <li>Graduate to Full Pitch Session when you're ready for the real deal</li>
+              <li>Upgrade to Starter to unlock Live Pitch and Founder modules</li>
+              <li>Graduate to Professional when you're ready for Full Pitch Sessions</li>
             </ul>
+          </div>
+          <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-top: 20px;">
+            <h3 style="margin: 0 0 10px; font-size: 16px; color: #a5b4fc;">Pricing at a Glance</h3>
+            <table style="width: 100%; color: #cbd5e1; font-size: 13px;">
+              <tr><td style="padding: 4px 0; color: #94a3b8;">Free</td><td style="padding: 4px 0; text-align: right;">$0/mo — 2 deck + 2 script sessions</td></tr>
+              <tr><td style="padding: 4px 0; color: #94a3b8;">Starter</td><td style="padding: 4px 0; text-align: right;">$29/mo — Deck, Script, Live, Founder</td></tr>
+              <tr style="background-color: rgba(99,102,241,0.15);"><td style="padding: 4px 0; color: #a5b4fc; font-weight: 600;">Professional</td><td style="padding: 4px 0; text-align: right; color: #a5b4fc; font-weight: 600;">$79/mo — Most popular, all modules</td></tr>
+              <tr><td style="padding: 4px 0; color: #94a3b8;">Enterprise</td><td style="padding: 4px 0; text-align: right;">$199/mo — Unlimited everything</td></tr>
+            </table>
           </div>
         </div>
         <div style="padding: 30px 40px; background-color: #0f172a; border-top: 1px solid #334155;">

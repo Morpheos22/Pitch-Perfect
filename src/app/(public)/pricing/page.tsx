@@ -53,8 +53,8 @@ const plans = [
     bgColor: "bg-muted/50",
     borderColor: "border-border",
     features: [
-      { label: "Pitch Deck Analyses", value: "1" },
-      { label: "Script Coach Sessions", value: "1" },
+      { label: "Pitch Deck Analyses", value: "2" },
+      { label: "Script Coach Sessions", value: "2" },
       { label: "Live Pitch Sessions", value: "0" },
       { label: "Full Pitch Sessions", value: "0" },
       { label: "Founder Coaching (E5)", value: false },
@@ -123,8 +123,8 @@ const plans = [
 // ─── Feature Comparison Table ────────────────────────────────────────
 
 const comparisonRows: PlanFeature[] = [
-  { label: "Pitch Deck Analyses (E1)", free: "1", starter: "5", pro: "15", enterprise: "Unlimited" },
-  { label: "Script Coach Sessions (E2)", free: "1", starter: "10", pro: "30", enterprise: "Unlimited" },
+  { label: "Pitch Deck Analyses (E1)", free: "2", starter: "5", pro: "15", enterprise: "Unlimited" },
+  { label: "Script Coach Sessions (E2)", free: "2", starter: "10", pro: "30", enterprise: "Unlimited" },
   { label: "Live Pitch Sessions (E3)", free: false, starter: "3", pro: "10", enterprise: "Unlimited" },
   { label: "Full Pitch Sessions (E4)", free: false, starter: false, pro: "3", enterprise: "10" },
   { label: "Founder Coaching (E5)", free: false, starter: false, pro: false, enterprise: true },

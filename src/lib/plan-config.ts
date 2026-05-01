@@ -18,7 +18,7 @@ export interface PlanModuleLimits {
 }
 
 export const PLAN_LIMITS: Record<string, PlanModuleLimits> = {
-  FREE: { e1: 1, e2: 1, e3: 0, e4: 0, e5: 0 },
+  FREE: { e1: 2, e2: 2, e3: 0, e4: 0, e5: 0 },
   STARTER: { e1: 5, e2: 10, e3: 3, e4: 0, e5: 3 },
   PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3, e5: 10 },
   ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999, e5: 999 },
