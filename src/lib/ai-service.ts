@@ -21,14 +21,14 @@
 //   - glm-5.1, glm-5, glm-5-turbo, glm-4.7, glm-4.6, glm-4.5, etc.
 //
 // MODEL LABELS (semantic naming for code clarity):
-//   PRIMARY_TEXT:     glm-4-plus          (text tasks)
-//   UPGRADE_TEXT:     glm-4-plus          (deeper analysis)
-//   GLM_FLAGSHIP:     glm-4-plus          (GLM brand)
-//   GLM_FAST:         glm-4-plus          (fast label)
-//   FAILSAFE_TEXT:    glm-4-plus          (open-weight label)
-//   PRIMARY_VISION:   glm-4.5v            (vision tasks — full-featured VLM)
-//   GLM_VISION:       glm-4.5v            (vision + thinking)
-//   FAST_VISION:      glm-5v-turbo        (fast vision, newest)
+//   PRIMARY_TEXT:     glm-5.1             (flagship — matches Claude Opus 4.6, 8hr autonomous)
+//   UPGRADE_TEXT:     glm-5.1             (deeper analysis — same flagship)
+//   GLM_FLAGSHIP:     glm-5               (stronger coding + multi-step reasoning)
+//   GLM_FAST:         glm-5-turbo         (optimized for complex dynamic tasks)
+//   FAILSAFE_TEXT:    glm-4.7             (enhanced programming + stable reasoning)
+//   PRIMARY_VISION:   glm-4.5v            (vision tasks — full-featured VLM + thinking)
+//   GLM_VISION:       glm-4.5v            (vision + thinking, same as primary)
+//   FAST_VISION:      glm-5v-turbo        (fastest vision, newest)
 //   FAILSAFE_VISION:  glm-4.6v            (vision failsafe, proven stable)
 //
 // Z.AI CAPABILITY SUITE (all confirmed live):
@@ -377,14 +377,16 @@ export async function getZai(): Promise<ZAIInstance | null> {
 // ============================================
 
 export const AI_MODELS = {
-  // ── TEXT MODELS (gateway uses its default model for all) ──────────────
-  // The Z.ai gateway ignores model names and routes to its default text model.
-  // We still send a model field for logging/tracking purposes.
-  PRIMARY_TEXT:     'glm-4-plus',            // Text analysis (default gateway model)
-  UPGRADE_TEXT:     'glm-4-plus',            // Deeper analysis
-  GLM_FLAGSHIP:     'glm-4-plus',            // GLM brand
-  GLM_FAST:         'glm-4-plus',            // Fast tasks
-  FAILSAFE_TEXT:    'glm-4-plus',            // Failsafe
+  // ── TEXT MODELS (upgraded 2026-05-01 — best performance, cost no object) ──
+  // glm-5.1 = Z.ai flagship, matches Claude Opus 4.6, supports 8-hour autonomous work
+  // glm-5   = stronger coding + reliable multi-step reasoning
+  // glm-5-turbo = optimized for complex, dynamic, long-chain tasks
+  // glm-4.7 = enhanced programming + stable reasoning (failsafe)
+  PRIMARY_TEXT:     'glm-5.1',               // Flagship text — best reasoning/coding/agent
+  UPGRADE_TEXT:     'glm-5.1',               // Deeper analysis — same flagship
+  GLM_FLAGSHIP:     'glm-5',                 // Strong coding + multi-step reasoning
+  GLM_FAST:         'glm-5-turbo',           // Optimized for complex dynamic tasks
+  FAILSAFE_TEXT:    'glm-4.7',               // Enhanced programming + stable reasoning
 
   // ── VISION MODELS (Z.ai VLM — same /chat/completions endpoint, vision model name) ──
   PRIMARY_VISION:   'glm-4.5v',              // Full-featured VLM (vision + thinking)
