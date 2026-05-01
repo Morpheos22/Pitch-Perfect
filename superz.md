@@ -2,7 +2,7 @@
 
 > **Purpose:** This file serves as a persistent memory and context layer for AI agents (Super Z) working on the Pitch-Perfect project. It captures architectural decisions, credential locations, known gotchas, and session state so that any agent can pick up seamlessly from where the last session left off.
 
-> **Last Updated:** Session 21 — 2026-05-01
+> **Last Updated:** Session 24 — 2026-05-01
 
 ---
 
@@ -226,6 +226,16 @@
 
 23. **Stripe price env vars for E5 products** — `STRIPE_PRICE_FOUNDER` and `STRIPE_PRICE_FOUNDER_READINESS` were added to the price map in Session 9 but may not be set in `.env.local` or Vercel yet. Without these, Stripe checkout for Founder Coaching products will throw "No Stripe price configured for founder".
 
+24. **Next.js 16.1.3 + TypeScript 6 CSS import error (FIXED Session 24)** — Vercel build fails with `TS2882: Cannot find module or type declarations for side-effect import of './globals.css'`. Fix: `src/global.d.ts` declares `*.css` modules. The `next-env.d.ts` file alone was NOT sufficient because Vercel reconfigures `tsconfig.json` during build. Both files are now committed and must NOT be removed from git.
+
+25. **Next.js 16.1.3 `serverActions` must be under `experimental`** — At top level, Vercel warns "Unrecognized key(s) in object: 'serverActions'". Move `serverActions.bodySizeLimit` under `experimental.serverActions.bodySizeLimit`.
+
+26. **`pdfjs-dist` is ESM and CANNOT be in `serverExternalPackages`** — Turbopack warns "Package pdfjs-dist can't be external" because require() resolves to an ESM module. Removed from serverExternalPackages in Session 24.
+
+27. **Vercel overrides `jsx` in tsconfig.json** — During build, Vercel forces `jsx: react-jsx` regardless of what's in tsconfig. Do NOT fight this; set `jsx: preserve` locally but expect Vercel to override.
+
+28. **`middleware.ts` is deprecated in Next.js 16** — Vercel warns "The 'middleware' file convention is deprecated. Please use 'proxy' instead." Clerk hasn't updated yet. This is a warning, not a build error.
+
 ---
 
 ## Codebase Sweep Status (Sessions 4-9)
@@ -342,6 +352,12 @@
 - [x] Official logo and favicon replaced (logo.png 512x512, favicon.png 192x192, apple-touch-icon.png 180x180)
 - [x] Onboarding email pricing table updated: Enterprise = $400 one-time — Lifetime + Network
 - [x] Codebase credential scan: CLEAN (no hardcoded credentials in tracked code)
+- [x] Vercel build fixed: next-env.d.ts committed, src/global.d.ts CSS module declarations, serverActions under experimental, pdfjs-dist removed from serverExternalPackages
+- [x] @radix-ui/react-dialog dependency restored (needed by Sheet component — was mistakenly removed in Batch 4)
+- [x] pdfjs-dist added as direct dependency (was fragile transitive dep via pdf-parse)
+- [x] tsconfig.json updated: jsx → preserve, target → ES2022
+- [x] Production deployment verified LIVE at pitchcoachai.tech (dpl_5kUVzCKxuBPu5KgWynUhR5rQvHTP — READY)
+- [x] E2E browser test: all 22 pages/routes verified (Session 23)
 
 
 ### 🔴 Sign-Up Failure — 5 Bugs Identified (Session 11 Scan) — ALL CODE FIXES APPLIED
@@ -648,6 +664,27 @@
 - **Onboarding email structure updated** to reflect pricing tiers and perks
 - **HEAD:** `97dab58` on `main`
 
+### Session 24
+- **🔴 Vercel build failures resolved** — All deployments since commit `97dab58` failed with TS2882: Cannot find module or type declarations for side-effect import of './globals.css'
+- **Root cause analysis:** Next.js 16.1.3 + TypeScript 6 + Turbopack requires explicit CSS module type declarations. `next-env.d.ts` alone was insufficient because Vercel reconfigures `tsconfig.json` during build (sets `jsx: react-jsx`)
+- **Comprehensive build audit conducted** — Found 1 critical, 2 high, 6 medium issues:
+  - 🔴 Missing `@radix-ui/react-dialog` dependency (used by Sheet component — was mistakenly removed in Batch 4 Session 4)
+  - 🟠 `pdfjs-dist` as fragile transitive dependency via pdf-parse
+  - 🟠 `serverActions` at top level unrecognized in Next.js 16.1.3
+  - 🟡 `jsx: react-jsx` should be `preserve` per Next.js convention
+  - 🟡 `target: ES2017` outdated for Next.js 16
+- **3 commits pushed:**
+  - `a94217f` — Add `next-env.d.ts` with Next.js type references, remove from `.gitignore`
+  - `824f7ba` — Add `@radix-ui/react-dialog` + `pdfjs-dist` to `package.json`, fix `tsconfig.json` jsx/target
+  - `005f1eb` — Add `src/global.d.ts` with CSS module declarations (actual fix for TS2882), move `serverActions` under `experimental`, remove `pdfjs-dist` from `serverExternalPackages`
+- **Vercel deployment SUCCEEDED:** `dpl_5kUVzCKxuBPu5KgWynUhR5rQvHTP` — READY, production at pitchcoachai.tech
+- **Production verified:** HTTP 200, full HTML rendering, all sections load correctly
+- **Build warnings remaining (non-blocking):**
+  - `middleware` convention deprecated → should use `proxy` (Clerk not updated yet)
+  - `serverActions` moved under `experimental` (will be top-level in future Next.js)
+  - Vercel overrides `jsx` to `react-jsx` regardless of tsconfig
+- **HEAD:** `005f1eb` on `main`
+
 ### Session 16
 - **User confirmed:** Clerk keys live, Google SSO OAuth verified, payment gateway deferred
 - **Resend wired as FALLBACK** for onboarding email (Zoho CRM remains PRIMARY)
@@ -677,6 +714,8 @@
 | `prisma/schema.prisma` | 17 models, 9 enums — full E1-E5 + billing + Kal schema |
 | `prisma/migrations/0_init/migration.sql` | Single consolidated baseline migration |
 | `scripts/vercel-build.sh` | Build pipeline: prisma generate → migrate deploy → next build |
+| `next-env.d.ts` | Next.js type references (MUST be committed — not gitignored) |
+| `src/global.d.ts` | CSS module type declarations (fixes TS2882 on Vercel) |
 | `src/lib/ai-service.ts` | Core AI service — Z.ai SDK init + HTTP fallback + Kal Agent fallback (glm-5.1/glm-5/glm-5-turbo/glm-4.7 text, glm-4.5v/glm-5v-turbo/glm-4.6v vision) (~1800 lines) |
 | `src/lib/kal-protocol-v2.ts` | Kal Protocol 2.0 — 10 questions, critical thinking, middleware (702 lines) |
 | `src/lib/kal-middleware-client.ts` | Dual-backend RPC client — Kal Agent (PRIMARY) + Middleware (LEGACY), all 5 endpoints (~550 lines) |
