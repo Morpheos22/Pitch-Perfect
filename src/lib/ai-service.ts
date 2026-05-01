@@ -2,29 +2,34 @@
 // Multi-provider via Z.ai Gateway: GLM, Gemini, Gemma + full capability suite
 //
 // ═══════════════════════════════════════════════════════════════════════
-// GATEWAY MODEL ROUTING (live-proven 2026-04-07)
+// GATEWAY MODEL ROUTING (updated 2026-05-01)
 // ═══════════════════════════════════════════════════════════════════════
-// The Z.ai gateway is a model router/aggregator. All model names within
-// each category resolve to the SAME underlying model server-side:
+// The Z.ai API uses a single /chat/completions endpoint for BOTH text
+// and vision. Vision requests include image_url content in messages
+// and use a vision model name (glm-4.5v, glm-5v-turbo, etc.).
 //
-//   TEXT  (/chat/completions)    → ALL names route to glm-4-plus
-//   VISION (/chat/completions/vision) → ALL names route to glm-4.6v
+// API ENDPOINT: https://api.z.ai/api/paas/v4/chat/completions
+// Auth: Authorization: Bearer <ZAI_API_KEY>
 //
-// COST IMPLICATION: There is ZERO cost difference between model names.
-// gemini-1.5-pro and glm-4-flash are the same glm-4-plus on the server.
-// Fallback chains remain for future-proofing if the gateway adds
-// real model differentiation.
+// AVAILABLE VISION MODELS (from https://z.ai/model-api + docs.z.ai):
+//   - glm-5v-turbo    (newest, fastest vision model)
+//   - glm-4.5v        (full-featured vision with thinking)
+//   - glm-4.6v        (previous vision model)
+//   - glm-ocr         (OCR-specialized)
+//
+// TEXT MODELS:
+//   - glm-5.1, glm-5, glm-5-turbo, glm-4.7, glm-4.6, glm-4.5, etc.
 //
 // MODEL LABELS (semantic naming for code clarity):
-//   PRIMARY_TEXT:     gemini-2.5-flash     → glm-4-plus   (text tasks)
-//   UPGRADE_TEXT:     gemini-1.5-pro       → glm-4-plus   (deeper analysis)
-//   GLM_FLAGSHIP:     glm-5.1              → glm-4-plus   (GLM brand)
-//   GLM_FAST:         glm-4-flash         → glm-4-plus   (fast label)
-//   FAILSAFE_TEXT:    gemma-4              → glm-4-plus   (open-weight label)
-//   PRIMARY_VISION:   gemini-1.5-pro       → glm-4.6v    (vision tasks)
-//   GLM_VISION:       glm-4.1v-thinking    → glm-4.6v    (vision + thinking)
-//   FAST_VISION:      gemini-2.0-flash     → glm-4.6v    (fast vision label)
-//   FAILSAFE_VISION:  gemma-4              → glm-4.6v    (vision failsafe)
+//   PRIMARY_TEXT:     glm-4-plus          (text tasks)
+//   UPGRADE_TEXT:     glm-4-plus          (deeper analysis)
+//   GLM_FLAGSHIP:     glm-4-plus          (GLM brand)
+//   GLM_FAST:         glm-4-plus          (fast label)
+//   FAILSAFE_TEXT:    glm-4-plus          (open-weight label)
+//   PRIMARY_VISION:   glm-4.5v            (vision tasks — full-featured VLM)
+//   GLM_VISION:       glm-4.5v            (vision + thinking)
+//   FAST_VISION:      glm-5v-turbo        (fast vision, newest)
+//   FAILSAFE_VISION:  glm-4.6v            (vision failsafe, proven stable)
 //
 // Z.AI CAPABILITY SUITE (all confirmed live):
 //   ✅ Text Chat        → E1-E5 all text analysis, rewrites, Q&A
@@ -250,7 +255,10 @@ async function callGatewayVision(
   if (config.userId) headers['X-User-Id'] = config.userId;
   if (config.chatId) headers['X-Chat-Id'] = config.chatId;
 
-  const resp = await fetch(`${config.baseUrl}/chat/completions/vision`, {
+  // Z.ai uses the SAME /chat/completions endpoint for vision —
+  // you just pass image_url content in messages + a vision model name.
+  // See: https://docs.z.ai/guides/vlm/glm-4.5v
+  const resp = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -378,11 +386,11 @@ export const AI_MODELS = {
   GLM_FAST:         'glm-4-plus',            // Fast tasks
   FAILSAFE_TEXT:    'glm-4-plus',            // Failsafe
 
-  // ── VISION MODELS (gateway routes to its default vision model) ──────────
-  PRIMARY_VISION:   'glm-4.6v',              // Vision tasks
-  GLM_VISION:       'glm-4.6v',              // Vision + thinking
-  FAST_VISION:      'glm-4.6v',              // Quick scans
-  FAILSAFE_VISION:  'glm-4.6v',              // Vision failsafe
+  // ── VISION MODELS (Z.ai VLM — same /chat/completions endpoint, vision model name) ──
+  PRIMARY_VISION:   'glm-4.5v',              // Full-featured VLM (vision + thinking)
+  GLM_VISION:       'glm-4.5v',              // Vision + thinking (same as primary)
+  FAST_VISION:      'glm-5v-turbo',          // Newest fastest vision model
+  FAILSAFE_VISION:  'glm-4.6v',              // Vision failsafe (proven stable)
 
   // ── SPECIALIZED (Z.ai capability suite) ─────────────────────────────────
   TTS_MODEL:        'tongtong',               // Z.ai TTS voice (tongtong/chelsie/diana/emma/aria)
@@ -612,9 +620,9 @@ export async function executeWithFallback(
   const lastError: Error[] = [];
 
   // Deduplicate model names — all text models currently resolve to glm-4-plus
-  // and all vision models to glm-4.6v. Retrying the same model name is
-  // wasteful since it hits the identical server endpoint. Only try each unique
-  // model name once per strategy.
+  // and vision models to glm-4.5v/glm-5v-turbo/glm-4.6v. Retrying the same
+  // model name is wasteful since it hits the identical server endpoint.
+  // Only try each unique model name once per strategy.
   const uniqueModels = Array.from(new Set(config.models));
 
   // ── STRATEGY 1: Try SDK with model fallback chain ──

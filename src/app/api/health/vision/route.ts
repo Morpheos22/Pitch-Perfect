@@ -1,7 +1,11 @@
 // Vision Model Health Check — dedicated endpoint for Z.ai vision gateway diagnostics.
-// Tests the Z.ai SDK vision endpoint (glm-4.6v) with a minimal 1x1 pixel image.
+// Tests the Z.ai SDK vision endpoint (glm-4.5v) with a minimal 1x1 pixel image.
 // Separate from /api/health to avoid timeout impact on the main health check
 // and to allow targeted debugging of vision issues (E1 visual audit, E3/E4 video analysis).
+//
+// Z.ai API uses the SAME /chat/completions endpoint for both text and vision.
+// Vision is differentiated by: (1) vision model name + (2) image_url in messages.
+// See: https://docs.z.ai/guides/vlm/glm-4.5v
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
     responseTimeMs: 0,
     gateway: {
       baseUrl,
-      modelRequested: 'glm-4.6v',
+      modelRequested: 'glm-4.5v',
     },
   };
 
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
     const testPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
     const visionResp = await zai.chat.completions.createVision({
-      model: 'glm-4.6v',
+      model: 'glm-4.5v',
       messages: [{
         role: 'user',
         content: [
@@ -100,11 +104,12 @@ export async function GET(request: NextRequest) {
       if (process.env.ZAI_TOKEN) headers['X-Token'] = process.env.ZAI_TOKEN;
       if (process.env.ZAI_USER_ID) headers['X-User-Id'] = process.env.ZAI_USER_ID;
 
-      const httpResp = await fetch(`${baseUrl}/chat/completions/vision`, {
+      // Z.ai uses the SAME /chat/completions endpoint for vision (no /vision suffix)
+      const httpResp = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: 'glm-4.6v',
+          model: 'glm-4.5v',
           messages: [{
             role: 'user',
             content: [
