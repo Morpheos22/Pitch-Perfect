@@ -47,7 +47,6 @@ const nextConfig: any = {
   serverExternalPackages: [
     "z-ai-web-dev-sdk",
     "pdf-parse",
-    "pdfjs-dist",
     "mammoth",
     "jszip",
     "resend",
@@ -58,9 +57,9 @@ const nextConfig: any = {
   // serverActions.bodySizeLimit is a top-level config in Next.js 16+ (no longer under experimental).
   experimental: {
     proxyClientMaxBodySize: '50mb',
-  },
-  serverActions: {
-    bodySizeLimit: '35mb',
+    serverActions: {
+      bodySizeLimit: '35mb',
+    },
   },
 
   // ── Unified security headers ──
