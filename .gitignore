@@ -39,7 +39,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+# next-env.d.ts is committed to fix Vercel build — do NOT re-add to gitignore
 local-*
 .claude
 .z-ai-config
