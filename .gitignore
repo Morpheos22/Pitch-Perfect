@@ -65,6 +65,7 @@ server.log
 /.zscripts
 # Dev artifacts (not for production)
 /worklog.md
+/superz.md
 /agent-ctx/
 /EXECUTION_PLAN.md
 /db/*.db
