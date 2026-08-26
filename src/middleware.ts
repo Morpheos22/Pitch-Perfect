@@ -219,7 +219,12 @@ function blockedResponse(request: Request, reason: string): NextResponse {
         error: "forbidden",
         message: "Access denied.",
       },
-      { status: 403 },
+      {
+        status: 403,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
     );
   }
   // For HTML routes: return a minimal 403 page
@@ -235,7 +240,12 @@ function blockedResponse(request: Request, reason: string): NextResponse {
       `</div></body></html>`,
     {
       status: 403,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        // Prevent Vercel edge from caching the 403 — we want each request
+        // to re-evaluate against the (potentially updated) blocklist.
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
     },
   );
 }
