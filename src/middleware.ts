@@ -6,23 +6,31 @@ import { isAdminEmail } from "@/lib/dev-auth";
 // ─────────────────────────────────────────────────────────────────────────────
 // MAINTENANCE MODE
 // ─────────────────────────────────────────────────────────────────────────────
-// When MAINTENANCE_MODE=true is set in the environment, ALL routes are blocked
-// and users see the static /maintenance.html page.
+// Hard-coded ON while we rebuild the product. To bring the site back up, set
+// MAINTENANCE_FORCE_ON = false below (or set MAINTENANCE_MODE=false in Vercel
+// env vars to override at runtime without a redeploy).
 //
-// Toggle via Vercel env var (Production + Preview) — no code change required.
-// Updating the env var triggers a fresh deployment, which is the simplest way
-// to bring the site back up after the rebuild.
-//
-// Allowed paths while maintenance is active:
-//   - /maintenance.html (the static page itself — served by Vercel CDN)
-//   - /_next/* (build assets — already excluded by matcher)
-//   - static file extensions (already excluded by matcher)
-//   - /api/health* (so monitoring/alerting doesn't false-positive)
-//
-// Everything else:
-//   - HTML routes → 307 redirect to /maintenance.html
-//   - API routes  → 503 JSON with Retry-After
+// When maintenance is active:
+//   - /maintenance.html            → served directly by Vercel CDN
+//   - /_next/* + static assets     → served normally (matcher already excludes)
+//   - /api/health*                 → 200 OK (so uptime monitors don't alert)
+//   - /api/* (everything else)     → 503 JSON + Retry-After: 3600
+//   - All other routes (HTML/auth) → 307 redirect to /maintenance.html
 // ─────────────────────────────────────────────────────────────────────────────
+
+// TEMPORARY: hard toggle while we rebuild. Flip to false to bring the site back.
+const MAINTENANCE_FORCE_ON = true;
+
+function isMaintenanceEnabled(): boolean {
+  // Env var takes precedence so ops can override at runtime without redeploy.
+  // - MAINTENANCE_MODE=true  → always ON (explicit override)
+  // - MAINTENANCE_MODE=false → always OFF (explicit override)
+  // - MAINTENANCE_MODE unset → fall back to MAINTENANCE_FORCE_ON constant
+  const env = process.env.MAINTENANCE_MODE;
+  if (env === "true") return true;
+  if (env === "false") return false;
+  return MAINTENANCE_FORCE_ON;
+}
 
 function maintenanceResponse(request: Request): NextResponse {
   const url = new URL(request.url);
@@ -135,7 +143,7 @@ export default clerkMiddleware(async (auth, request) => {
   // When enabled, short-circuit ALL Clerk/auth/onboarding logic so the site
   // stays fully offline (including API + auth endpoints) without depending on
   // Clerk being reachable.
-  if (process.env.MAINTENANCE_MODE === "true") {
+  if (isMaintenanceEnabled()) {
     return maintenanceResponse(request);
   }
 
