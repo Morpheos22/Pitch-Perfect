@@ -290,6 +290,11 @@ export async function isBlocked(ip: string, deviceId: string): Promise<string | 
   const url = securityCheckUrl ?? "https://pitchcoachai.tech/api/security/check-blocked";
 
   try {
+    // Manual timeout — AbortSignal.timeout() may not be available in all
+    // edge runtime versions. Use AbortController for broader compatibility.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -300,9 +305,10 @@ export async function isBlocked(ip: string, deviceId: string): Promise<string | 
         "x-internal-security-check": "1",
       },
       body: JSON.stringify({ ip, deviceId }),
-      // Short timeout — if DB is slow, don't block the request
-      signal: AbortSignal.timeout(2000),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) return null; // DB error — fail open
 
