@@ -416,14 +416,24 @@ async function handleEmailBlocklist(
 // Uses two-tier check: in-memory cache (fast) + /api/security/check-blocked
 // (slow path, queries DB). Cache hits short-circuit. Cache misses query the
 // DB and populate the cache for 5 minutes so subsequent requests are fast.
+//
+// REDIRECT BEHAVIOR: Blocked IPs are REDIRECTED to https://motionmuse.ai/explore
+// (same destination as SA geo-block). This matches the user requirement:
+// "All requests coming from Sherwyn's IP are to be redirected to
+// https://motionmuse.ai/explore." We extend this to ALL blocked IPs for
+// consistency — bad actors get the same treatment regardless of why they
+// were banned (proactive block, auto-promoted probe, or email blocklist).
+// API routes still get 403 JSON (can't redirect an API call).
 async function handleIpBlocklist(request: Request, deviceId: string): Promise<NextResponse | null> {
   const ip = getClientIp(request);
 
   const blockReason = await isBlocked(ip, deviceId);
   if (!blockReason) return null;
 
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+
   // Log repeat attempt (for forensic analysis)
-  const pathname = new URL(request.url).pathname;
   logSecurityIncident({
     ip,
     deviceId,
@@ -431,11 +441,31 @@ async function handleIpBlocklist(request: Request, deviceId: string): Promise<Ne
     pathname,
     country: getCountryCode(request) ?? undefined,
     userAgent: request.headers.get("user-agent"),
-    metadata: { originalReason: blockReason },
+    metadata: { originalReason: blockReason, redirectedTo: "https://motionmuse.ai/explore" },
     blocked: true,
   });
 
-  return blockedResponse(request, "BLOCKED_IP");
+  // API routes: can't redirect an API call, return 403 JSON
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      {
+        error: "forbidden",
+        message: "Access denied.",
+      },
+      {
+        status: 403,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
+  }
+
+  // HTML routes: 307 redirect to motionmuse.ai/explore
+  // (Same destination as SA geo-block — sends a clear "not welcome" message)
+  const redirect = NextResponse.redirect("https://motionmuse.ai/explore", 307);
+  redirect.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return redirect;
 }
 
 // Public routes that don't require authentication
