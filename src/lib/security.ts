@@ -209,19 +209,57 @@ export function cacheDeviceBlock(deviceId: string, reason: string): void {
 
 /**
  * Check if an IP or device is blocked.
- * Uses ONLY in-memory cache (no DB call — that would require Prisma in
- * the edge bundle and blow the 1 MB size limit).
  *
- * Cache is populated:
- *   1. When an email-blocklist hit occurs (in-process)
- *   2. By the /api/security/check endpoint (called periodically or on
- *      demand from a separate Node.js context)
+ * Two-tier check:
+ *   1. FAST PATH: in-memory cache (5-min TTL) — handles repeat requests
+ *      without any DB call.
+ *   2. SLOW PATH: if cache misses, calls /api/security/check-blocked
+ *      (Node.js runtime, Prisma access) to query the blocked_ips table.
+ *      On DB hit, populates the cache so subsequent requests are fast.
+ *
+ * The slow path is ASYNC. Middleware awaits it. To avoid blocking every
+ * request on a DB query, the cache is critical — once an IP is checked
+ * once, the result is cached for 5 minutes.
+ *
+ * IMPORTANT: A first-time request from a newly-blocked IP will NOT be
+ * caught (cache miss + DB query happens, but the request continues while
+ * the query is in flight). The SECOND request from the same IP will be
+ * blocked (cache hit). This is an acceptable trade-off for performance.
  */
-export function isBlocked(ip: string, deviceId: string): string | null {
+export async function isBlocked(ip: string, deviceId: string): Promise<string | null> {
+  // FAST PATH: in-memory cache
   const cachedIp = isIpCachedBlocked(ip);
   if (cachedIp) return cachedIp;
   const cachedDevice = isDeviceCachedBlocked(deviceId);
   if (cachedDevice) return cachedDevice;
+
+  // SLOW PATH: query DB via internal API endpoint
+  // This runs on every cache-miss, which is expensive but necessary
+  // for the proactive blocklist to actually work.
+  try {
+    const response = await fetch("https://pitchcoachai.tech/api/security/check-blocked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ip, deviceId }),
+      // Short timeout — if DB is slow, don't block the request
+      signal: AbortSignal.timeout(2000),
+    });
+
+    if (!response.ok) return null; // DB error — fail open
+
+    const data = (await response.json()) as { blocked?: boolean; reason?: string | null };
+
+    if (data.blocked && data.reason) {
+      // Populate the cache so subsequent requests are fast
+      cacheIpBlock(ip, data.reason);
+      if (deviceId) cacheDeviceBlock(deviceId, data.reason);
+      return data.reason;
+    }
+  } catch {
+    // Network error, timeout, or parse error — fail open
+    // (don't block legit users because of a transient error)
+  }
+
   return null;
 }
 

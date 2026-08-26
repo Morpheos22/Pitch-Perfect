@@ -274,22 +274,39 @@ describe("In-memory IP/device block cache", () => {
     expect(isDeviceCachedBlocked(deviceId)).toBe(reason);
   });
 
-  it("isBlocked() checks both IP and device caches", () => {
+  it("isBlocked() checks both IP and device caches (fast path)", async () => {
     const ip = `203.0.113.${Math.floor(Math.random() * 255)}`;
     const deviceId = `device-${Date.now()}-${Math.random()}`;
-    const reason = "BLOCKED_EMAIL";
 
-    // Before caching — not blocked
-    expect(isBlocked(ip, deviceId)).toBeNull();
+    // Stub global fetch so the slow-path DB call doesn't actually fire.
+    // We return {blocked: false} so the slow path returns null and we
+    // test only the cache behavior.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ blocked: false, reason: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
 
-    // Cache IP block
-    cacheIpBlock(ip, reason);
-    expect(isBlocked(ip, deviceId)).toBe(reason);
+    try {
+      // Before caching — not blocked (cache miss, slow-path returns false)
+      const result1 = await isBlocked(ip, deviceId);
+      expect(result1).toBeNull();
 
-    // Different IP + device — also blocked via device cache
-    const newIp = `203.0.113.${Math.floor(Math.random() * 255) + 100}`;
-    cacheDeviceBlock(deviceId, "BLOCKED_DEVICE");
-    expect(isBlocked(newIp, deviceId)).not.toBeNull();
+      // Cache IP block — now fast-path should hit
+      const reason = "BLOCKED_EMAIL";
+      cacheIpBlock(ip, reason);
+      const result2 = await isBlocked(ip, deviceId);
+      expect(result2).toBe(reason);
+
+      // Different IP + device — also blocked via device cache
+      const newIp = `203.0.113.${Math.floor(Math.random() * 255) + 100}`;
+      cacheDeviceBlock(deviceId, "BLOCKED_DEVICE");
+      const result3 = await isBlocked(newIp, deviceId);
+      expect(result3).not.toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

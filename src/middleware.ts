@@ -60,10 +60,13 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
   // maintenance gate and incident logs would never be persisted).
   // Also allow /api/security/auto-promote so it can be triggered during
   // lockdown to scan probe incidents and proactively ban IPs.
+  // Also allow /api/security/check-blocked so the middleware's isBlocked()
+  // slow-path query succeeds during maintenance.
   if (
     pathname === "/api/security/log-incident" ||
     pathname === "/api/security/block-ip" ||
-    pathname === "/api/security/auto-promote"
+    pathname === "/api/security/auto-promote" ||
+    pathname === "/api/security/check-blocked"
   ) {
     return NextResponse.next();
   }
@@ -182,10 +185,13 @@ const SECURITY_EXEMPT_PREFIXES = [
   // Security logging + management endpoints — MUST be reachable during
   // maintenance so the middleware can fire-and-forget POST incident logs
   // without them being blocked by the maintenance gate, AND so operators
-  // can trigger /api/security/auto-promote during lockdown.
+  // can trigger /api/security/auto-promote during lockdown, AND so the
+  // middleware's isBlocked() slow-path can query
+  // /api/security/check-blocked.
   "/api/security/log-incident",
   "/api/security/block-ip",
   "/api/security/auto-promote",
+  "/api/security/check-blocked",
 ];
 
 function isSecurityExempt(pathname: string): boolean {
@@ -397,14 +403,13 @@ async function handleEmailBlocklist(
 // ─────────────────────────────────────────────────────────────────────────────
 // IP / DEVICE BLOCKLIST — check if request comes from a blocked source
 // ─────────────────────────────────────────────────────────────────────────────
-// Uses in-memory cache only (no DB call from middleware — that would require
-// Prisma in the edge bundle and blow the 1 MB size limit). The cache is
-// populated by handleEmailBlocklist() in-process, and by the
-// /api/security/block-ip endpoint when called by other Node.js contexts.
-function handleIpBlocklist(request: Request, deviceId: string): NextResponse | null {
+// Uses two-tier check: in-memory cache (fast) + /api/security/check-blocked
+// (slow path, queries DB). Cache hits short-circuit. Cache misses query the
+// DB and populate the cache for 5 minutes so subsequent requests are fast.
+async function handleIpBlocklist(request: Request, deviceId: string): Promise<NextResponse | null> {
   const ip = getClientIp(request);
 
-  const blockReason = isBlocked(ip, deviceId);
+  const blockReason = await isBlocked(ip, deviceId);
   if (!blockReason) return null;
 
   // Log repeat attempt (for forensic analysis)
@@ -516,7 +521,8 @@ export default clerkMiddleware(async (auth, request) => {
     pathname.startsWith("/api/health/") ||
     pathname === "/api/security/log-incident" ||
     pathname === "/api/security/block-ip" ||
-    pathname === "/api/security/auto-promote";
+    pathname === "/api/security/auto-promote" ||
+    pathname === "/api/security/check-blocked";
 
   if (!isGeoExemptPath) {
     const geoResponse = await handleGeoBlock(request);
@@ -543,7 +549,7 @@ export default clerkMiddleware(async (auth, request) => {
 
     // 2. IP / device blocklist — check if this IP/device is permanently banned
     // (Banned IPs never see the maintenance page — they get a 403.)
-    const ipBlockResponse = handleIpBlocklist(request, deviceId);
+    const ipBlockResponse = await handleIpBlocklist(request, deviceId);
     if (ipBlockResponse) return applySecurityHeaders(ipBlockResponse);
 
     // 3. Protected asset — block direct downloads of brand assets
