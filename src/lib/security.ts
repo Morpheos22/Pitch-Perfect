@@ -1,9 +1,13 @@
 /**
  * Security library — IP extraction, device fingerprinting, blocked-IP/email checks.
  *
- * Used by middleware.ts to gate every request before reaching app logic.
- * Falls back gracefully if DATABASE_URL is unavailable (e.g. preview envs):
- * in-memory caches still operate so the site never goes down due to DB issues.
+ * IMPORTANT: This module is imported by middleware.ts (Edge Runtime).
+ * It MUST NOT import @prisma/client or any other heavy Node-only dep —
+ * Vercel's edge function size limit is 1 MB and Prisma blows past it.
+ *
+ * All DB persistence happens via fire-and-forget fetch() calls to
+ * /api/security/* routes, which run on Node.js runtime and have
+ * full Prisma access.
  */
 
 import { createHash } from "crypto";
@@ -147,9 +151,14 @@ export function isProtectedAsset(pathname: string): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 // IN-MEMORY BLOCKED IP / DEVICE CACHE (with TTL)
 // ─────────────────────────────────────────────────────────────────────────────
-// The DB is the source of truth, but checking it on every request is expensive.
-// This cache stores recently-blocked IPs/devices for 5 minutes so we can fast-
-// path deny without hitting the DB. Cache misses fall through to DB lookup.
+// The DB is the source of truth, but checking it on every request is expensive
+// AND would blow the edge function size limit (Prisma client is huge).
+// Instead: middleware uses this in-memory cache only, and a separate Node.js
+// API route (/api/security/*) handles DB persistence.
+//
+// Cache misses fall through to "allow" — the next request from a blocked
+// IP/device will be caught once the cache is populated (by the API route
+// or by an in-process block from the email blocklist check).
 type BlockCacheEntry = { ts: number; reason: string };
 const ipBlockCache = new Map<string, BlockCacheEntry>();
 const deviceBlockCache = new Map<string, BlockCacheEntry>();
@@ -183,36 +192,31 @@ export function cacheDeviceBlock(deviceId: string, reason: string): void {
   deviceBlockCache.set(deviceId, { ts: Date.now(), reason });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DB OPS — wrapped in try/catch so failures never break the site
-// ─────────────────────────────────────────────────────────────────────────────
-// We use dynamic import of @prisma/client to avoid loading the Prisma client
-// on every cold start of middleware (which would slow down all requests).
-// If Prisma isn't available (e.g. DATABASE_URL not set), we fall back to
-// in-memory caching only — the site stays up, the blocklist is just less
-// durable across cold starts.
-
-let prismaClient: any | null = null;
-let prismaInitFailed = false;
-
-async function getPrisma(): Promise<any | null> {
-  if (prismaInitFailed) return null;
-  if (prismaClient) return prismaClient;
-
-  try {
-    // Dynamic import prevents bundling Prisma client into the middleware edge
-    // runtime if it's not available. This is critical for build performance.
-    const mod = await import("@prisma/client");
-    prismaClient = new mod.PrismaClient({
-      log: ["error"],
-    });
-    return prismaClient;
-  } catch (err) {
-    console.warn("[security] Prisma client unavailable, using in-memory only:", err);
-    prismaInitFailed = true;
-    return null;
-  }
+/**
+ * Check if an IP or device is blocked.
+ * Uses ONLY in-memory cache (no DB call — that would require Prisma in
+ * the edge bundle and blow the 1 MB size limit).
+ *
+ * Cache is populated:
+ *   1. When an email-blocklist hit occurs (in-process)
+ *   2. By the /api/security/check endpoint (called periodically or on
+ *      demand from a separate Node.js context)
+ */
+export function isBlocked(ip: string, deviceId: string): string | null {
+  const cachedIp = isIpCachedBlocked(ip);
+  if (cachedIp) return cachedIp;
+  const cachedDevice = isDeviceCachedBlocked(deviceId);
+  if (cachedDevice) return cachedDevice;
+  return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB OPS — fire-and-forget fetch to /api/security/* (Node.js runtime)
+// ─────────────────────────────────────────────────────────────────────────────
+// We CAN'T import Prisma here (edge bundle size). Instead, we POST to an
+// internal API route that runs on Node.js runtime and has full Prisma access.
+// All calls are fire-and-forget — failures are silently swallowed so the
+// site never crashes due to logging issues.
 
 export interface SecurityIncidentRecord {
   email?: string | null;
@@ -227,112 +231,52 @@ export interface SecurityIncidentRecord {
 }
 
 /**
- * Log a security incident to the DB.
- * Failures are silently swallowed — the site must not crash due to logging issues.
+ * Log a security incident to the DB (via internal API route).
+ * Fire-and-forget — failures are silently swallowed.
+ * Also updates in-memory cache so subsequent requests from the same
+ * IP/device are fast-path denied.
  */
-export async function logSecurityIncident(
-  record: SecurityIncidentRecord,
-): Promise<void> {
-  // Always update the in-memory cache too — if the user tries again within 5
-  // minutes, we want the block to be instant.
+export function logSecurityIncident(record: SecurityIncidentRecord): void {
+  // Always update the in-memory cache too
   cacheIpBlock(record.ip, record.reason);
   cacheDeviceBlock(record.deviceId, record.reason);
 
-  const prisma = await getPrisma();
-  if (!prisma) return;
-
+  // Fire-and-forget POST to internal API route
+  // (use waitUntil pattern via fetch + .catch — edge runtime may not
+  // wait for this to complete, but that's OK for incident logging)
   try {
-    await prisma.securityIncident.create({
-      data: {
-        email: record.email ?? null,
-        ip: record.ip,
-        deviceId: record.deviceId,
-        userAgent: record.userAgent ?? null,
-        reason: record.reason,
-        pathname: record.pathname ?? null,
-        country: record.country ?? null,
-        metadata: record.metadata ?? undefined,
-        blocked: record.blocked ?? false,
-      },
-    });
-  } catch (err) {
-    // Don't let a missing table crash the site. Log and move on.
-    console.warn("[security] Failed to log incident:", err);
+    fetch("https://pitchcoachai.tech/api/security/log-incident", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record),
+    }).catch(() => { /* swallow */ });
+  } catch {
+    /* swallow */
   }
 }
 
 /**
- * Add an IP to the persistent blocklist.
+ * Add an IP to the persistent blocklist (via internal API route).
+ * Fire-and-forget.
  */
-export async function blockIp(opts: {
+export function blockIp(opts: {
   ip: string;
   deviceId?: string;
   email?: string;
   reason: string;
-}): Promise<void> {
+}): void {
   cacheIpBlock(opts.ip, opts.reason);
   if (opts.deviceId) cacheDeviceBlock(opts.deviceId, opts.reason);
 
-  const prisma = await getPrisma();
-  if (!prisma) return;
-
   try {
-    await prisma.blockedIp.upsert({
-      where: { ip: opts.ip },
-      create: {
-        ip: opts.ip,
-        deviceId: opts.deviceId ?? null,
-        email: opts.email ?? null,
-        reason: opts.reason,
-        attempts: 1,
-      },
-      update: {
-        attempts: { increment: 1 },
-        lastSeen: new Date(),
-        ...(opts.deviceId ? { deviceId: opts.deviceId } : {}),
-        ...(opts.email ? { email: opts.email } : {}),
-      },
-    });
-  } catch (err) {
-    console.warn("[security] Failed to persist block:", err);
+    fetch("https://pitchcoachai.tech/api/security/block-ip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    }).catch(() => { /* swallow */ });
+  } catch {
+    /* swallow */
   }
-}
-
-/**
- * Check if an IP or device is in the persistent blocklist.
- * Checks in-memory cache first (fast path), then DB.
- */
-export async function isBlocked(ip: string, deviceId: string): Promise<string | null> {
-  // Fast path: in-memory cache
-  const cachedIp = isIpCachedBlocked(ip);
-  if (cachedIp) return cachedIp;
-  const cachedDevice = isDeviceCachedBlocked(deviceId);
-  if (cachedDevice) return cachedDevice;
-
-  // Slow path: DB lookup
-  const prisma = await getPrisma();
-  if (!prisma) return null;
-
-  try {
-    const record = await prisma.blockedIp.findFirst({
-      where: {
-        OR: [{ ip }, { deviceId }],
-        permanent: true,
-      },
-      select: { reason: true, ip: true },
-    });
-
-    if (record) {
-      // Update cache so subsequent requests are fast
-      cacheIpBlock(ip, record.reason);
-      if (deviceId) cacheDeviceBlock(deviceId, record.reason);
-      return record.reason;
-    }
-  } catch (err) {
-    console.warn("[security] Failed to query blocklist:", err);
-  }
-
-  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

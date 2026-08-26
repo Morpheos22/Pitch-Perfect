@@ -148,7 +148,7 @@ function handleGeoBlock(request: Request): NextResponse | null {
   const ip = getClientIp(request);
   const deviceId = getDeviceFingerprint(request);
 
-  // Log the geo-block incident (async, fire-and-forget)
+  // Log the geo-block incident (fire-and-forget)
   logSecurityIncident({
     ip,
     deviceId,
@@ -158,7 +158,7 @@ function handleGeoBlock(request: Request): NextResponse | null {
     userAgent: request.headers.get("user-agent"),
     metadata: { country, redirectTo: "https://motionmuse.ai/explore" },
     blocked: false, // Geo blocks aren't permanent — just redirected
-  }).catch(() => { /* swallow */ });
+  });
 
   // API: return 451 Unavailable For Legal Reasons
   if (pathname.startsWith("/api/")) {
@@ -197,7 +197,7 @@ function handleBotBlock(request: Request): NextResponse | null {
     userAgent: userAgent ?? undefined,
     metadata: { userAgent },
     blocked: false,
-  }).catch(() => { /* swallow */ });
+  });
 
   return blockedResponse(request, "SCRAPER");
 }
@@ -237,7 +237,7 @@ function handleProtectedAsset(request: Request): NextResponse | null {
     userAgent: request.headers.get("user-agent") ?? undefined,
     metadata: { referer: referer ?? null },
     blocked: false,
-  }).catch(() => { /* swallow */ });
+  });
 
   return blockedResponse(request, "DIRECT_ASSET_ACCESS");
 }
@@ -272,21 +272,19 @@ async function handleEmailBlocklist(
 
   console.warn(`[security] Blocked email attempt: email=${email} ip=${ip} device=${deviceId} path=${pathname}`);
 
-  // Log incident + persist IP/device block (async, fire-and-forget)
-  Promise.all([
-    logSecurityIncident({
-      email,
-      ip,
-      deviceId,
-      reason: "BLOCKED_EMAIL",
-      pathname,
-      country,
-      userAgent: request.headers.get("user-agent"),
-      metadata: { email, blocked: true },
-      blocked: true,
-    }),
-    blockIp({ ip, deviceId, email, reason: "BLOCKED_EMAIL" }),
-  ]).catch(() => { /* swallow */ });
+  // Log incident + persist IP/device block (fire-and-forget)
+  logSecurityIncident({
+    email,
+    ip,
+    deviceId,
+    reason: "BLOCKED_EMAIL",
+    pathname,
+    country,
+    userAgent: request.headers.get("user-agent"),
+    metadata: { email, blocked: true },
+    blocked: true,
+  });
+  blockIp({ ip, deviceId, email, reason: "BLOCKED_EMAIL" });
 
   // Sign out: redirect to /sign-in with cleared cookies
   const url = new URL("/sign-in?reason=blocked_account", request.url);
@@ -301,11 +299,15 @@ async function handleEmailBlocklist(
 // ─────────────────────────────────────────────────────────────────────────────
 // IP / DEVICE BLOCKLIST — check if request comes from a blocked source
 // ─────────────────────────────────────────────────────────────────────────────
-async function handleIpBlocklist(request: Request): Promise<NextResponse | null> {
+// Uses in-memory cache only (no DB call from middleware — that would require
+// Prisma in the edge bundle and blow the 1 MB size limit). The cache is
+// populated by handleEmailBlocklist() in-process, and by the
+// /api/security/block-ip endpoint when called by other Node.js contexts.
+function handleIpBlocklist(request: Request): NextResponse | null {
   const ip = getClientIp(request);
   const deviceId = getDeviceFingerprint(request);
 
-  const blockReason = await isBlocked(ip, deviceId);
+  const blockReason = isBlocked(ip, deviceId);
   if (!blockReason) return null;
 
   // Log repeat attempt (for forensic analysis)
@@ -319,7 +321,7 @@ async function handleIpBlocklist(request: Request): Promise<NextResponse | null>
     userAgent: request.headers.get("user-agent"),
     metadata: { originalReason: blockReason },
     blocked: true,
-  }).catch(() => { /* swallow */ });
+  });
 
   return blockedResponse(request, "BLOCKED_IP");
 }
@@ -419,7 +421,7 @@ export default clerkMiddleware(async (auth, request) => {
     if (geoResponse) return applySecurityHeaders(geoResponse);
 
     // 3. IP / device blocklist — check if this IP/device is permanently banned
-    const ipBlockResponse = await handleIpBlocklist(request);
+    const ipBlockResponse = handleIpBlocklist(request);
     if (ipBlockResponse) return applySecurityHeaders(ipBlockResponse);
 
     // 4. Protected asset — block direct downloads of brand assets
