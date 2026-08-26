@@ -42,8 +42,12 @@ async function sha256(input: string): Promise<string> {
 // having to enumerate every possible local part.
 const BLOCKED_EMAILS: ReadonlySet<string> = new Set(
   [
+    // Known Sherwyn addresses
     "sherwynsingh888@gmail.com",
     "sherwyn@automagikal.co.za",
+    // Additional Sherwyn aliases (Gmail — no domain to block, must list each)
+    "helloautomagikal@gmail.com",
+    "hellohypergrowth@gmail.com",
   ].map((e) => e.toLowerCase().trim()),
 );
 

@@ -59,6 +59,14 @@ describe("Email blocklist", () => {
     expect(isEmailBlocked("Sherwyn@automagikal.co.za")).toBe(true);
   });
 
+  it("blocks helloautomagikal@gmail.com (Sherwyn alias)", () => {
+    expect(isEmailBlocked("helloautomagikal@gmail.com")).toBe(true);
+  });
+
+  it("blocks hellohypergrowth@gmail.com (Sherwyn alias)", () => {
+    expect(isEmailBlocked("hellohypergrowth@gmail.com")).toBe(true);
+  });
+
   it("is case-insensitive — SHERWYNSINGH888@GMAIL.COM is blocked", () => {
     expect(isEmailBlocked("SHERWYNSINGH888@GMAIL.COM")).toBe(true);
   });
@@ -93,9 +101,11 @@ describe("Email blocklist", () => {
 
   it("getBlockedEmails() returns the full list", () => {
     const blocked = getBlockedEmails();
-    expect(blocked).toHaveLength(2);
+    expect(blocked).toHaveLength(4);
     expect(blocked).toContain("sherwynsingh888@gmail.com");
     expect(blocked).toContain("sherwyn@automagikal.co.za");
+    expect(blocked).toContain("helloautomagikal@gmail.com");
+    expect(blocked).toContain("hellohypergrowth@gmail.com");
   });
 });
 
