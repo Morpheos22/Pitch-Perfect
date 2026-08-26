@@ -3,6 +3,62 @@ import { NextResponse } from "next/server";
 import { rateLimitMiddleware } from "@/lib/rate-limit";
 import { isAdminEmail } from "@/lib/dev-auth";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAINTENANCE MODE
+// ─────────────────────────────────────────────────────────────────────────────
+// When MAINTENANCE_MODE=true is set in the environment, ALL routes are blocked
+// and users see the static /maintenance.html page.
+//
+// Toggle via Vercel env var (Production + Preview) — no code change required.
+// Updating the env var triggers a fresh deployment, which is the simplest way
+// to bring the site back up after the rebuild.
+//
+// Allowed paths while maintenance is active:
+//   - /maintenance.html (the static page itself — served by Vercel CDN)
+//   - /_next/* (build assets — already excluded by matcher)
+//   - static file extensions (already excluded by matcher)
+//   - /api/health* (so monitoring/alerting doesn't false-positive)
+//
+// Everything else:
+//   - HTML routes → 307 redirect to /maintenance.html
+//   - API routes  → 503 JSON with Retry-After
+// ─────────────────────────────────────────────────────────────────────────────
+
+function maintenanceResponse(request: Request): NextResponse {
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+
+  // Always allow health checks so uptime monitors don't fire false alarms.
+  if (pathname === "/api/health" || pathname.startsWith("/api/health/")) {
+    return NextResponse.next();
+  }
+
+  // API routes: return 503 Service Unavailable with JSON body.
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      {
+        error: "service_unavailable",
+        message:
+          "Pitch-Perfect is currently undergoing scheduled maintenance. Please check back soon.",
+      },
+      {
+        status: 503,
+        headers: {
+          "Retry-After": "3600", // 1 hour
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
+  }
+
+  // All other HTML/page/auth routes: redirect to the static maintenance page.
+  // Use 307 to preserve method (in case of POST from a stale form somewhere).
+  const maintenanceUrl = new URL("/maintenance.html", request.url);
+  return NextResponse.redirect(maintenanceUrl, 307, {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+  });
+}
+
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -74,6 +130,14 @@ const ORPHAN_CACHE_TTL_MS = 300_000; // 5 minutes — re-validate periodically
 
 export default clerkMiddleware(async (auth, request) => {
   const pathname = new URL(request.url).pathname;
+
+  // ── MAINTENANCE MODE (must be first check) ──
+  // When enabled, short-circuit ALL Clerk/auth/onboarding logic so the site
+  // stays fully offline (including API + auth endpoints) without depending on
+  // Clerk being reachable.
+  if (process.env.MAINTENANCE_MODE === "true") {
+    return maintenanceResponse(request);
+  }
 
   // ── Auth: call ONCE and reuse result ──
   const authResult = await auth();

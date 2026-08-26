@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="Pitch-Perfect is undergoing scheduled maintenance. We'll be back soon." />
+  <title>Pitch-Perfect — Under Construction</title>
+  <link rel="icon" href="/favicon.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background:
+        radial-gradient(ellipse at top left, rgba(74, 171, 154, 0.12), transparent 60%),
+        radial-gradient(ellipse at bottom right, rgba(51, 75, 121, 0.18), transparent 60%),
+        #0B0F1A;
+      color: #E8ECF4;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      overflow-x: hidden;
+    }
+    main {
+      max-width: 640px;
+      width: 100%;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.9rem;
+      background: rgba(74, 171, 154, 0.12);
+      border: 1px solid rgba(74, 171, 154, 0.35);
+      color: #6FE7C5;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1.75rem;
+    }
+    .pulse {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #4AAB9A;
+      box-shadow: 0 0 0 0 rgba(74, 171, 154, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(74, 171, 154, 0.7); }
+      70%  { box-shadow: 0 0 0 10px rgba(74, 171, 154, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(74, 171, 154, 0); }
+    }
+    .logo {
+      font-size: 1.65rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.5rem;
+      color: #FFFFFF;
+    }
+    .logo .accent { color: #6FE7C5; }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.025em;
+      margin-bottom: 1rem;
+      color: #FFFFFF;
+    }
+    .lead {
+      font-size: 1.05rem;
+      line-height: 1.6;
+      color: #A0AAC0;
+      margin-bottom: 2rem;
+    }
+    .progress-wrap {
+      margin: 2rem 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .progress {
+      width: 100%;
+      max-width: 320px;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      width: 35%;
+      height: 100%;
+      background: linear-gradient(90deg, #334B79, #4AAB9A);
+      border-radius: 999px;
+      animation: shimmer 2.5s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%   { transform: translateX(-100%); width: 35%; }
+      50%  { width: 60%; }
+      100% { transform: translateX(280%); width: 35%; }
+    }
+    .contact {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #E8ECF4;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-radius: 0.625rem;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .contact:hover {
+      background: rgba(74, 171, 154, 0.15);
+      border-color: rgba(74, 171, 154, 0.5);
+    }
+    .footer {
+      margin-top: 2.5rem;
+      font-size: 0.82rem;
+      color: #6B7280;
+    }
+    .footer a { color: #6FE7C5; text-decoration: none; }
+    .scaffold {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+      background-image:
+        linear-gradient(rgba(74,171,154,0.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(74,171,154,0.4) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
+      -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
+    }
+  </style>
+</head>
+<body>
+  <div class="scaffold" aria-hidden="true"></div>
+  <main>
+    <div class="badge">
+      <span class="pulse" aria-hidden="true"></span>
+      Under Construction
+    </div>
+    <div class="logo">Pitch<span class="accent">Perfect</span></div>
+    <h1>We&rsquo;re rebuilding something better.</h1>
+    <p class="lead">
+      Pitch-Perfect is undergoing a major rebuild. We&rsquo;ve temporarily paused
+      all access &mdash; sign-in, dashboards, AI coaching modules, and APIs &mdash;
+      while we ship a faster, sharper, more capable platform. Existing accounts
+      and data are safe.
+    </p>
+    <div class="progress-wrap" aria-hidden="true">
+      <div class="progress"></div>
+    </div>
+    <a class="contact" href="mailto:hello@pitchcoachai.tech">Contact the team</a>
+    <div class="footer">
+      <p>Need urgent help? Email <a href="mailto:hello@pitchcoachai.tech">hello@pitchcoachai.tech</a></p>
+      <p style="margin-top:0.4rem">&mdash; The Pitch-Perfect Team</p>
+    </div>
+  </main>
+</body>
+</html>
