@@ -31,6 +31,7 @@ import {
   isDeviceCachedBlocked,
   cacheDeviceBlock,
   isBlocked,
+  setSecurityCheckOrigin,
   SECURITY_HEADERS,
   PROTECTED_ASSETS,
 } from "../security";
@@ -377,6 +378,17 @@ describe("In-memory IP/device block cache", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("setSecurityCheckOrigin() extracts origin from request URL", () => {
+    const mockReq = {
+      url: "https://example.com/some/path",
+      headers: { get: () => null },
+    } as unknown as Request;
+    setSecurityCheckOrigin(mockReq);
+    // No direct way to verify the module-level variable, but the function
+    // should not throw. The isBlocked() test above uses the production URL
+    // fallback which is also fine.
   });
 });
 

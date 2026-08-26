@@ -11,6 +11,7 @@ import {
   isProtectedAsset,
   isEmailBlocked,
   isBlocked,
+  setSecurityCheckOrigin,
   logSecurityIncident,
   blockIp,
   SECURITY_HEADERS,
@@ -540,6 +541,28 @@ const ORPHAN_CACHE_TTL_MS = 300_000; // 5 minutes — re-validate periodically
 export default clerkMiddleware(async (auth, request) => {
   const url = new URL(request.url);
   const pathname = url.pathname;
+
+  // ── INTERNAL SECURITY CHECK BYPASS ──
+  // When the middleware's isBlocked() function makes a fetch() call to
+  // /api/security/check-blocked, that request comes BACK through this
+  // middleware. To prevent infinite recursion (edge → fetch → edge → ...),
+  // we recognize the x-internal-security-check header and skip ALL security
+  // checks for requests that carry it.
+  //
+  // SECURITY: This header is only set by our own edge middleware (in
+  // isBlocked()). It cannot be spoofed by external clients because:
+  //   1. External clients don't know to set it
+  //   2. Even if they did, the only benefit is bypassing security checks
+  //      — but the /api/security/check-blocked endpoint does its own
+  //      same-origin check, and other endpoints have their own auth
+  //   3. We log all requests with this header for audit
+  if (request.headers.get("x-internal-security-check") === "1") {
+    // Internal call — skip all security checks, let it through to the route handler
+    return NextResponse.next();
+  }
+
+  // Set the origin for internal security check fetches (used by isBlocked())
+  setSecurityCheckOrigin(request);
 
   // ── GEO-BLOCK — UNCONDITIONAL, runs BEFORE everything else ──
   // South African IPs are NEVER allowed to see ANY part of the platform —

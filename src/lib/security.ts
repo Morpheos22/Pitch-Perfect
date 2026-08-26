@@ -253,7 +253,32 @@ export function cacheDeviceBlock(deviceId: string, reason: string): void {
  * caught (cache miss + DB query happens, but the request continues while
  * the query is in flight). The SECOND request from the same IP will be
  * blocked (cache hit). This is an acceptable trade-off for performance.
+ *
+ * URL STRATEGY: We use a relative-style approach by passing the request
+ * URL. The middleware caller passes the request so we can extract the
+ * origin. This avoids hardcoding the production URL (which would break
+ * in preview deployments) AND avoids creating a recursive edge call
+ * (fetch to pitchcoachai.tech from within edge middleware = the request
+ * goes back out to the internet and comes back in through the edge,
+ * triggering middleware again).
+ *
+ * To break the recursion, we use a special header x-internal-security-check
+ * that the middleware recognizes and skips the security checks for.
  */
+// Module-level cache of the origin URL — set on first call from middleware
+let securityCheckUrl: string | null = null;
+
+export function setSecurityCheckOrigin(request: Request): void {
+  if (securityCheckUrl) return; // Already set
+  try {
+    const url = new URL(request.url);
+    securityCheckUrl = `${url.origin}/api/security/check-blocked`;
+  } catch {
+    // Fallback to production URL if URL parsing fails
+    securityCheckUrl = "https://pitchcoachai.tech/api/security/check-blocked";
+  }
+}
+
 export async function isBlocked(ip: string, deviceId: string): Promise<string | null> {
   // FAST PATH: in-memory cache
   const cachedIp = isIpCachedBlocked(ip);
@@ -262,12 +287,18 @@ export async function isBlocked(ip: string, deviceId: string): Promise<string | 
   if (cachedDevice) return cachedDevice;
 
   // SLOW PATH: query DB via internal API endpoint
-  // This runs on every cache-miss, which is expensive but necessary
-  // for the proactive blocklist to actually work.
+  const url = securityCheckUrl ?? "https://pitchcoachai.tech/api/security/check-blocked";
+
   try {
-    const response = await fetch("https://pitchcoachai.tech/api/security/check-blocked", {
+    const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Special header — middleware recognizes this and SKIPS all
+        // security checks for this request. This prevents infinite
+        // recursion (edge middleware → fetch → edge middleware → ...).
+        "x-internal-security-check": "1",
+      },
       body: JSON.stringify({ ip, deviceId }),
       // Short timeout — if DB is slow, don't block the request
       signal: AbortSignal.timeout(2000),
