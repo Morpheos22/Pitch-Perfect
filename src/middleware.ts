@@ -58,9 +58,12 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
   // middleware's fire-and-forget POST calls to /api/security/log-incident
   // and /api/security/block-ip succeed (otherwise they'd be 503'd by the
   // maintenance gate and incident logs would never be persisted).
+  // Also allow /api/security/auto-promote so it can be triggered during
+  // lockdown to scan probe incidents and proactively ban IPs.
   if (
     pathname === "/api/security/log-incident" ||
-    pathname === "/api/security/block-ip"
+    pathname === "/api/security/block-ip" ||
+    pathname === "/api/security/auto-promote"
   ) {
     return NextResponse.next();
   }
@@ -176,11 +179,13 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
 const SECURITY_EXEMPT_PREFIXES = [
   "/maintenance.html",
   "/api/health",
-  // Security logging endpoints — MUST be reachable during maintenance so
-  // the middleware can fire-and-forget POST incident logs without them
-  // being blocked by the maintenance gate.
+  // Security logging + management endpoints — MUST be reachable during
+  // maintenance so the middleware can fire-and-forget POST incident logs
+  // without them being blocked by the maintenance gate, AND so operators
+  // can trigger /api/security/auto-promote during lockdown.
   "/api/security/log-incident",
   "/api/security/block-ip",
+  "/api/security/auto-promote",
 ];
 
 function isSecurityExempt(pathname: string): boolean {
@@ -491,38 +496,75 @@ export default clerkMiddleware(async (auth, request) => {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
-  // ── MAINTENANCE MODE (must be first check) ──
-  // When enabled, short-circuit ALL Clerk/auth/onboarding/security logic.
-  // Site stays fully offline (including API + auth endpoints) without depending
-  // on Clerk being reachable.
-  if (isMaintenanceEnabled()) {
-    return applySecurityHeaders(await maintenanceResponse(request));
+  // ── GEO-BLOCK — UNCONDITIONAL, runs BEFORE everything else ──
+  // South African IPs are NEVER allowed to see ANY part of the platform —
+  // including the maintenance page itself. They get redirected to
+  // motionmuse.ai immediately, regardless of:
+  //   - Maintenance mode state (on or off)
+  //   - Which path they're hitting (even /maintenance.html)
+  //   - Whether they're signed in or not
+  //   - Whether the request is for an API or HTML
+  //
+  // Exception: /api/health* (so uptime monitors don't false-positive),
+  // /api/security/* (so internal logging endpoints still work even if
+  // the DB is hosted in a ZA region — unlikely but defensive).
+  //
+  // The geo-block uses Vercel's x-vercel-ip-country header, which is set
+  // at the edge and CANNOT be spoofed by clients.
+  const isGeoExemptPath =
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/health/") ||
+    pathname === "/api/security/log-incident" ||
+    pathname === "/api/security/block-ip" ||
+    pathname === "/api/security/auto-promote";
+
+  if (!isGeoExemptPath) {
+    const geoResponse = await handleGeoBlock(request);
+    if (geoResponse) return applySecurityHeaders(geoResponse);
   }
 
-  // ── Security hardening layers (run for all non-exempt paths) ──
-  // Order: bot check → geo-block → IP blocklist → protected asset
-  // All checks log incidents to the security_incidents table (when DB available)
-  // and skip the maintenance page + health endpoints.
+  // ── SECURITY HARDENING (runs after geo-block, before maintenance) ──
+  // Order: bot check → IP blocklist → protected asset
+  // (Geo-block already ran above — it's the highest priority block.)
+  //
+  // Bot-block and IP blocklist must run before maintenance so attackers/bots
+  // don't get the maintenance page either — they get a 403.
+  //
+  // Exception: paths in SECURITY_EXEMPT_PREFIXES (maintenance.html itself,
+  // health endpoints, security logging endpoints) skip these checks.
   if (!isSecurityExempt(pathname)) {
     // Pre-compute device fingerprint once — used by all handlers below
     const deviceId = await getDeviceFingerprint(request);
 
     // 1. Bot / scraper detection — block curl, wget, python-requests, etc.
+    // (Bots never see the maintenance page — they get a 403.)
     const botResponse = await handleBotBlock(request);
     if (botResponse) return applySecurityHeaders(botResponse);
 
-    // 2. Geo-block — redirect South African IPs to motionmuse.ai
-    const geoResponse = await handleGeoBlock(request);
-    if (geoResponse) return applySecurityHeaders(geoResponse);
-
-    // 3. IP / device blocklist — check if this IP/device is permanently banned
+    // 2. IP / device blocklist — check if this IP/device is permanently banned
+    // (Banned IPs never see the maintenance page — they get a 403.)
     const ipBlockResponse = handleIpBlocklist(request, deviceId);
     if (ipBlockResponse) return applySecurityHeaders(ipBlockResponse);
 
-    // 4. Protected asset — block direct downloads of brand assets
+    // 3. Protected asset — block direct downloads of brand assets
     // (only fires for specific paths like /logo.png, /metabuilder-logo.png)
     const assetResponse = await handleProtectedAsset(request);
     if (assetResponse) return applySecurityHeaders(assetResponse);
+  }
+
+  // ── MAINTENANCE MODE (runs AFTER security hardening) ──
+  // When enabled, short-circuit ALL Clerk/auth/onboarding logic.
+  // Site stays fully offline (including API + auth endpoints) without depending
+  // on Clerk being reachable.
+  //
+  // At this point, we KNOW the request is:
+  //   - Not from South Africa (geo-block would have redirected to motionmuse.ai)
+  //   - Not a bot (bot-block would have returned 403)
+  //   - Not from a banned IP/device (IP blocklist would have returned 403)
+  //   - Not a direct asset download (asset check would have returned 403)
+  // So it's a legitimate request from an allowed region — show maintenance page.
+  if (isMaintenanceEnabled()) {
+    return applySecurityHeaders(await maintenanceResponse(request));
   }
 
   // ── Auth: call ONCE and reuse result ──
