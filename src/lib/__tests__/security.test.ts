@@ -22,6 +22,7 @@ if (typeof globalThis.crypto === "undefined" || !globalThis.crypto.subtle) {
 import {
   isEmailBlocked,
   getBlockedEmails,
+  getBlockedEmailDomains,
   isCountryBlocked,
   isBotUserAgent,
   isProtectedAsset,
@@ -84,8 +85,9 @@ describe("Email blocklist", () => {
   it("does NOT block emails that look similar but are different", () => {
     // Subtle variations — must NOT trigger
     expect(isEmailBlocked("sherwynsingh888@example.com")).toBe(false);
-    expect(isEmailBlocked("sherwyn@automagikal.com")).toBe(false); // .com not .co.za
     expect(isEmailBlocked("sherwynsingh8888@gmail.com")).toBe(false); // extra digit
+    // NOTE: sherwyn@automagikal.com is NOW blocked (TLD typosquat defense)
+    // — see "Blocked email domains" describe block below
   });
 
   it("getBlockedEmails() returns the full list", () => {
@@ -93,6 +95,74 @@ describe("Email blocklist", () => {
     expect(blocked).toHaveLength(2);
     expect(blocked).toContain("sherwynsingh888@gmail.com");
     expect(blocked).toContain("sherwyn@automagikal.co.za");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOCKED EMAIL DOMAIN TESTS
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Blocked email domains", () => {
+  it("blocks any email from @automagikal.co.za", () => {
+    expect(isEmailBlocked("admin@automagikal.co.za")).toBe(true);
+    expect(isEmailBlocked("support@automagikal.co.za")).toBe(true);
+    expect(isEmailBlocked("hello@automagikal.co.za")).toBe(true);
+    expect(isEmailBlocked("anything@automagikal.co.za")).toBe(true);
+    expect(isEmailBlocked("test.user@automagikal.co.za")).toBe(true);
+  });
+
+  it("blocks any email from @automagikal.com (TLD typosquat defense)", () => {
+    expect(isEmailBlocked("admin@automagikal.com")).toBe(true);
+    expect(isEmailBlocked("anything@automagikal.com")).toBe(true);
+  });
+
+  it("still blocks the specific blocked email addresses", () => {
+    expect(isEmailBlocked("sherwyn@automagikal.co.za")).toBe(true);
+    expect(isEmailBlocked("sherwynsingh888@gmail.com")).toBe(true);
+  });
+
+  it("does NOT block emails from unlisted domains", () => {
+    expect(isEmailBlocked("user@example.com")).toBe(false);
+    expect(isEmailBlocked("hello@pitchcoachai.tech")).toBe(false);
+    expect(isEmailBlocked("user@gmail.com")).toBe(false); // gmail.com not blocked, only specific address
+    expect(isEmailBlocked("admin@automagikal.org")).toBe(false); // .org not blocked
+    expect(isEmailBlocked("admin@automagikal.io")).toBe(false); // .io not blocked
+  });
+
+  it("is case-insensitive for domain matching", () => {
+    expect(isEmailBlocked("ADMIN@AUTOMAGIKAL.CO.ZA")).toBe(true);
+    expect(isEmailBlocked("Sherwyn@Automagikal.Co.Za")).toBe(true);
+  });
+
+  it("trims whitespace before domain check", () => {
+    expect(isEmailBlocked("  admin@automagikal.co.za  ")).toBe(true);
+  });
+
+  it("does NOT match substring domains (security check)", () => {
+    // 'evilautomagikal.co.za' should NOT match 'automagikal.co.za'
+    expect(isEmailBlocked("admin@evilautomagikal.co.za")).toBe(false);
+    // 'automagikal.co.za.evil.com' should NOT match
+    expect(isEmailBlocked("admin@automagikal.co.za.evil.com")).toBe(false);
+  });
+
+  it("handles malformed emails gracefully", () => {
+    // No @ at all — return false (not blocked)
+    expect(isEmailBlocked("notanemail")).toBe(false);
+    // Trailing @ with no domain — return false (not blocked)
+    expect(isEmailBlocked("admin@")).toBe(false); // no domain
+    // NOTE: emails with a valid domain (even if malformed local part)
+    // ARE blocked, because we extract the domain from after the LAST @.
+    // This is correct behavior — even malformed emails from a blocked
+    // domain are blocked. Clerk's own email validation will reject these
+    // before they reach our middleware anyway.
+    expect(isEmailBlocked("@automagikal.co.za")).toBe(true); // empty local but domain matches
+    expect(isEmailBlocked("admin@@automagikal.co.za")).toBe(true); // double @ but domain matches
+  });
+
+  it("getBlockedEmailDomains() returns the configured domains", () => {
+    const domains = getBlockedEmailDomains();
+    expect(domains).toHaveLength(2);
+    expect(domains).toContain("automagikal.co.za");
+    expect(domains).toContain("automagikal.com");
   });
 });
 

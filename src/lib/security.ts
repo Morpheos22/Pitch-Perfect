@@ -29,13 +29,17 @@ async function sha256(input: string): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BLOCKED EMAILS — permanent blocklist
+// BLOCKED EMAILS + DOMAINS — permanent blocklist
 // ─────────────────────────────────────────────────────────────────────────────
 // These addresses are permanently banned from the platform.
 // Anyone attempting to sign in / sign up with them is treated as a security
 // threat: their IP + device fingerprint are captured, stored, and used to
 // block all future requests from the same IP/device — even with a different
 // email.
+//
+// DOMAINS: any email from a blocked domain is also banned. This catches
+// variations like admin@, support@, hello@ on the same domain — without
+// having to enumerate every possible local part.
 const BLOCKED_EMAILS: ReadonlySet<string> = new Set(
   [
     "sherwynsingh888@gmail.com",
@@ -43,13 +47,37 @@ const BLOCKED_EMAILS: ReadonlySet<string> = new Set(
   ].map((e) => e.toLowerCase().trim()),
 );
 
+// Blocked domains — any email ending with @<domain> is banned.
+// Lowercase, no leading @.
+const BLOCKED_EMAIL_DOMAINS: ReadonlySet<string> = new Set(
+  [
+    "automagikal.co.za",
+    "automagikal.com", // common TLD typosquat defense
+  ].map((d) => d.toLowerCase().trim()),
+);
+
 export function isEmailBlocked(email: string | null | undefined): boolean {
   if (!email) return false;
-  return BLOCKED_EMAILS.has(email.toLowerCase().trim());
+  const normalized = email.toLowerCase().trim();
+
+  // 1. Exact email match
+  if (BLOCKED_EMAILS.has(normalized)) return true;
+
+  // 2. Domain match — extract domain after @
+  const atIndex = normalized.lastIndexOf("@");
+  if (atIndex === -1 || atIndex === normalized.length - 1) return false;
+  const domain = normalized.slice(atIndex + 1);
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) return true;
+
+  return false;
 }
 
 export function getBlockedEmails(): string[] {
   return Array.from(BLOCKED_EMAILS);
+}
+
+export function getBlockedEmailDomains(): string[] {
+  return Array.from(BLOCKED_EMAIL_DOMAINS);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
