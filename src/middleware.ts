@@ -54,6 +54,27 @@ function maintenanceResponse(request: Request): NextResponse {
     return NextResponse.next();
   }
 
+  // Allow same-origin brand asset requests so the maintenance page can render
+  // its own logo. Without this, /metabuilder-logo.png returns 307 to
+  // /maintenance.html, breaking the <img src="/metabuilder-logo.png"> on the
+  // maintenance page itself.
+  // Same-origin = Referer matches our host (means the asset is being loaded
+  // by one of our HTML pages, not downloaded directly).
+  if (isProtectedAsset(pathname)) {
+    const referer = request.headers.get("referer");
+    if (referer) {
+      try {
+        const refererUrl = new URL(referer);
+        if (refererUrl.host === url.host) {
+          return NextResponse.next(); // Same-origin page request — allow
+        }
+      } catch {
+        // Invalid Referer — treat as direct access, fall through to block
+      }
+    }
+    // Direct access (no Referer or cross-origin) — block as normal below
+  }
+
   // API routes: return 503 Service Unavailable with JSON body.
   if (pathname.startsWith("/api/")) {
     return NextResponse.json(
