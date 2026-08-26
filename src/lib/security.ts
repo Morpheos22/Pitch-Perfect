@@ -248,14 +248,17 @@ export interface SecurityIncidentRecord {
 /**
  * Log a security incident to the DB (via internal API route).
  * Fire-and-forget — failures are silently swallowed.
- * Also updates in-memory cache so subsequent requests from the same
- * IP/device are fast-path denied.
+ *
+ * NOTE: This function does NOT cache the IP/device as blocked — that's
+ * intentional. Logging an incident is an OBSERVATION (e.g., "this IP
+ * hit /sign-in during maintenance"), not a block. If we cached every
+ * observation as a block, every probe / geo-block / bot detection would
+ * 5-minute-ban the IP — which would cause false positives for normal
+ * users who happen to hit an asset URL directly or visit /sign-in.
+ *
+ * To actually BLOCK an IP (cache + persist), call blockIp() instead.
  */
 export function logSecurityIncident(record: SecurityIncidentRecord): void {
-  // Always update the in-memory cache too
-  cacheIpBlock(record.ip, record.reason);
-  cacheDeviceBlock(record.deviceId, record.reason);
-
   // Fire-and-forget POST to internal API route
   // (use waitUntil pattern via fetch + .catch — edge runtime may not
   // wait for this to complete, but that's OK for incident logging)
