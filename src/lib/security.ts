@@ -10,7 +10,23 @@
  * full Prisma access.
  */
 
-import { createHash } from "crypto";
+// ─────────────────────────────────────────────────────────────────────────────
+// CRYPTO — use Web Crypto API (SubtleCrypto) for edge compatibility
+// ─────────────────────────────────────────────────────────────────────────────
+// The Node.js 'crypto' module is NOT available in the Edge Runtime.
+// Web Crypto's crypto.subtle.digest() is the cross-runtime replacement
+// and works on both Edge and Node.js (Node 19+ has it built-in).
+
+async function sha256(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  // Convert ArrayBuffer to hex string
+  const bytes = new Uint8Array(hashBuffer);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BLOCKED EMAILS — permanent blocklist
@@ -68,7 +84,8 @@ export function getClientIp(request: Request): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Not a perfect fingerprint (browser fingerprinting is a deep rabbit hole),
 // but stable enough to catch repeat offenders using the same browser/device.
-export function getDeviceFingerprint(request: Request): string {
+// Uses Web Crypto's subtle.digest for Edge Runtime compatibility.
+export async function getDeviceFingerprint(request: Request): Promise<string> {
   const headers = request.headers;
   const parts: string[] = [
     headers.get("user-agent") ?? "",
@@ -82,10 +99,8 @@ export function getDeviceFingerprint(request: Request): string {
     headers.get("device-memory") ?? "",
   ].filter((s) => s.length > 0);
 
-  return createHash("sha256")
-    .update(parts.join("|"))
-    .digest("hex")
-    .slice(0, 32); // 16 bytes is enough for fingerprinting
+  const hash = await sha256(parts.join("|"));
+  return hash.slice(0, 32); // 16 bytes is enough for fingerprinting
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

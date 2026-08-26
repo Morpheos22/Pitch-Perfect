@@ -139,14 +139,14 @@ function blockedResponse(request: Request, reason: string): NextResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 // GEO-BLOCK — redirect South African IPs to motionmuse.ai
 // ─────────────────────────────────────────────────────────────────────────────
-function handleGeoBlock(request: Request): NextResponse | null {
+async function handleGeoBlock(request: Request): Promise<NextResponse | null> {
   const country = getCountryCode(request);
   if (!country) return null; // No geo info (likely local dev)
   if (!isCountryBlocked(country)) return null;
 
   const pathname = new URL(request.url).pathname;
   const ip = getClientIp(request);
-  const deviceId = getDeviceFingerprint(request);
+  const deviceId = await getDeviceFingerprint(request);
 
   // Log the geo-block incident (fire-and-forget)
   logSecurityIncident({
@@ -180,13 +180,13 @@ function handleGeoBlock(request: Request): NextResponse | null {
 // ─────────────────────────────────────────────────────────────────────────────
 // BOT / SCRAPER BLOCKING
 // ─────────────────────────────────────────────────────────────────────────────
-function handleBotBlock(request: Request): NextResponse | null {
+async function handleBotBlock(request: Request): Promise<NextResponse | null> {
   const userAgent = request.headers.get("user-agent");
   if (!isBotUserAgent(userAgent)) return null;
 
   const pathname = new URL(request.url).pathname;
   const ip = getClientIp(request);
-  const deviceId = getDeviceFingerprint(request);
+  const deviceId = await getDeviceFingerprint(request);
 
   // Log the bot block
   logSecurityIncident({
@@ -207,7 +207,7 @@ function handleBotBlock(request: Request): NextResponse | null {
 // ─────────────────────────────────────────────────────────────────────────────
 // Allows access only when the request includes a same-origin Referer (i.e.
 // the asset is being loaded by one of our HTML pages, not downloaded directly).
-function handleProtectedAsset(request: Request): NextResponse | null {
+async function handleProtectedAsset(request: Request): Promise<NextResponse | null> {
   const pathname = new URL(request.url).pathname;
   if (!isProtectedAsset(pathname)) return null;
 
@@ -228,7 +228,7 @@ function handleProtectedAsset(request: Request): NextResponse | null {
 
   // Block direct access — log incident
   const ip = getClientIp(request);
-  const deviceId = getDeviceFingerprint(request);
+  const deviceId = await getDeviceFingerprint(request);
   logSecurityIncident({
     ip,
     deviceId,
@@ -266,7 +266,7 @@ async function handleEmailBlocklist(
 
   // BLOCKED EMAIL DETECTED — capture IP + device, persist block
   const ip = getClientIp(request);
-  const deviceId = getDeviceFingerprint(request);
+  const deviceId = await getDeviceFingerprint(request);
   const pathname = new URL(request.url).pathname;
   const country = getCountryCode(request);
 
@@ -303,9 +303,8 @@ async function handleEmailBlocklist(
 // Prisma in the edge bundle and blow the 1 MB size limit). The cache is
 // populated by handleEmailBlocklist() in-process, and by the
 // /api/security/block-ip endpoint when called by other Node.js contexts.
-function handleIpBlocklist(request: Request): NextResponse | null {
+function handleIpBlocklist(request: Request, deviceId: string): NextResponse | null {
   const ip = getClientIp(request);
-  const deviceId = getDeviceFingerprint(request);
 
   const blockReason = isBlocked(ip, deviceId);
   if (!blockReason) return null;
@@ -412,21 +411,24 @@ export default clerkMiddleware(async (auth, request) => {
   // All checks log incidents to the security_incidents table (when DB available)
   // and skip the maintenance page + health endpoints.
   if (!isSecurityExempt(pathname)) {
+    // Pre-compute device fingerprint once — used by all handlers below
+    const deviceId = await getDeviceFingerprint(request);
+
     // 1. Bot / scraper detection — block curl, wget, python-requests, etc.
-    const botResponse = handleBotBlock(request);
+    const botResponse = await handleBotBlock(request);
     if (botResponse) return applySecurityHeaders(botResponse);
 
     // 2. Geo-block — redirect South African IPs to motionmuse.ai
-    const geoResponse = handleGeoBlock(request);
+    const geoResponse = await handleGeoBlock(request);
     if (geoResponse) return applySecurityHeaders(geoResponse);
 
     // 3. IP / device blocklist — check if this IP/device is permanently banned
-    const ipBlockResponse = handleIpBlocklist(request);
+    const ipBlockResponse = handleIpBlocklist(request, deviceId);
     if (ipBlockResponse) return applySecurityHeaders(ipBlockResponse);
 
     // 4. Protected asset — block direct downloads of brand assets
     // (only fires for specific paths like /logo.png, /metabuilder-logo.png)
-    const assetResponse = handleProtectedAsset(request);
+    const assetResponse = await handleProtectedAsset(request);
     if (assetResponse) return applySecurityHeaders(assetResponse);
   }
 
