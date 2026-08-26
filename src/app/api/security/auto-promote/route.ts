@@ -51,25 +51,32 @@ interface PromotionResult {
 }
 
 export async function POST(request: NextRequest) {
-  // ── Auth check ──
-  if (EXPECTED_SECRET) {
-    const provided = request.headers.get("x-auto-promote-secret");
-    if (provided !== EXPECTED_SECRET) {
-      return NextResponse.json(
-        { error: "unauthorized", message: "Missing or invalid secret" },
-        { status: 401 },
-      );
-    }
-  } else {
-    // If no secret is configured, require same-origin request as fallback
-    const origin = request.headers.get("origin");
-    const host = request.headers.get("host");
-    if (origin && host && !origin.includes(host)) {
-      return NextResponse.json(
-        { error: "forbidden", message: "Cross-origin requests not allowed without secret" },
-        { status: 403 },
-      );
-    }
+  // ── Auth check — MANDATORY secret required ──
+  // This endpoint is too powerful to leave open — it can permanently ban IPs.
+  // If AUTO_PROMOTE_SECRET is not configured, we refuse all requests rather
+  // than fall back to a weak origin check.
+  if (!EXPECTED_SECRET) {
+    console.error(
+      "[auto-promote] AUTO_PROMOTE_SECRET env var is not set — refusing request. " +
+      "Set it in Vercel project settings before calling this endpoint.",
+    );
+    return NextResponse.json(
+      {
+        error: "server_misconfigured",
+        message:
+          "AUTO_PROMOTE_SECRET is not configured on the server. " +
+          "Set it in Vercel project settings before calling this endpoint.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const provided = request.headers.get("x-auto-promote-secret");
+  if (provided !== EXPECTED_SECRET) {
+    return NextResponse.json(
+      { error: "unauthorized", message: "Missing or invalid secret" },
+      { status: 401 },
+    );
   }
 
   // ── Parse optional body for per-call overrides ──
