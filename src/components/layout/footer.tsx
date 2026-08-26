@@ -112,9 +112,25 @@ export function Footer() {
                   Developed By
                 </span>
                 <span className="text-sm font-bold">
-                  <span className="text-secondary">Akanimoh David</span>
+                  <a
+                    href="https://www.linkedin.com/in/david-akanimoh/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-secondary hover:underline transition-colors"
+                    title="Akanimoh David on LinkedIn"
+                  >
+                    Akanimoh David
+                  </a>
                   <span className="text-muted-foreground mx-2">&middot;</span>
-                  <span className="text-foreground">Metabuilder Solutions Limited</span>
+                  <a
+                    href="https://metabuildersolutions.org/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-foreground hover:text-primary hover:underline transition-colors"
+                    title="Metabuilder Solutions Limited"
+                  >
+                    Metabuilder Solutions Limited
+                  </a>
                 </span>
               </div>
               <a

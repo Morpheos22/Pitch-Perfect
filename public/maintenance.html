@@ -168,8 +168,25 @@
       color: #E8ECF4;
       font-weight: 700;
     }
-    .developer-block .credit .name { color: #6FE7C5; }
-    .developer-block .credit .company { color: #FFFFFF; }
+    .developer-block .credit .name,
+    .developer-block .credit .company {
+      color: #6FE7C5;
+      text-decoration: none;
+      transition: color 0.2s ease, text-decoration 0.2s ease;
+    }
+    .developer-block .credit .name:hover,
+    .developer-block .credit .company:hover {
+      color: #FFFFFF;
+      text-decoration: underline;
+    }
+    .metabuilder-logo-link {
+      display: inline-block;
+      line-height: 0;
+      transition: opacity 0.2s ease;
+    }
+    .metabuilder-logo-link:hover {
+      opacity: 0.8;
+    }
     .metabuilder-logo {
       max-height: 48px;
       width: auto;
@@ -226,17 +243,19 @@
     <div class="developer-block">
       <span class="label">Developed By</span>
       <div class="credit">
-        <span class="name">Akanimoh David</span>
+        <a class="name" href="https://www.linkedin.com/in/david-akanimoh/" target="_blank" rel="noopener noreferrer" title="Akanimoh David on LinkedIn">Akanimoh David</a>
         <span style="color:#6B7280;margin:0 0.4rem">&middot;</span>
-        <span class="company">Metabuilder Solutions Limited</span>
+        <a class="company" href="https://metabuildersolutions.org/" target="_blank" rel="noopener noreferrer" title="Metabuilder Solutions Limited">Metabuilder Solutions Limited</a>
       </div>
-      <img
-        class="metabuilder-logo"
-        src="/metabuilder-logo.png"
-        alt="Metabuilder Solutions Limited"
-        oncontextmenu="return false;"
-        draggable="false"
-      />
+      <a class="metabuilder-logo-link" href="https://metabuildersolutions.org/" target="_blank" rel="noopener noreferrer" title="Metabuilder Solutions Limited">
+        <img
+          class="metabuilder-logo"
+          src="/metabuilder-logo.png"
+          alt="Metabuilder Solutions Limited"
+          oncontextmenu="return false;"
+          draggable="false"
+        />
+      </a>
     </div>
   </main>
 

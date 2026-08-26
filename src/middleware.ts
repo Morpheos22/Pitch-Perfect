@@ -45,13 +45,69 @@ function isMaintenanceEnabled(): boolean {
   return MAINTENANCE_FORCE_ON;
 }
 
-function maintenanceResponse(request: Request): NextResponse {
+async function maintenanceResponse(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
   // Always allow health checks so uptime monitors don't fire false alarms.
   if (pathname === "/api/health" || pathname.startsWith("/api/health/")) {
     return NextResponse.next();
+  }
+
+  // ── MAINTENANCE_AUTH_PROBE — capture IPs that try to reach auth endpoints
+  // during the lockdown. This is critical: when maintenance is ON, the email
+  // blocklist check (which normally runs post-auth) is skipped because auth()
+  // never runs. To still capture would-be attackers (e.g., someone we've
+  // flagged as a security risk trying to access /sign-in during the rebuild),
+  // we log every request to auth-related endpoints as a probe incident.
+  //
+  // The IP + device fingerprint are stored in security_incidents with
+  // reason="MAINTENANCE_AUTH_PROBE". Operators can then proactively add
+  // those IPs to blocked_ips BEFORE lifting maintenance, so the moment the
+  // site comes back online, the attacker is already banned.
+  //
+  // Auth-related paths we probe:
+  //   - /sign-in, /sign-up, /onboarding (Clerk auth UI)
+  //   - /api/auth/* (Clerk backend)
+  //   - /api/user/* (user management — profile, onboarding, sync, change-password)
+  //   - /api/webhooks/clerk (Clerk webhook — could be probed for weaknesses)
+  //
+  // Note: logSecurityIncident() is fire-and-forget — won't block the response.
+  if (
+    pathname === "/sign-in" ||
+    pathname.startsWith("/sign-in/") ||
+    pathname === "/sign-up" ||
+    pathname.startsWith("/sign-up/") ||
+    pathname === "/onboarding" ||
+    pathname.startsWith("/onboarding/") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/user/") ||
+    pathname === "/api/webhooks/clerk"
+  ) {
+    const userAgent = request.headers.get("user-agent");
+    // Skip logging for known bots (they hit every URL indiscriminately —
+    // we'd fill the table with noise). The bot block already fires
+    // post-maintenance, but during lockdown we just skip the log.
+    if (!isBotUserAgent(userAgent)) {
+      const ip = getClientIp(request);
+      const deviceId = await getDeviceFingerprint(request);
+      const country = getCountryCode(request);
+      logSecurityIncident({
+        ip,
+        deviceId,
+        reason: "MAINTENANCE_AUTH_PROBE",
+        pathname,
+        country,
+        userAgent: userAgent ?? undefined,
+        metadata: {
+          attemptedPath: pathname,
+          method: request.method,
+          referer: request.headers.get("referer") ?? null,
+          maintenanceMode: true,
+        },
+        blocked: false,
+      });
+    }
   }
 
   // Allow same-origin brand asset requests so the maintenance page can render
@@ -424,7 +480,7 @@ export default clerkMiddleware(async (auth, request) => {
   // Site stays fully offline (including API + auth endpoints) without depending
   // on Clerk being reachable.
   if (isMaintenanceEnabled()) {
-    return applySecurityHeaders(maintenanceResponse(request));
+    return applySecurityHeaders(await maintenanceResponse(request));
   }
 
   // ── Security hardening layers (run for all non-exempt paths) ──
