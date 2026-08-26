@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
 import { Logo } from "./logo";
@@ -99,15 +100,48 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom bar */}
+        {/* Bottom bar — Metabuilder branding block */}
         <div className="mt-12 pt-8 border-t border-border">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} Pitch Perfect. All rights reserved.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Built by <a href="https://automagikal.co.za/" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">AutomagiKal</a>
-            </p>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex flex-col items-center md:items-start gap-3">
+              <p className="text-sm text-muted-foreground">
+                © {new Date().getFullYear()} Pitch Perfect. All rights reserved.
+              </p>
+              <div className="flex items-center gap-3">
+                <span className="text-xs uppercase tracking-widest text-muted-foreground font-bold">
+                  Developed By
+                </span>
+                <span className="text-sm font-bold">
+                  <span className="text-secondary">Akanimoh David</span>
+                  <span className="text-muted-foreground mx-2">&middot;</span>
+                  <span className="text-foreground">Metabuilder Solutions Limited</span>
+                </span>
+              </div>
+              <a
+                href="mailto:Morpheos@cc.cc"
+                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                Morpheos@cc.cc
+              </a>
+            </div>
+
+            <a
+              href="https://metabuildersolutions.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              title="Metabuilder Solutions Limited"
+            >
+              <Image
+                src="/metabuilder-logo.png"
+                alt="Metabuilder Solutions Limited"
+                width={140}
+                height={62}
+                className="h-10 w-auto"
+                draggable={false}
+                priority
+              />
+            </a>
           </div>
         </div>
       </div>

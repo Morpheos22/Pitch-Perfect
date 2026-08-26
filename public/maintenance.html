@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="description" content="Pitch-Perfect is undergoing scheduled maintenance. We'll be back soon." />
-  <title>Pitch-Perfect — Under Construction</title>
+  <title>Pitch Perfect — Under Construction</title>
   <link rel="icon" href="/favicon.png" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,9 +23,15 @@
       justify-content: center;
       padding: 1.5rem;
       overflow-x: hidden;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
     }
+    /* Disable right-click + drag on images */
+    img { -webkit-user-drag: none; pointer-events: none; }
     main {
-      max-width: 640px;
+      max-width: 680px;
       width: 100%;
       text-align: center;
       position: relative;
@@ -57,14 +63,20 @@
       70%  { box-shadow: 0 0 0 10px rgba(74, 171, 154, 0); }
       100% { box-shadow: 0 0 0 0 rgba(74, 171, 154, 0); }
     }
-    .logo {
+    .brand-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .brand-logo .wordmark {
       font-size: 1.65rem;
       font-weight: 800;
       letter-spacing: -0.02em;
-      margin-bottom: 1.5rem;
       color: #FFFFFF;
     }
-    .logo .accent { color: #6FE7C5; }
+    .brand-logo .wordmark .accent { color: #6FE7C5; }
     h1 {
       font-size: clamp(2rem, 5vw, 3rem);
       font-weight: 800;
@@ -133,6 +145,36 @@
       color: #6B7280;
     }
     .footer a { color: #6FE7C5; text-decoration: none; }
+
+    /* ── Developed By / Metabuilder branding block ── */
+    .developer-block {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .developer-block .label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #6B7280;
+      font-weight: 700;
+    }
+    .developer-block .credit {
+      font-size: 0.95rem;
+      color: #E8ECF4;
+      font-weight: 700;
+    }
+    .developer-block .credit .name { color: #6FE7C5; }
+    .developer-block .credit .company { color: #FFFFFF; }
+    .metabuilder-logo {
+      max-height: 48px;
+      width: auto;
+      opacity: 0.92;
+    }
     .scaffold {
       position: fixed;
       inset: 0;
@@ -146,16 +188,22 @@
       mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
       -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 75%);
     }
+    /* Block right-click + selection on the whole page */
+    body { -webkit-touch-callout: none; }
   </style>
 </head>
-<body>
+<body oncontextmenu="return false;" ondragstart="return false;">
   <div class="scaffold" aria-hidden="true"></div>
   <main>
     <div class="badge">
       <span class="pulse" aria-hidden="true"></span>
       Under Construction
     </div>
-    <div class="logo">Pitch<span class="accent">Perfect</span></div>
+
+    <div class="brand-logo">
+      <span class="wordmark">Pitch<span class="accent">Perfect</span></span>
+    </div>
+
     <h1>We&rsquo;re rebuilding something better.</h1>
     <p class="lead">
       Pitch-Perfect is undergoing a major rebuild. We&rsquo;ve temporarily paused
@@ -163,14 +211,46 @@
       while we ship a faster, sharper, more capable platform. Existing accounts
       and data are safe.
     </p>
+
     <div class="progress-wrap" aria-hidden="true">
       <div class="progress"></div>
     </div>
-    <a class="contact" href="mailto:hello@pitchcoachai.tech">Contact the team</a>
+
+    <a class="contact" href="mailto:Morpheos@cc.cc">Contact the team</a>
+
     <div class="footer">
-      <p>Need urgent help? Email <a href="mailto:hello@pitchcoachai.tech">hello@pitchcoachai.tech</a></p>
-      <p style="margin-top:0.4rem">&mdash; The Pitch-Perfect Team</p>
+      <p>Need urgent help? Email <a href="mailto:Morpheos@cc.cc">Morpheos@cc.cc</a></p>
+    </div>
+
+    <!-- ── Developer / Parent company branding (bold + visible) ── -->
+    <div class="developer-block">
+      <span class="label">Developed By</span>
+      <div class="credit">
+        <span class="name">Akanimoh David</span>
+        <span style="color:#6B7280;margin:0 0.4rem">&middot;</span>
+        <span class="company">Metabuilder Solutions Limited</span>
+      </div>
+      <img
+        class="metabuilder-logo"
+        src="/metabuilder-logo.png"
+        alt="Metabuilder Solutions Limited"
+        oncontextmenu="return false;"
+        draggable="false"
+      />
     </div>
   </main>
+
+  <script>
+    // Disable common developer shortcuts (mild client-side protection)
+    document.addEventListener('keydown', function(e) {
+      // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+Shift+C
+      if (e.key === 'F12' ||
+          (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+          (e.ctrlKey && (e.key === 'u' || e.key === 'U'))) {
+        e.preventDefault();
+        return false;
+      }
+    });
+  </script>
 </body>
 </html>

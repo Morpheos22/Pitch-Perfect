@@ -682,3 +682,45 @@ model KalChatSession {
   @@index([status])
   @@map("kal_chat_sessions")
 }
+
+// ============================================
+// SECURITY — BLOCKED IPs / DEVICES & INCIDENT LOG
+// ============================================
+// Tracks every denied access attempt (blocked email, blocked IP, geo-block, etc.)
+// and the persistent blocklist of IPs/devices that have been permanently banned.
+model SecurityIncident {
+  id        String   @id @default(cuid())
+  email     String?  // Email used in attempt (if known)
+  ip        String   // IP address of attempt
+  deviceId  String   // SHA-256 fingerprint of request headers
+  userAgent String?  // Full User-Agent string (for forensic analysis)
+  reason    String   // BLOCKED_EMAIL | BLOCKED_IP | GEO_BLOCK | SCRAPER | DIRECT_ASSET_ACCESS
+  pathname  String?  // Path that triggered the incident
+  country   String?  // Geo country code (if known via x-vercel-ip-country)
+  metadata  Json?    // Additional context (e.g. which rule matched)
+  blocked   Boolean  @default(false) // Whether this incident resulted in a permanent block
+  createdAt DateTime @default(now())
+
+  @@index([ip])
+  @@index([deviceId])
+  @@index([email])
+  @@index([reason])
+  @@index([createdAt])
+  @@map("security_incidents")
+}
+
+model BlockedIp {
+  id        String   @id @default(cuid())
+  ip        String   @unique // IP address to block
+  deviceId  String?  // Optional: device fingerprint hash
+  email     String?  // Email that triggered the block (if applicable)
+  reason    String   // Why blocked (BLOCKED_EMAIL, SCRAPER, ATTACK, etc.)
+  attempts  Int      @default(1)
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+  permanent Boolean  @default(true)
+
+  @@index([deviceId])
+  @@index([email])
+  @@map("blocked_ips")
+}

@@ -65,8 +65,11 @@ const nextConfig: any = {
   // ── Unified security headers ──
   // Previously split between next.config.ts and vercel.json with conflicting CSPs.
   // Now consolidated here as the SINGLE source of truth.
+  // HARDENING ROUND 2026-08-26: Added COOP/COEP/CORP, X-DNS-Prefetch-Control,
+  // X-Robots-Tag (noimageindex), expanded Permissions-Policy, asset protection.
   async headers() {
     return [
+      // ─── GLOBAL: applies to every response (HTML, API, static assets) ───
       {
         source: '/(.*)',
         headers: [
@@ -92,10 +95,6 @@ const nextConfig: any = {
               // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho
               // SECURITY: Internal IP (172.25.x.x) only included in development.
               // Production uses ZAI_BASE_URL env var — never expose private IPs in CSP.
-              // BUG FIX: The previous version omitted the "connect-src " directive prefix,
-              // causing the browser to treat the values as an invalid directive and block
-              // ALL cross-origin XHR/fetch — including Clerk JS FAPI calls. This was the
-              // root cause of the empty <SignUp>/<SignIn> components on production.
               "connect-src " + [
                 "'self'",
                 process.env.NODE_ENV === 'development' && process.env.ZAI_BASE_URL?.startsWith('http://') ? process.env.ZAI_BASE_URL : '',
@@ -106,11 +105,7 @@ const nextConfig: any = {
                 'https://clerk.telemetry.cloudflare.com',
                 'https://clerk.com',
                 'https://z.ai',
-                // @vercel/blob client upload: the SDK's upload() function sends the
-                // file to https://vercel.com/api/blob (default VERCEL_BLOB_API_URL).
-                // Without this in connect-src, the browser blocks the PUT request
-                // due to CSP violation — this was the root cause of Script Check
-                // uploads silently failing (no blob URL = no feedback to give).
+                // @vercel/blob client upload
                 'https://vercel.com',
                 'https://blob.vercel-storage.com',
                 'https://*.blob.vercel-storage.com',
@@ -129,14 +124,97 @@ const nextConfig: any = {
               "media-src 'self' blob:",
               // Worker sources: blob workers for client-side processing
               "worker-src 'self' blob:",
+              // Form actions — restrict to same origin + Clerk auth
+              "form-action 'self' https://clerk.pitchcoachai.tech https://*.clerk.accounts.dev https://clerk.com",
+              // Base URI — restrict to self (prevents base tag injection)
+              "base-uri 'self'",
+              // Object/embed — block entirely (no Flash/Java plugins)
+              "object-src 'none'",
+              // Frame ancestors — block all framing (clickjacking)
+              "frame-ancestors 'none'",
+              // Upgrade all HTTP requests to HTTPS
+              "upgrade-insecure-requests",
+              // Plugin types — block entirely
+              "plugin-types application/pdf",
+              // Report violations to our health endpoint (for visibility)
+              // "report-uri /api/security/csp-report",
             ].join('; '),
           },
-          // Standard security headers
+          // Clickjacking prevention — defense-in-depth alongside CSP frame-ancestors
           { key: 'X-Frame-Options', value: 'DENY' },
+          // MIME-type sniffing prevention
           { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // Referrer leakage prevention
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
+          // Strict Permissions-Policy — disable all browser features we don't use
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), interest-cohort=(), browsing-topics=(), clipboard-read=(), clipboard-write=(self), payment=(), usb=(), bluetooth=(), nfc=(), magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), vr=(), xr-spatial-tracking=()',
+          },
+          // Strict HSTS with preload
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          // Disable DNS prefetching (prevents DNS rebinding attacks)
+          { key: 'X-DNS-Prefetch-Control', value: 'off' },
+          // Cross-origin isolation (prevents side-channel attacks like Spectre)
+          // NOTE: COEP=credentialless (not require-corp) — Clerk/Cloudflare
+          // third-party iframes don't ship CORP headers, so require-corp would
+          // break auth. credentialless is the pragmatic middle ground.
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+          // Robots directives — prevent search engines from indexing/caching
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, nosnippet, noimageindex' },
+        ],
+      },
+      // ─── PROTECTED BRAND ASSETS — block direct download, must come via Referer ───
+      // When someone hits /logo.png directly in their browser, return 403.
+      // Same-origin requests (from our HTML pages) include a Referer header.
+      // NOTE: This is defense-in-depth — middleware also enforces Referer
+      // checks for these paths. vercel.json static rules run even if middleware
+      // doesn't (e.g. for /_next/static).
+      {
+        source: '/logo.png',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
+          { key: 'Content-Disposition', value: 'inline; filename="logo.png"' },
+        ],
+      },
+      {
+        source: '/logo-full.png',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
+          { key: 'Content-Disposition', value: 'inline; filename="logo-full.png"' },
+        ],
+      },
+      {
+        source: '/favicon.png',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
+        ],
+      },
+      {
+        source: '/metabuilder-logo.png',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
+          { key: 'Content-Disposition', value: 'inline; filename="metabuilder-logo.png"' },
+        ],
+      },
+      {
+        source: '/apple-touch-icon.png',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
+        ],
+      },
+      {
+        source: '/logo.svg',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' },
+          { key: 'X-Robots-Tag', value: 'noindex, noarchive, noimageindex' },
         ],
       },
     ];
