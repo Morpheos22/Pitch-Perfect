@@ -54,6 +54,17 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
     return NextResponse.next();
   }
 
+  // Allow security logging endpoints through during maintenance so the
+  // middleware's fire-and-forget POST calls to /api/security/log-incident
+  // and /api/security/block-ip succeed (otherwise they'd be 503'd by the
+  // maintenance gate and incident logs would never be persisted).
+  if (
+    pathname === "/api/security/log-incident" ||
+    pathname === "/api/security/block-ip"
+  ) {
+    return NextResponse.next();
+  }
+
   // ── MAINTENANCE_AUTH_PROBE — capture IPs that try to reach auth endpoints
   // during the lockdown. This is critical: when maintenance is ON, the email
   // blocklist check (which normally runs post-auth) is skipped because auth()
@@ -165,6 +176,11 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
 const SECURITY_EXEMPT_PREFIXES = [
   "/maintenance.html",
   "/api/health",
+  // Security logging endpoints — MUST be reachable during maintenance so
+  // the middleware can fire-and-forget POST incident logs without them
+  // being blocked by the maintenance gate.
+  "/api/security/log-incident",
+  "/api/security/block-ip",
 ];
 
 function isSecurityExempt(pathname: string): boolean {
