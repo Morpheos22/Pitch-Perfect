@@ -331,6 +331,12 @@ interface PaymentVerificationResult {
   reference?: string;
 }
 
+const PAYMENT_REFERENCE_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+
+function isValidPaymentReference(reference: unknown): reference is string {
+  return typeof reference === 'string' && PAYMENT_REFERENCE_PATTERN.test(reference);
+}
+
 /**
  * Verify a payment with the provider's API.
  */
@@ -349,7 +355,12 @@ export async function verifyPayment(
 }
 
 async function verifyPaystackPayment(reference: string): Promise<PaymentVerificationResult> {
-  const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+  if (!isValidPaymentReference(reference)) {
+    return { success: false, amount: 0, currency: 'USD' };
+  }
+
+  const verificationUrl = `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`;
+  const response = await fetch(verificationUrl, {
     headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
   });
   const data = await response.json();
@@ -365,7 +376,12 @@ async function verifyPaystackPayment(reference: string): Promise<PaymentVerifica
 }
 
 async function verifyStripePayment(sessionId: string): Promise<PaymentVerificationResult> {
-  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+  if (!isValidPaymentReference(sessionId)) {
+    return { success: false, amount: 0, currency: 'USD' };
+  }
+
+  const verificationUrl = `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`;
+  const response = await fetch(verificationUrl, {
     headers: { 'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}` },
   });
   const data = await response.json();
