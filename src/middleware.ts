@@ -68,7 +68,8 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
     pathname === "/api/security/log-incident" ||
     pathname === "/api/security/block-ip" ||
     pathname === "/api/security/auto-promote" ||
-    pathname === "/api/security/check-blocked"
+    pathname === "/api/security/check-blocked" ||
+    pathname === "/api/geo-currency"
   ) {
     return NextResponse.next();
   }
@@ -184,6 +185,7 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
 const SECURITY_EXEMPT_PREFIXES = [
   "/maintenance.html",
   "/api/health",
+  "/api/geo-currency",
   // Security logging + management endpoints — MUST be reachable during
   // maintenance so the middleware can fire-and-forget POST incident logs
   // without them being blocked by the maintenance gate, AND so operators
@@ -586,7 +588,8 @@ export default clerkMiddleware(async (auth, request) => {
     pathname === "/api/security/log-incident" ||
     pathname === "/api/security/block-ip" ||
     pathname === "/api/security/auto-promote" ||
-    pathname === "/api/security/check-blocked";
+    pathname === "/api/security/check-blocked" ||
+    pathname === "/api/geo-currency";
 
   if (!isGeoExemptPath) {
     const geoResponse = await handleGeoBlock(request);
