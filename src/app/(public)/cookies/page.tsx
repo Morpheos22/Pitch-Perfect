@@ -89,7 +89,6 @@ export default function CookiesPage() {
               <li><strong>Clerk:</strong> Authentication cookies (__client, __session) — essential for sign-in.</li>
               <li><strong>Cloudflare:</strong> Turnstile CAPTCHA cookies — for bot protection.</li>
               <li><strong>Stripe:</strong> Payment session cookies — only active during checkout.</li>
-              <li><strong>Paystack:</strong> Payment session cookies — only active during checkout.</li>
             </ul>
             <p>
               These third parties have their own privacy policies governing how they use cookies.

@@ -89,7 +89,7 @@ export default function PrivacyPage() {
               <li><strong>Content You Upload:</strong> Pitch decks, scripts, and videos you submit for AI coaching analysis.</li>
               <li><strong>Usage Data:</strong> How you interact with the platform — pages visited, features used, session duration.</li>
               <li><strong>Technical Data:</strong> IP address, device type, browser information — used for security and fraud prevention.</li>
-              <li><strong>Payment Information:</strong> Transaction records processed securely through Stripe and Paystack. We do not store full card numbers.</li>
+              <li><strong>Payment Information:</strong> Transaction records processed securely through Stripe. We do not store full card numbers.</li>
             </ul>
           </section>
 
@@ -139,7 +139,7 @@ export default function PrivacyPage() {
             <h2 className="text-2xl font-semibold text-foreground mb-3">6. Data Sharing</h2>
             <p>We do not sell your personal data. We share data only with:</p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li><strong>Service Providers:</strong> Clerk (authentication), Supabase (database), Cloudflare (storage and AI), Stripe and Paystack (payments).</li>
+              <li><strong>Service Providers:</strong> Clerk (authentication), Supabase (database), Cloudflare (storage and AI), Stripe (payments).</li>
               <li><strong>Legal Authorities:</strong> When required by Nigerian law or to protect our rights and safety.</li>
               <li><strong>Business Transfers:</strong> In the event of a merger or acquisition, we will notify you before transferring your data.</li>
             </ul>

@@ -353,7 +353,6 @@ export default function PricingPage() {
                 <p className="text-sm text-muted-foreground">
                   We are based in Nigeria and price primarily in Naira. International users can
                   view prices in their local currency using the selector above. Payment is processed
-                  in your local currency via Stripe or Paystack.
                 </p>
               </CardContent>
             </Card>

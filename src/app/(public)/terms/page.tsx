@@ -100,7 +100,7 @@ export default function TermsPage() {
             </ul>
             <p>
               International users will see pricing converted to their local currency based on
-              geolocation. Payments are processed securely through Paystack (African markets) and
+              geolocation. Payments are processed securely through Stripe (African markets) and
               Stripe (international markets). All fees are non-refundable unless required by law.
             </p>
           </section>

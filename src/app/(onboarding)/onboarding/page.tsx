@@ -4,444 +4,405 @@ import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Globe, Target, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle, User, MapPin, Briefcase, Target, Rocket, Globe } from "lucide-react";
 
 const COUNTRIES = [
-  "Afghanistan",
-  "Albania",
-  "Algeria",
-  "Andorra",
-  "Angola",
-  "Antigua and Barbuda",
-  "Argentina",
-  "Armenia",
-  "Australia",
-  "Austria",
-  "Azerbaijan",
-  "Bahamas",
-  "Bahrain",
-  "Bangladesh",
-  "Barbados",
-  "Belarus",
-  "Belgium",
-  "Belize",
-  "Benin",
-  "Bhutan",
-  "Bolivia",
-  "Bosnia and Herzegovina",
-  "Botswana",
-  "Brazil",
-  "Brunei",
-  "Bulgaria",
-  "Burkina Faso",
-  "Burundi",
-  "Cabo Verde",
-  "Cambodia",
-  "Cameroon",
-  "Canada",
-  "Central African Republic",
-  "Chad",
-  "Chile",
-  "China",
-  "Colombia",
-  "Comoros",
-  "Congo (Brazzaville)",
-  "Congo (Kinshasa)",
-  "Costa Rica",
-  "Croatia",
-  "Cuba",
-  "Cyprus",
-  "Czech Republic",
-  "Denmark",
-  "Djibouti",
-  "Dominica",
-  "Dominican Republic",
-  "Ecuador",
-  "Egypt",
-  "El Salvador",
-  "Equatorial Guinea",
-  "Eritrea",
-  "Estonia",
-  "Eswatini",
-  "Ethiopia",
-  "Fiji",
-  "Finland",
-  "France",
-  "Gabon",
-  "Gambia",
-  "Georgia",
-  "Germany",
-  "Ghana",
-  "Greece",
-  "Grenada",
-  "Guatemala",
-  "Guinea",
-  "Guinea-Bissau",
-  "Guyana",
-  "Haiti",
-  "Honduras",
-  "Hungary",
-  "Iceland",
-  "India",
-  "Indonesia",
-  "Iran",
-  "Iraq",
-  "Ireland",
-  "Israel",
-  "Italy",
-  "Ivory Coast",
-  "Jamaica",
-  "Japan",
-  "Jordan",
-  "Kazakhstan",
-  "Kenya",
-  "Kiribati",
-  "Kosovo",
-  "Kuwait",
-  "Kyrgyzstan",
-  "Laos",
-  "Latvia",
-  "Lebanon",
-  "Lesotho",
-  "Liberia",
-  "Libya",
-  "Liechtenstein",
-  "Lithuania",
-  "Luxembourg",
-  "Madagascar",
-  "Malawi",
-  "Malaysia",
-  "Maldives",
-  "Mali",
-  "Malta",
-  "Marshall Islands",
-  "Mauritania",
-  "Mauritius",
-  "Mexico",
-  "Micronesia",
-  "Moldova",
-  "Monaco",
-  "Mongolia",
-  "Montenegro",
-  "Morocco",
-  "Mozambique",
-  "Myanmar",
-  "Namibia",
-  "Nauru",
-  "Nepal",
-  "Netherlands",
-  "New Zealand",
-  "Nicaragua",
-  "Niger",
-  "Nigeria",
-  "North Korea",
-  "North Macedonia",
-  "Norway",
-  "Oman",
-  "Pakistan",
-  "Palau",
-  "Palestine",
-  "Panama",
-  "Papua New Guinea",
-  "Paraguay",
-  "Peru",
-  "Philippines",
-  "Poland",
-  "Portugal",
-  "Qatar",
-  "Romania",
-  "Russia",
-  "Rwanda",
-  "Saint Kitts and Nevis",
-  "Saint Lucia",
-  "Saint Vincent and the Grenadines",
-  "Samoa",
-  "San Marino",
-  "Sao Tome and Principe",
-  "Saudi Arabia",
-  "Senegal",
-  "Serbia",
-  "Seychelles",
-  "Sierra Leone",
-  "Singapore",
-  "Slovakia",
-  "Slovenia",
-  "Solomon Islands",
-  "Somalia",
-  "Nigeria",
-  "South Korea",
-  "South Sudan",
-  "Spain",
-  "Sri Lanka",
-  "Sudan",
-  "Suriname",
-  "Sweden",
-  "Switzerland",
-  "Syria",
-  "Taiwan",
-  "Tajikistan",
-  "Tanzania",
-  "Thailand",
-  "Timor-Leste",
-  "Togo",
-  "Tonga",
-  "Trinidad and Tobago",
-  "Tunisia",
-  "Turkey",
-  "Turkmenistan",
-  "Tuvalu",
-  "Uganda",
-  "Ukraine",
-  "United Arab Emirates",
-  "United Kingdom",
-  "United States",
-  "Uruguay",
-  "Uzbekistan",
-  "Vanuatu",
-  "Vatican City",
-  "Venezuela",
-  "Vietnam",
-  "Yemen",
-  "Zambia",
-  "Zimbabwe",
+  "Nigeria", "Ghana", "Kenya", "South Africa", "Egypt", "Morocco", "Tunisia",
+  "United States", "United Kingdom", "Canada", "Australia", "Germany", "France",
+  "Spain", "Italy", "Netherlands", "Belgium", "Switzerland", "Sweden", "Norway",
+  "Denmark", "Finland", "Ireland", "Portugal", "Austria", "Poland", "Brazil",
+  "Argentina", "Mexico", "Chile", "Colombia", "Peru", "India", "China", "Japan",
+  "South Korea", "Singapore", "Malaysia", "Indonesia", "Thailand", "Vietnam",
+  "Philippines", "UAE", "Saudi Arabia", "Qatar", "Israel", "Turkey", "Other",
+];
+
+const ROLES = [
+  "Founder / CEO",
+  "Co-founder",
+  "CTO / Technical Lead",
+  "CMO / Marketing Lead",
+  "CFO / Finance Lead",
+  "Product Manager",
+  "Software Engineer",
+  "Designer",
+  "Sales / Business Development",
+  "Investor",
+  "Mentor / Advisor",
+  "Student",
+  "Researcher",
+  "Other",
+];
+
+const STAGES = [
+  "Idea stage — no product yet",
+  "Pre-seed — building MVP",
+  "Seed — launched, early users",
+  "Series A — scaling",
+  "Series B+ — growth stage",
+  "Bootstrapped — self-funded",
+  "Student / Learning",
+  "Researching / Exploring",
 ];
 
 const USE_CASES = [
-  { id: "startup-founder", label: "Startup Founder", description: "Raising capital from investors" },
-  { id: "sales-professional", label: "Sales Professional", description: "Closing deals and presentations" },
-  { id: "entrepreneur", label: "Entrepreneur", description: "Building and pitching new ventures" },
-  { id: "consultant", label: "Consultant", description: "Client presentations and proposals" },
-  { id: "student", label: "Student", description: "Academic presentations and competitions" },
-  { id: "executive", label: "Executive", description: "Board presentations and strategic pitches" },
-  { id: "other", label: "Other", description: "Personal development and practice" },
+  "Raising pre-seed funding",
+  "Raising seed funding",
+  "Raising Series A+",
+  "Demo day preparation",
+  "Accelerator application (YC, Techstars, 500)",
+  "Investor pitch practice",
+  "Sales pitch improvement",
+  "Learning / skill building",
+  "Competition / hackathon",
+];
+
+const TEAM_SIZES = [
+  "Solo founder",
+  "2-3 people",
+  "4-10 people",
+  "11-25 people",
+  "26-50 people",
+  "51-100 people",
+  "100+ people",
+];
+
+const INDUSTRIES = [
+  "Fintech", "Healthtech", "Edtech", "Agtech", "Cleantech / Climate",
+  "AI / ML", "SaaS / B2B", "E-commerce / Retail", "Marketplace",
+  "Gaming / Entertainment", "Media / Content", "Social / Community",
+  "Logistics / Supply Chain", "Real Estate / PropTech",
+  "Legal / RegTech", "Cybersecurity", "Web3 / Crypto",
+  "Hardware / IoT", "Biotech / Life Sciences",
+  "Government / Civic Tech", "Non-profit / Social Impact",
+  "Other",
 ];
 
 export default function OnboardingPage() {
-  const { user, isLoaded } = useUser();
+  const { user } = useUser();
   const [step, setStep] = useState(1);
-  const [country, setCountry] = useState("");
-  const [primaryUseCase, setPrimaryUseCase] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    bio: "",
+    country: "",
+    role: "",
+    organisation: "",
+    stage: "",
+    useCase: "",
+    teamSize: "",
+    industry: "",
+    linkedinUrl: "",
+    websiteUrl: "",
+  });
 
-  const handleComplete = async () => {
-    if (!country || !primaryUseCase) {
-      setError("Please fill in all fields");
-      return;
-    }
+  const totalSteps = 4;
 
+  const updateField = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = async () => {
     setLoading(true);
-    setError("");
-
     try {
-      // Server handles BOTH database update AND Clerk metadata update
       const response = await fetch("/api/user/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ country, primaryUseCase }),
+        body: JSON.stringify(formData),
       });
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save onboarding data");
-      }
+      if (response.ok) {
+        // Update Clerk user metadata
+        await user?.update({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          unsafeMetadata: {
+            bio: formData.bio,
+            country: formData.country,
+            role: formData.role,
+            organisation: formData.organisation,
+            stage: formData.stage,
+            useCase: formData.useCase,
+            teamSize: formData.teamSize,
+            industry: formData.industry,
+            linkedinUrl: formData.linkedinUrl,
+            websiteUrl: formData.websiteUrl,
+            onboardingCompleted: true,
+          },
+        });
 
-      // HARD redirect — forces full page reload which fetches a fresh JWT
-      // from Clerk with updated onboardingCompleted=true claims.
-      // Using router.push() caused an infinite loop because the JWT was stale.
-      window.location.href = "/dashboard";
-    } catch (err) {
-      console.error("Onboarding error:", err);
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+        window.location.href = "/dashboard";
+      } else {
+        console.error("Onboarding failed");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
       setLoading(false);
     }
   };
 
-  // Don't render until Clerk user is loaded
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const canProceed = () => {
+    if (step === 1) return formData.firstName && formData.lastName && formData.bio;
+    if (step === 2) return formData.country && formData.role;
+    if (step === 3) return formData.stage && formData.useCase;
+    if (step === 4) return formData.industry && formData.teamSize;
+    return false;
+  };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader className="text-center space-y-2">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-purple-600 rounded-2xl flex items-center justify-center mb-4">
-            <span className="text-3xl">🎤</span>
-          </div>
-          <CardTitle className="text-2xl font-bold text-foreground">
-            Welcome to PitchCoach Ai!
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Let&apos;s personalize your experience
-          </CardDescription>
-        </CardHeader>
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary/5 via-background to-accent/5">
+      {/* Header */}
+      <header className="p-4 flex items-center justify-between">
+        <span className="font-bold text-xl text-primary">
+          Pitch<span className="text-secondary">Coach</span> Ai
+        </span>
+        <div className="text-sm text-muted-foreground">
+          Step {step} of {totalSteps}
+        </div>
+      </header>
 
-        <CardContent className="space-y-6">
-          {/* Progress indicator */}
-          <div className="flex items-center justify-center gap-2">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`w-10 h-1 rounded-full transition-colors ${
-                  s <= step ? "bg-primary" : "bg-muted"
-                }`}
-              />
-            ))}
-          </div>
+      {/* Progress bar */}
+      <div className="px-4 mb-8">
+        <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary transition-all duration-300 rounded-full"
+            style={{ width: `${(step / totalSteps) * 100}%` }}
+          />
+        </div>
+      </div>
 
-          {error && (
-            <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <Globe className="w-5 h-5 text-primary" />
+      {/* Main content */}
+      <main className="flex-1 flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {step === 1 && <><User className="w-5 h-5 text-primary" /> Tell us about yourself</>}
+              {step === 2 && <><Briefcase className="w-5 h-5 text-primary" /> Your role & location</>}
+              {step === 3 && <><Target className="w-5 h-5 text-primary" /> What are you building?</>}
+              {step === 4 && <><Rocket className="w-5 h-5 text-primary" /> Almost there</>}
+            </CardTitle>
+            <CardDescription>
+              {step === 1 && "Help us personalize your coaching experience."}
+              {step === 2 && "Where are you based and what do you do?"}
+              {step === 3 && "Tell us about your startup journey."}
+              {step === 4 && "Last few details to set up your profile."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Step 1: Personal info + bio */}
+            {step === 1 && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name *</Label>
+                    <Input
+                      id="firstName"
+                      value={formData.firstName}
+                      onChange={(e) => updateField("firstName", e.target.value)}
+                      placeholder="David"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name *</Label>
+                    <Input
+                      id="lastName"
+                      value={formData.lastName}
+                      onChange={(e) => updateField("lastName", e.target.value)}
+                      placeholder="Akanimoh"
+                    />
+                  </div>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Where are you based?</h3>
-                  <p className="text-sm text-muted-foreground">This helps us tailor your experience</p>
+                  <Label htmlFor="bio">Bio * — Tell us about yourself</Label>
+                  <Textarea
+                    id="bio"
+                    value={formData.bio}
+                    onChange={(e) => updateField("bio", e.target.value)}
+                    placeholder="I'm a builder passionate about solving problems in African markets. Currently working on..."
+                    rows={4}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This helps our AI tailor feedback to your background and experience.
+                  </p>
                 </div>
-              </div>
+              </>
+            )}
 
-              <Select value={country} onValueChange={setCountry}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select your country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Button
-                onClick={() => setStep(2)}
-                disabled={!country}
-                className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700"
-              >
-                Continue
-              </Button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                  <Target className="w-5 h-5 text-purple-500" />
+            {/* Step 2: Country + Role */}
+            {step === 2 && (
+              <>
+                <div>
+                  <Label htmlFor="country">Country *</Label>
+                  <Select value={formData.country} onValueChange={(v) => updateField("country", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your country" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">What&apos;s your primary goal?</h3>
-                  <p className="text-sm text-muted-foreground">We&apos;ll customize your coaching journey</p>
+                  <Label htmlFor="role">Your Role *</Label>
+                  <Select value={formData.role} onValueChange={(v) => updateField("role", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="What best describes your role?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
+                <div>
+                  <Label htmlFor="organisation">Organisation / Institution</Label>
+                  <Input
+                    id="organisation"
+                    value={formData.organisation}
+                    onChange={(e) => updateField("organisation", e.target.value)}
+                    placeholder="e.g., Athena Agentic, Y Combinator, University of Lagos"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Your company, startup, accelerator, or learning institution.
+                  </p>
+                </div>
+              </>
+            )}
 
-              <div className="grid gap-2 max-h-64 overflow-y-auto">
-                {USE_CASES.map((uc) => (
-                  <button
-                    key={uc.id}
-                    onClick={() => setPrimaryUseCase(uc.id)}
-                    className={`w-full p-3 rounded-lg border text-left transition-all ${
-                      primaryUseCase === uc.id
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-card hover:border-primary/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-foreground">{uc.label}</p>
-                        <p className="text-sm text-muted-foreground">{uc.description}</p>
-                      </div>
-                      {primaryUseCase === uc.id && (
-                        <CheckCircle className="w-5 h-5 text-primary" />
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
+            {/* Step 3: Stage + Use case */}
+            {step === 3 && (
+              <>
+                <div>
+                  <Label htmlFor="stage">What stage are you at? *</Label>
+                  <Select value={formData.stage} onValueChange={(v) => updateField("stage", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your current stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STAGES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="useCase">What do you need PitchCoach for? *</Label>
+                  <Select value={formData.useCase} onValueChange={(v) => updateField("useCase", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your primary goal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {USE_CASES.map((u) => (
+                        <SelectItem key={u} value={u}>{u}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
-              <div className="flex gap-3">
+            {/* Step 4: Industry + team + social */}
+            {step === 4 && (
+              <>
+                <div>
+                  <Label htmlFor="industry">Industry / Sector *</Label>
+                  <Select value={formData.industry} onValueChange={(v) => updateField("industry", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your industry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRIES.map((i) => (
+                        <SelectItem key={i} value={i}>{i}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="teamSize">Team Size *</Label>
+                  <Select value={formData.teamSize} onValueChange={(v) => updateField("teamSize", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="How many people are on your team?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TEAM_SIZES.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="linkedinUrl">LinkedIn Profile</Label>
+                    <Input
+                      id="linkedinUrl"
+                      value={formData.linkedinUrl}
+                      onChange={(e) => updateField("linkedinUrl", e.target.value)}
+                      placeholder="linkedin.com/in/username"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="websiteUrl">Website / Portfolio</Label>
+                    <Input
+                      id="websiteUrl"
+                      value={formData.websiteUrl}
+                      onChange={(e) => updateField("websiteUrl", e.target.value)}
+                      placeholder="yourcompany.com"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Navigation */}
+            <div className="flex justify-between pt-4">
+              {step > 1 && (
                 <Button
-                  onClick={() => setStep(1)}
                   variant="outline"
-                  className="flex-1"
+                  onClick={() => setStep(step - 1)}
+                  disabled={loading}
                 >
                   Back
                 </Button>
+              )}
+              {step < totalSteps ? (
                 <Button
-                  onClick={() => setStep(3)}
-                  disabled={!primaryUseCase}
-                  className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700"
+                  onClick={() => setStep(step + 1)}
+                  disabled={!canProceed()}
+                  className="ml-auto"
                 >
                   Continue
                 </Button>
-              </div>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!canProceed() || loading}
+                  className="ml-auto"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Setting up...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Complete Setup
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-4 text-center">
-              <div className="py-6">
-                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mb-4">
-                  <CheckCircle className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">You&apos;re all set!</h3>
-                <p className="text-muted-foreground">
-                  Ready to start your pitch coaching journey
-                </p>
-              </div>
-
-              <div className="p-4 bg-muted/50 rounded-lg text-left space-y-2">
-                <p className="text-sm text-muted-foreground">Your selections:</p>
-                <p className="text-foreground">📍 {country}</p>
-                <p className="text-foreground">🎯 {USE_CASES.find((u) => u.id === primaryUseCase)?.label}</p>
-              </div>
-
-              <Button
-                onClick={handleComplete}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Setting up...
-                  </>
-                ) : (
-                  "Start Pitching!"
-                )}
-              </Button>
-            </div>
-          )}
-
-          {/* Footer branding */}
-          <div className="pt-6 border-t border-border text-center">
-            <p className="text-sm text-muted-foreground">
-              Built by{" "}
-              <a
-                href="https://athena-agentic.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:text-primary/80 transition-colors"
-              >
-                Athena Agentic
-              </a>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   );
 }
