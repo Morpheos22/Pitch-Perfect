@@ -2,404 +2,158 @@
 
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { Card, CardContent } from "@/components/ui/card";
-import { Cookie, Settings, BarChart, Shield, Clock } from "lucide-react";
-
-const cookieTypes = [
-  {
-    icon: Shield,
-    title: "Essential Cookies",
-    description:
-      "Required for the website to function properly. These cookies enable core functionality such as security, authentication, and account access.",
-    examples: ["Authentication tokens", "Session management", "Security preferences"],
-    canDisable: false,
-  },
-  {
-    icon: Settings,
-    title: "Functional Cookies",
-    description:
-      "Enable enhanced functionality and personalization, such as remembering your preferences and settings.",
-    examples: ["Theme preferences", "Language settings", "Feature toggles"],
-    canDisable: true,
-  },
-  {
-    icon: BarChart,
-    title: "Analytics Cookies",
-    description:
-      "Help us understand how visitors interact with our website by collecting and reporting information anonymously.",
-    examples: ["Page views", "User journey tracking", "Error logging"],
-    canDisable: true,
-  },
-];
-
-const cookiesTable = [
-  {
-    name: "__session",
-    provider: "Clerk",
-    purpose: "Authentication session token",
-    type: "Essential",
-    expiry: "Session",
-  },
-  {
-    name: "__clerk_db_jwt",
-    provider: "Clerk",
-    purpose: "JWT token for authentication",
-    type: "Essential",
-    expiry: "1 year",
-  },
-  {
-    name: "theme",
-    provider: "PitchCoach Ai",
-    purpose: "Stores theme preference (light/dark)",
-    type: "Functional",
-    expiry: "1 year",
-  },
-  {
-    name: "_ga",
-    provider: "Google Analytics",
-    purpose: "Distinguishes unique users",
-    type: "Analytics",
-    expiry: "2 years",
-  },
-  {
-    name: "_ga_*",
-    provider: "Google Analytics",
-    purpose: "Maintains session state",
-    type: "Analytics",
-    expiry: "2 years",
-  },
-];
+import { Cookie } from "lucide-react";
 
 export default function CookiesPage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-background">
       <Navbar />
+      <div className="container mx-auto px-4 py-16 max-w-4xl">
+        <div className="flex items-center gap-3 mb-4">
+          <Cookie className="w-8 h-8 text-primary" />
+          <h1 className="text-4xl font-bold text-foreground">Cookie Policy</h1>
+        </div>
+        <p className="text-muted-foreground mb-8">Last updated: September 2026</p>
 
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
-          <div className="container mx-auto px-4 py-20 md:py-32 relative">
-            <div className="max-w-4xl mx-auto text-center">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                <Cookie className="h-8 w-8 text-primary" />
-              </div>
-              <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
-                Cookie{" "}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
-                  Policy
-                </span>
-              </h1>
-              <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-                This policy explains how we use cookies and similar technologies
-                on PitchCoach Ai.
-              </p>
-              <p className="text-sm text-muted-foreground mt-4">
-                Last updated: January 2025
-              </p>
-            </div>
-          </div>
-        </section>
+        <div className="prose prose-lg max-w-none space-y-6 text-muted-foreground">
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">1. What Are Cookies?</h2>
+            <p>
+              Cookies are small text files stored on your device when you visit a website. They
+              help us remember your preferences, keep you signed in, and understand how you use
+              PitchCoach Ai. This policy explains what cookies we use and how you can control them.
+            </p>
+            <p>
+              We comply with the Nigeria Data Protection Regulation (NDPR) 2023 regarding the use
+              of cookies and similar technologies.
+            </p>
+          </section>
 
-        {/* What are Cookies */}
-        <section className="py-20 bg-muted/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold mb-4">What Are Cookies?</h2>
-              <p className="text-muted-foreground mb-4">
-                Cookies are small text files that are stored on your device when
-                you visit a website. They are widely used to make websites work
-                more efficiently and provide information to website owners.
-              </p>
-              <p className="text-muted-foreground">
-                Cookies can be "persistent" or "session" cookies. Persistent
-                cookies remain on your device for a set period or until you
-                delete them. Session cookies are deleted when you close your web
-                browser.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Cookie Types */}
-        <section className="py-20">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold mb-6">Types of Cookies We Use</h2>
-              <div className="space-y-6">
-                {cookieTypes.map((type) => (
-                  <Card key={type.title} className="border-border">
-                    <CardContent className="pt-6">
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                          <type.icon className="h-6 w-6 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="font-semibold text-lg">{type.title}</h3>
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded-full ${
-                                type.canDisable
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {type.canDisable ? "Optional" : "Required"}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground mb-3">
-                            {type.description}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {type.examples.map((example) => (
-                              <span
-                                key={example}
-                                className="text-xs bg-muted px-2 py-1 rounded"
-                              >
-                                {example}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Cookies Table */}
-        <section className="py-20 bg-muted/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold mb-6">Cookies We Set</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse bg-background rounded-lg overflow-hidden">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/50">
-                      <th className="text-left py-3 px-4 font-semibold">
-                        Cookie Name
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        Provider
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        Purpose
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">Type</th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        Expiry
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cookiesTable.map((cookie) => (
-                      <tr key={cookie.name} className="border-b border-border">
-                        <td className="py-3 px-4 font-mono text-sm">
-                          {cookie.name}
-                        </td>
-                        <td className="py-3 px-4">{cookie.provider}</td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {cookie.purpose}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${
-                              cookie.type === "Essential"
-                                ? "bg-green-100 text-green-700"
-                                : cookie.type === "Functional"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-purple-100 text-purple-700"
-                            }`}
-                          >
-                            {cookie.type}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {cookie.expiry}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Third-Party Cookies */}
-        <section className="py-20">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto prose prose-lg max-w-none">
-              <h2 className="text-2xl font-bold mb-4">Third-Party Cookies</h2>
-              <p className="text-muted-foreground mb-4">
-                We use services from third-party providers that may set their own
-                cookies on your device:
-              </p>
-              <ul className="space-y-3 text-muted-foreground">
-                <li>
-                  <strong>Clerk:</strong> For user authentication and session
-                  management. Visit{" "}
-                  <a
-                    href="https://clerk.com/privacy"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    clerk.com/privacy
-                  </a>{" "}
-                  for more information.
-                </li>
-                <li>
-                  <strong>Google Analytics:</strong> For website analytics and
-                  usage tracking. Visit{" "}
-                  <a
-                    href="https://policies.google.com/privacy"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    policies.google.com/privacy
-                  </a>{" "}
-                  for more information.
-                </li>
-                <li>
-                  <strong>Stripe:</strong> For payment processing. Visit{" "}
-                  <a
-                    href="https://stripe.com/privacy"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    stripe.com/privacy
-                  </a>{" "}
-                  for more information.
-                </li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        {/* Managing Cookies */}
-        <section className="py-20 bg-muted/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold mb-6">Managing Cookies</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card className="border-border">
-                  <CardContent className="pt-6">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                      <Settings className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold mb-2">Browser Settings</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Most browsers allow you to manage cookie settings. You can
-                      set your browser to refuse cookies or delete certain
-                      cookies. Check your browser's help section for
-                      instructions.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border">
-                  <CardContent className="pt-6">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                      <Shield className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold mb-2">Impact of Disabling</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Disabling essential cookies may prevent our website from
-                      functioning properly. You may not be able to log in or use
-                      certain features.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="mt-8 p-6 bg-background rounded-lg border border-border">
-                <h3 className="font-semibold mb-4">
-                  How to Manage Cookies in Popular Browsers
-                </h3>
-                <ul className="space-y-2 text-muted-foreground">
-                  <li>
-                    <strong>Chrome:</strong> Settings → Privacy and Security →
-                    Cookies and other site data
-                  </li>
-                  <li>
-                    <strong>Firefox:</strong> Settings → Privacy & Security →
-                    Cookies and Site Data
-                  </li>
-                  <li>
-                    <strong>Safari:</strong> Preferences → Privacy → Manage
-                    Website Data
-                  </li>
-                  <li>
-                    <strong>Edge:</strong> Settings → Cookies and site
-                    permissions → Cookies and site data
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Updates */}
-        <section className="py-20">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex items-start gap-4 p-6 bg-muted/30 rounded-lg">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Clock className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-2">Updates to This Policy</h3>
-                  <p className="text-muted-foreground">
-                    We may update this Cookie Policy from time to time. Any
-                    changes will be posted on this page with an updated revision
-                    date. We encourage you to review this policy periodically.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Contact */}
-        <section className="py-20 bg-muted/30">
-          <div className="container mx-auto px-4">
-            <div className="max-w-4xl mx-auto text-center">
-              <h2 className="text-2xl font-bold mb-4">Questions?</h2>
-              <p className="text-muted-foreground mb-6">
-                If you have any questions about our use of cookies, please
-                contact us:
-              </p>
-              <div className="inline-block p-6 bg-background rounded-lg border border-border text-left">
-                <p className="font-semibold">Athena Agentic</p>
-                <p className="text-muted-foreground mt-2">
-                  Email:{" "}
-                  <a
-                    href="mailto:hello@athena agentic.co.za"
-                    className="text-primary hover:underline"
-                  >
-                    hello@athena agentic.co.za
-                  </a>
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">2. Types of Cookies We Use</h2>
+            <div className="space-y-4 mt-4">
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-foreground mb-1">Essential Cookies</h3>
+                <p className="text-sm">
+                  These cookies are necessary for the platform to function. They enable
+                  authentication, security features, and core functionality. Without these, the
+                  platform cannot operate. We do not require consent for essential cookies.
                 </p>
-                <p className="text-muted-foreground">
-                  Phone:{" "}
-                  <a
-                    href="tel:+27774404475"
-                    className="text-primary hover:underline"
-                  >
-                    +27 77 440 4475
-                  </a>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Examples: __client, __session (Clerk authentication), CSRF tokens
+                </p>
+              </div>
+
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-foreground mb-1">Functional Cookies</h3>
+                <p className="text-sm">
+                  These cookies remember your preferences, such as theme (dark/light mode) and
+                  language. They enhance your experience but are not essential.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Examples: theme preference, onboarding completion state
+                </p>
+              </div>
+
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-foreground mb-1">Analytics Cookies</h3>
+                <p className="text-sm">
+                  We use analytics to understand how users interact with the platform — which pages
+                  are visited, what features are used, and where users encounter errors. This helps
+                  us improve the service.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Examples: Cloudflare Web Analytics (privacy-preserving, no cross-site tracking)
+                </p>
+              </div>
+
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-foreground mb-1">Security Cookies</h3>
+                <p className="text-sm">
+                  We use cookies to detect and prevent fraud, brute-force attacks, and unauthorized
+                  access. These are essential for protecting your account and the platform.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Examples: rate-limit tokens, device fingerprint data, bot detection signals
                 </p>
               </div>
             </div>
-          </div>
-        </section>
-      </main>
+          </section>
 
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">3. Third-Party Cookies</h2>
+            <p>
+              We use trusted third-party services that may set cookies on your device:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Clerk:</strong> Authentication cookies (__client, __session) — essential for sign-in.</li>
+              <li><strong>Cloudflare:</strong> Turnstile CAPTCHA cookies — for bot protection.</li>
+              <li><strong>Stripe:</strong> Payment session cookies — only active during checkout.</li>
+              <li><strong>Paystack:</strong> Payment session cookies — only active during checkout.</li>
+            </ul>
+            <p>
+              These third parties have their own privacy policies governing how they use cookies.
+              We recommend reviewing their policies.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">4. Your Cookie Choices</h2>
+            <p>You have several options for managing cookies:</p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Browser Settings:</strong> You can control cookies through your browser settings. Most browsers allow you to block, delete, or alert you about cookies.</li>
+              <li><strong>Essential Only:</strong> Essential cookies cannot be disabled — they are required for the platform to function.</li>
+              <li><strong>Opt-Out:</strong> You can opt out of analytics cookies at any time. Contact us at Metron@Athenagentic.app to opt out.</li>
+            </ul>
+            <p>
+              Please note: disabling non-essential cookies may affect functionality. For example,
+              you may need to sign in more frequently, or theme preferences may not persist.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">5. Cookie Duration</h2>
+            <p>
+              Cookies are either "session" (deleted when you close your browser) or "persistent"
+              (remain until they expire or you delete them). Our cookie durations:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li>Authentication cookies: Up to 30 days (or until you sign out)</li>
+              <li>Theme preference: 1 year</li>
+              <li>Analytics cookies: 30 days</li>
+              <li>Security cookies: 5 minutes to 24 hours (depending on type)</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">6. NDPR Compliance</h2>
+            <p>
+              Under the NDPR, we are required to obtain your consent before placing non-essential
+              cookies on your device. By continuing to use PitchCoach Ai, you consent to our use of
+              cookies as described in this policy. You may withdraw consent at any time by
+              disabling cookies in your browser settings.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">7. Changes to This Policy</h2>
+            <p>
+              We may update this Cookie Policy as we add new features or change how we use cookies.
+              We will notify you of material changes by posting the updated policy on this page.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">8. Contact Us</h2>
+            <p>If you have questions about our use of cookies, contact us:</p>
+            <div className="bg-muted p-4 rounded-lg mt-2">
+              <p className="font-semibold text-foreground">PitchCoach Ai (Athena Agentic)</p>
+              <p className="text-muted-foreground">Location: Lagos, Nigeria</p>
+              <p className="text-muted-foreground">Email: Metron@Athenagentic.app</p>
+            </div>
+          </section>
+        </div>
+      </div>
       <Footer />
     </div>
   );

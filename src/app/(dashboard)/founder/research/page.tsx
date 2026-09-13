@@ -344,7 +344,7 @@ export default function ResearchPage() {
             <div className="space-y-2">
               <Label>Country</Label>
               <Input
-                placeholder="e.g., South Africa"
+                placeholder="e.g., Nigeria"
                 value={form.country}
                 onChange={(e) => setForm({ ...form, country: e.target.value })}
               />

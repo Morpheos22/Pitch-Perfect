@@ -238,7 +238,7 @@ function blockedResponse(request: Request, reason: string): NextResponse {
       `div{max-width:480px;text-align:center}h1{font-size:2.5rem;margin:0 0 1rem}` +
       `p{color:#A0AAC0;line-height:1.6}</style></head><body><div>` +
       `<h1>403</h1><p>Access to this resource is denied.</p>` +
-      `<p>If you believe this is an error, contact <a href="mailto:Morpheos@cc.cc" style="color:#6FE7C5">Morpheos@cc.cc</a>.</p>` +
+      `<p>If you believe this is an error, contact <a href="mailto:Metron@Athenagentic.app" style="color:#6FE7C5">Metron@Athenagentic.app</a>.</p>` +
       `</div></body></html>`,
     {
       status: 403,

@@ -16,7 +16,6 @@ const footerLinks = {
   company: [
     { label: "About", href: "/about" },
     { label: "Contact", href: "/contact" },
-    { label: "Blog", href: "/blog" },
   ],
   legal: [
     { label: "Privacy Policy", href: "/privacy" },
@@ -116,10 +115,10 @@ export function Footer() {
                 </span>
               </div>
               <a
-                href="mailto:Morpheos@cc.cc"
+                href="mailto:Metron@Athenagentic.app"
                 className="text-sm text-muted-foreground hover:text-primary transition-colors"
               >
-                Morpheos@cc.cc
+                Metron@Athenagentic.app
               </a>
             </div>
 

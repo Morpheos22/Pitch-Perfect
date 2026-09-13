@@ -169,7 +169,7 @@ const COUNTRIES = [
   "Slovenia",
   "Solomon Islands",
   "Somalia",
-  "South Africa",
+  "Nigeria",
   "South Korea",
   "South Sudan",
   "Spain",

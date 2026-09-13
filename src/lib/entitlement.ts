@@ -85,7 +85,7 @@ const MODULE_USAGE_FIELD: Record<CoachModule, keyof {
 };
 
 /** Subscription plans that grant access to all modules */
-const PAID_PLANS = ['STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
+const PAID_PLANS = ['NEWBIE', 'COFOUNDER', 'FOUNDER', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
 
 /** Active subscription statuses — includes CANCELLED with remaining period */
 // CANCELLED subscriptions that still have a remaining billing period
@@ -137,13 +137,13 @@ export async function requireModuleAccess(
   if (isAdminEmail(user.email)) {
     // Auto-upgrade subscription to ENTERPRISE if it isn't already
     const sub = user.subscription;
-    if (sub && (sub.plan !== 'ENTERPRISE' || sub.status !== 'ACTIVE')) {
+    if (sub && (sub.plan !== 'FOUNDER' || sub.status !== 'ACTIVE')) {
       await prisma.subscription.updateMany({
         where: { userId },
-        data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+        data: { plan: 'FOUNDER', status: 'ACTIVE' },
       });
     }
-    return { allowed: true, plan: 'ENTERPRISE' };
+    return { allowed: true, plan: 'FOUNDER' };
   }
 
   // ── Check 1: Active paid subscription ──

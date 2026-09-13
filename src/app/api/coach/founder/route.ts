@@ -190,7 +190,7 @@ Respond ONLY in valid JSON format without any markdown formatting.`,
 Startup: ${input.startupName || "Not provided"}
 Sector: ${input.sector || "Technology"}
 Stage: ${input.stage || "Pre-seed"}
-Country: ${input.country || "South Africa"}
+Country: ${input.country || "Nigeria"}
 Target Raise: ${input.targetRaise || "Not specified"}
 Traction: ${input.traction || "Early stage"}
 

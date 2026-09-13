@@ -146,7 +146,7 @@ export async function sendOnboardingEmail(email: string, data?: { firstName?: st
 
 export async function sendContactNotification(data: { name: string; email: string; message: string }): Promise<void> {
   await sendEmail({
-    to: "Morpheos@cc.cc",
+    to: "Metron@Athenagentic.app",
     subject: `New contact form submission from ${data.name}`,
     replyTo: data.email,
     html: `

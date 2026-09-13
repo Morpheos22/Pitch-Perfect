@@ -18,10 +18,15 @@ export interface PlanModuleLimits {
 }
 
 export const PLAN_LIMITS: Record<string, PlanModuleLimits> = {
+  JJC: { e1: 2, e2: 2, e3: 0, e4: 0, e5: 0 },
+  NEWBIE: { e1: 10, e2: 10, e3: 0, e4: 0, e5: 0 },
+  COFOUNDER: { e1: 25, e2: 25, e3: 5, e4: 1, e5: 3 },
+  FOUNDER: { e1: 999, e2: 999, e3: 999, e4: 5, e5: 999 },
+  // Legacy aliases for backward compatibility with existing DB rows
   FREE: { e1: 2, e2: 2, e3: 0, e4: 0, e5: 0 },
-  STARTER: { e1: 5, e2: 10, e3: 3, e4: 0, e5: 3 },
-  PROFESSIONAL: { e1: 15, e2: 30, e3: 10, e4: 3, e5: 10 },
-  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 999, e5: 999 },
+  STARTER: { e1: 10, e2: 10, e3: 0, e4: 0, e5: 0 },
+  PROFESSIONAL: { e1: 25, e2: 25, e3: 5, e4: 1, e5: 3 },
+  ENTERPRISE: { e1: 999, e2: 999, e3: 999, e4: 5, e5: 999 },
 };
 
 // Convenience: per-module subsets (for pages that only need one module)
@@ -47,10 +52,15 @@ export const E5_PLAN_LIMITS: Record<string, number> = Object.fromEntries(
 
 export function formatPlanName(plan: string): string {
   const names: Record<string, string> = {
-    FREE: "Free",
-    STARTER: "Starter",
-    PROFESSIONAL: "Professional",
-    ENTERPRISE: "Enterprise",
+    JJC: "JJC",
+    NEWBIE: "Newbie",
+    COFOUNDER: "Cofounder",
+    FOUNDER: "Founder",
+    // Legacy aliases
+    FREE: "JJC",
+    STARTER: "Newbie",
+    PROFESSIONAL: "Cofounder",
+    ENTERPRISE: "Founder",
   };
   return names[plan] || plan;
 }

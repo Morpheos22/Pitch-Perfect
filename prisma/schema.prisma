@@ -98,6 +98,11 @@ model Subscription {
 }
 
 enum PlanType {
+  JJC
+  NEWBIE
+  COFOUNDER
+  FOUNDER
+  // Legacy aliases (for existing DB rows)
   FREE
   STARTER
   PROFESSIONAL
