@@ -9,10 +9,7 @@
  *
  * SECURITY: This endpoint is internal-only:
  *   1. POST-only (GET returns 405)
- *   2. Requires x-internal-check header (set by middleware, harder to spoof
- *      than a regular API call — though not impossible; the data returned
- *      is just a boolean so the impact of spoofing is minimal)
- *   3. Same-origin check (origin must match host)
+ *   2. Requires INTERNAL_SECURITY_SECRET in a server-only header
  *
  * PERFORMANCE: The middleware should cache the result in-memory for 5 min
  * to avoid calling this endpoint on every request.
@@ -20,16 +17,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { INTERNAL_SECURITY_HEADER } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 10; // 10s — should be fast (indexed query)
 
 export async function POST(request: NextRequest) {
-  // Same-origin check (defense in depth)
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-  if (origin && host && !origin.includes(host)) {
+  const internalSecret = process.env.INTERNAL_SECURITY_SECRET;
+  if (!internalSecret || request.headers.get(INTERNAL_SECURITY_HEADER) !== internalSecret) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

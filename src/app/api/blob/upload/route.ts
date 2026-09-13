@@ -24,6 +24,13 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { del } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/db";
+import {
+  extractBlobPathname,
+  isBlobUrl,
+  isSafeBlobPathname,
+  verifyBlobOwnership,
+} from "@/lib/blob-signature";
 import {
   ALLOWED_MIME_TYPES,
   ALLOWED_EXTENSIONS,
@@ -240,14 +247,35 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  const isVercelBlob =
-    parsedUrl.hostname.endsWith(".blob.vercel-storage.com") ||
-    parsedUrl.hostname.endsWith(".public.blob.vercel-storage.com");
+  const isVercelBlob = isBlobUrl(blobUrl);
 
   if (!isVercelBlob) {
     return NextResponse.json(
       { error: "Only Vercel Blob URLs can be deleted." },
       { status: 400 }
+    );
+  }
+
+  const pathname = extractBlobPathname(blobUrl);
+  if (!pathname || !isSafeBlobPathname(pathname)) {
+    return NextResponse.json(
+      { error: "Invalid blob URL." },
+      { status: 400 }
+    );
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { clerkId: userId },
+    select: { id: true },
+  });
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (!(await verifyBlobOwnership(user.id, pathname))) {
+    return NextResponse.json(
+      { error: "You don't have access to this file" },
+      { status: 403 }
     );
   }
 

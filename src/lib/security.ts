@@ -266,11 +266,12 @@ export function cacheDeviceBlock(deviceId: string, reason: string): void {
  * goes back out to the internet and comes back in through the edge,
  * triggering middleware again).
  *
- * To break the recursion, we use a special header x-internal-security-check
- * that the middleware recognizes and skips the security checks for.
+ * To break the recursion, we use a secret header accepted only by the
+ * blocklist lookup route.
  */
 // Module-level cache of the origin URL — set on first call from middleware
 let securityCheckUrl: string | null = null;
+export const INTERNAL_SECURITY_HEADER = "x-internal-security-secret";
 
 export function setSecurityCheckOrigin(request: Request): void {
   if (securityCheckUrl) return; // Already set
@@ -303,10 +304,7 @@ export async function isBlocked(ip: string, deviceId: string): Promise<string | 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Special header — middleware recognizes this and SKIPS all
-        // security checks for this request. This prevents infinite
-        // recursion (edge middleware → fetch → edge middleware → ...).
-        "x-internal-security-check": "1",
+        [INTERNAL_SECURITY_HEADER]: process.env.INTERNAL_SECURITY_SECRET ?? "",
       },
       body: JSON.stringify({ ip, deviceId }),
       signal: controller.signal,
@@ -372,7 +370,10 @@ export function logSecurityIncident(record: SecurityIncidentRecord): void {
   try {
     fetch("https://pitchcoachai.tech/api/security/log-incident", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        [INTERNAL_SECURITY_HEADER]: process.env.INTERNAL_SECURITY_SECRET ?? "",
+      },
       body: JSON.stringify(record),
     }).catch(() => { /* swallow */ });
   } catch {
@@ -396,7 +397,10 @@ export function blockIp(opts: {
   try {
     fetch("https://pitchcoachai.tech/api/security/block-ip", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        [INTERNAL_SECURITY_HEADER]: process.env.INTERNAL_SECURITY_SECRET ?? "",
+      },
       body: JSON.stringify(opts),
     }).catch(() => { /* swallow */ });
   } catch {

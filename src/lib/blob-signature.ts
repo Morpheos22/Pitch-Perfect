@@ -34,6 +34,20 @@ export function extractBlobPathname(blobUrl: string): string | null {
   }
 }
 
+/** Validate a pathname before using it as a blob identifier. */
+export function isSafeBlobPathname(pathname: string): boolean {
+  if (!pathname || pathname.length > 1024 || pathname.startsWith('/')) {
+    return false;
+  }
+
+  try {
+    const decoded = decodeURIComponent(pathname);
+    return !decoded.includes('\\') && !decoded.split('/').some(segment => segment === '..' || segment === '.');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Fetch the content of a blob server-side using the @vercel/blob SDK.
  * Uses access: 'public' because the Vercel Blob store for this project is public.
@@ -189,26 +203,26 @@ export async function blobUrlToDataUri(blobUrlOrPathname: string): Promise<strin
  *
  * Used by the blob download proxy route to prevent unauthorized access.
  */
-async function verifyBlobOwnership(
+export async function verifyBlobOwnership(
   userId: string,
   pathname: string
 ): Promise<boolean> {
   // Search across all tables that may contain blob URLs
   const [
-    deck,
-    script,
-    video,
-    fullSession,
+    decks,
+    scripts,
+    videos,
+    fullSessions,
   ] = await Promise.all([
-    prisma.pitchDeck.findFirst({
+    prisma.pitchDeck.findMany({
       where: { userId, fileUrl: { contains: pathname } },
-      select: { id: true },
+      select: { fileUrl: true },
     }),
-    prisma.pitchScript.findFirst({
+    prisma.pitchScript.findMany({
       where: { userId, inputFileUrl: { contains: pathname } },
-      select: { id: true },
+      select: { inputFileUrl: true },
     }),
-    prisma.pitchVideo.findFirst({
+    prisma.pitchVideo.findMany({
       where: {
         userId,
         OR: [
@@ -216,15 +230,27 @@ async function verifyBlobOwnership(
           { r2Key: { contains: pathname } },
         ],
       },
-      select: { id: true },
+      select: { videoUrl: true, r2Key: true },
     }),
-    prisma.fullPitchSession.findFirst({
+    prisma.fullPitchSession.findMany({
       where: { userId, videoUrl: { contains: pathname } },
-      select: { id: true },
+      select: { videoUrl: true },
     }),
   ]);
 
-  return !!(deck || script || video || fullSession);
+  // The queries use broad candidates for compatibility with full URLs and
+  // legacy path keys, but authorization requires an exact pathname match.
+  const references = [
+    ...decks.map(record => record.fileUrl),
+    ...scripts.map(record => record.inputFileUrl),
+    ...videos.flatMap(record => [record.videoUrl, record.r2Key]),
+    ...fullSessions.map(record => record.videoUrl),
+  ];
+
+  return references.some(reference => {
+    if (!reference) return false;
+    return reference === pathname || extractBlobPathname(reference) === pathname;
+  });
 }
 
 /**
@@ -255,9 +281,9 @@ export async function servePrivateBlob(request: NextRequest): Promise<NextRespon
     const { searchParams } = new URL(request.url);
     const pathname = searchParams.get("pathname");
 
-    if (!pathname) {
+    if (!pathname || !isSafeBlobPathname(pathname)) {
       return NextResponse.json(
-        { error: "pathname is required" },
+        { error: "Invalid pathname" },
         { status: 400 }
       );
     }

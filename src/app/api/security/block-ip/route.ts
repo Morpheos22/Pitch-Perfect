@@ -8,15 +8,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { INTERNAL_SECURITY_HEADER } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  // Origin check
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-  if (origin && host && !origin.includes(host)) {
+  const internalSecret = process.env.INTERNAL_SECURITY_SECRET;
+  if (!internalSecret || request.headers.get(INTERNAL_SECURITY_HEADER) !== internalSecret) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

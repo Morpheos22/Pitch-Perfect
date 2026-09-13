@@ -15,6 +15,7 @@ import {
   logSecurityIncident,
   blockIp,
   SECURITY_HEADERS,
+  INTERNAL_SECURITY_HEADER,
 } from "@/lib/security";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -547,18 +548,17 @@ export default clerkMiddleware(async (auth, request) => {
   // When the middleware's isBlocked() function makes a fetch() call to
   // /api/security/check-blocked, that request comes BACK through this
   // middleware. To prevent infinite recursion (edge → fetch → edge → ...),
-  // we recognize the x-internal-security-check header and skip ALL security
-  // checks for requests that carry it.
+  // we recognize a secret header only on the blocklist lookup route. No other
+  // request can use this mechanism to skip security checks.
   //
-  // SECURITY: This header is only set by our own edge middleware (in
-  // isBlocked()). It cannot be spoofed by external clients because:
-  //   1. External clients don't know to set it
-  //   2. Even if they did, the only benefit is bypassing security checks
-  //      — but the /api/security/check-blocked endpoint does its own
-  //      same-origin check, and other endpoints have their own auth
-  //   3. We log all requests with this header for audit
-  if (request.headers.get("x-internal-security-check") === "1") {
-    // Internal call — skip all security checks, let it through to the route handler
+  // SECURITY: The secret is server-side only, and the route handler validates
+  // it independently before querying the blocklist.
+  if (
+    pathname === "/api/security/check-blocked" &&
+    process.env.INTERNAL_SECURITY_SECRET &&
+    request.headers.get(INTERNAL_SECURITY_HEADER) === process.env.INTERNAL_SECURITY_SECRET
+  ) {
+    // Only the middleware's blocklist lookup may bypass middleware recursion.
     return NextResponse.next();
   }
 
