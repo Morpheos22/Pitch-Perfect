@@ -21,6 +21,7 @@ const CF_BASE = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/
 // ── Model configuration ───────────────────────────────────────────────────
 export const AI_MODELS = {
   TEXT_PRIMARY: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  TEXT_FALLBACK: "@cf/openai/gpt-oss-120b", // Fallback if primary fails
   TEXT_FAST: "@cf/meta/llama-3.2-3b-instruct",
   VISION: "@cf/meta/llama-3.2-11b-vision-instruct",
 } as const;
@@ -95,6 +96,29 @@ export async function callAI(
     throw new Error("Cloudflare AI not configured — set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_TOKEN");
   }
 
+  try {
+    return await callModel(model, messages, maxTokens, temperature);
+  } catch (primaryError) {
+    // If primary model fails, try fallback model
+    if (model === AI_MODELS.TEXT_PRIMARY && AI_MODELS.TEXT_FALLBACK) {
+      console.warn(`[AI] Primary model ${model} failed, trying fallback ${AI_MODELS.TEXT_FALLBACK}...`);
+      try {
+        return await callModel(AI_MODELS.TEXT_FALLBACK, messages, maxTokens, temperature);
+      } catch (fallbackError) {
+        console.error(`[AI] Fallback model also failed:`, fallbackError);
+        throw fallbackError;
+      }
+    }
+    throw primaryError;
+  }
+}
+
+async function callModel(
+  model: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  temperature: number
+): Promise<string> {
   const response = await fetch(`${CF_BASE}/${model}`, {
     method: "POST",
     headers: {
@@ -118,12 +142,9 @@ export async function callAI(
     throw new Error(`Cloudflare AI failed: ${JSON.stringify(data.errors)}`);
   }
 
-  // Workers AI returns { result: { response: "..." } } for single-message,
-  // or { result: { response: "..." } } for chat messages
   const result = data.result;
   if (result?.response) return result.response;
   if (result?.message?.content) return result.message.content;
-  // Fallback: try to extract from any shape
   return typeof result === "string" ? result : JSON.stringify(result);
 }
 

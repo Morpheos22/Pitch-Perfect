@@ -39,6 +39,7 @@ const TIERS = [
       "Priority email support",
     ],
     cta: "Get Intern",
+    paymentLink: "https://buy.stripe.com/7sYfZa5mC7KzcCdfekfbq01",
     popular: false,
   },
   {
@@ -57,6 +58,7 @@ const TIERS = [
       "Priority support",
     ],
     cta: "Get Cofounder",
+    paymentLink: "https://buy.stripe.com/8x2aEQeXcd4Tau58PWfbq02",
     popular: true,
   },
   {
@@ -77,6 +79,7 @@ const TIERS = [
       "Dedicated support",
     ],
     cta: "Get Founder",
+    paymentLink: "https://buy.stripe.com/28E6oAdT8c0P45H4zGfbq03",
     popular: false,
   },
 ];
@@ -237,7 +240,7 @@ export default function PricingPage() {
                 </ul>
 
                 <a
-                  href="/sign-up"
+                  href={tier.paymentLink || "/sign-up"}
                   className={`block w-full text-center py-2.5 rounded-md font-semibold transition-colors ${
                     tier.popular
                       ? "bg-primary text-primary-foreground hover:bg-primary/90"
