@@ -1,14 +1,14 @@
 /**
  * Email Service — PitchCoach Ai
  *
- * Uses Nodemailer with SMTP for universal email provider compatibility.
- * Works with Gmail, SendGrid, Mailgun, Amazon SES, or any SMTP provider.
+ * Uses Nodemailer with Supabase SMTP for transactional email.
+ * Supabase provides an SMTP relay for custom domain email.
  *
  * Env vars required:
- *   - SMTP_HOST (e.g., smtp.gmail.com, smtp.sendgrid.net)
- *   - SMTP_PORT (e.g., 587 for TLS, 465 for SSL)
- *   - SMTP_USER (username/email)
- *   - SMTP_PASS (password or API key)
+ *   - SMTP_HOST (smtp.supabase.com)
+ *   - SMTP_PORT (587 for TLS)
+ *   - SMTP_USER (Supabase SMTP username)
+ *   - SMTP_PASS (Supabase SMTP password)
  *   - SMTP_FROM_EMAIL (sender address, e.g., hello@pitchcoachai.tech)
  *   - SMTP_FROM_NAME (sender name, e.g., "PitchCoach Ai")
  *
