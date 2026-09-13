@@ -209,9 +209,7 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     }),
   ]);
 
-  // Sync to Zoho CRM — bare lead (no country/useCase yet)
-  // This creates the lead in CRM so it exists before onboarding completes.
-  // The welcome email will be sent AFTER onboarding completes (user.updated webhook).
+  // Sync to CRM — bare lead (no country/useCase yet)
   // Skip CRM sync for blocked emails — no point creating a lead for a spammer.
   if (!blocked) {
     syncUserToCRM({
@@ -223,6 +221,23 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     }).catch((crmErr) => {
       console.warn(`[Clerk Webhook] CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
+  }
+
+  // ── Send welcome email via Supabase SMTP ──
+  // Primary: Nodemailer SMTP (Supabase SMTP, from hello@pitchcoachai.tech)
+  // Fallback: Cloudflare Email Routing (hello@pitchcoachai.tech → Metron@Athenagentic.app)
+  // If SMTP fails, Cloudflare Email Routing ensures the user can still reach us.
+  if (!blocked) {
+    import("@/lib/email")
+      .then(({ sendWelcomeEmail }) => {
+        return sendWelcomeEmail(email, data.first_name || undefined);
+      })
+      .then(() => {
+        console.log(`[Clerk Webhook] Welcome email sent to ${email}`);
+      })
+      .catch((emailErr) => {
+        console.warn(`[Clerk Webhook] Welcome email failed for ${email}:`, emailErr instanceof Error ? emailErr.message : emailErr);
+      });
   }
 }
 
@@ -279,6 +294,24 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   if (onboardingJustCompleted) {
     const country = data.public_metadata?.country as string || undefined;
     const primaryUseCase = data.public_metadata?.primaryUseCase as string || undefined;
+    const firstName = data.first_name || undefined;
+
+    // ── Send onboarding welcome email via Supabase SMTP ──
+    // Primary: Nodemailer SMTP (Supabase SMTP)
+    // Fallback: Cloudflare Email Routing (hello@pitchcoachai.tech forwards to Metron@Athenagentic.app)
+    import("@/lib/email")
+      .then(({ sendOnboardingEmail }) => {
+        return sendOnboardingEmail(email, { firstName, plan: primaryUseCase });
+      })
+      .then(() => {
+        console.log(`[Clerk Webhook] Onboarding email sent to ${email}`);
+      })
+      .catch((emailErr) => {
+        console.warn(`[Clerk Webhook] Email send failed for ${email}:`, emailErr instanceof Error ? emailErr.message : emailErr);
+        // Fallback: Cloudflare Email Routing is always active —
+        // if SMTP fails, the user can still email hello@pitchcoachai.tech
+        // and it will forward to Metron@Athenagentic.app via Cloudflare
+      });
 
     completeOnboardingInCRM({
       email,
