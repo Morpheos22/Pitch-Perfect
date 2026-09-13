@@ -20,9 +20,16 @@ const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || "";
 const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || "";
 const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || "pitch-perfect";
 
-// R2 public URL pattern (if custom domain is set, this changes)
-// For now, use the R2 dev/staging URL pattern
-const R2_BASE_URL = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+// R2 public URL pattern
+// - If R2_PUBLIC_DOMAIN is set (e.g., "https://files.pitchcoachai.tech"), use that
+// - Otherwise, use the r2.dev pattern: https://pub-<hash>.r2.dev
+// - Fallback: internal URL for authenticated proxy downloads
+const R2_PUBLIC_DOMAIN = process.env.R2_PUBLIC_DOMAIN || "";
+const R2_DEV_URL = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.dev`;
+const R2_INTERNAL_URL = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+
+// Use custom domain if set, otherwise r2.dev, otherwise internal URL
+const R2_BASE_URL = R2_PUBLIC_DOMAIN || R2_DEV_URL;
 
 // ── AWS S3-compatible signature v4 for R2 ─────────────────────────────────
 // R2 uses the same SigV4 signing as S3, but with a different host pattern.
@@ -154,8 +161,10 @@ export async function uploadToR2(
     throw new Error(`R2 upload failed ${response.status}: ${errText.slice(0, 200)}`);
   }
 
-  // Return the public URL — if R2 custom domain is set, use that instead
-  const publicUrl = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.dev/${key}`;
+  // Return the public URL — uses custom domain if set, otherwise r2.dev
+  const publicUrl = R2_PUBLIC_DOMAIN
+    ? `${R2_PUBLIC_DOMAIN}/${key}`
+    : `${R2_DEV_URL}/${key}`;
 
   return {
     url: publicUrl,
@@ -247,9 +256,13 @@ export async function deleteFromR2(key: string): Promise<void> {
 
 /**
  * Get the public URL for an R2 object.
+ * Uses custom domain if R2_PUBLIC_DOMAIN is set, otherwise r2.dev pattern.
  */
 export function getR2PublicUrl(key: string): string {
-  return `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.dev/${key}`;
+  if (R2_PUBLIC_DOMAIN) {
+    return `${R2_PUBLIC_DOMAIN}/${key}`;
+  }
+  return `${R2_DEV_URL}/${key}`;
 }
 
 /**
