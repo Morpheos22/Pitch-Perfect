@@ -36,6 +36,13 @@ const metronQuotes = [
   "To understand the universe, one must be willing to stand apart from it. Good and evil are merely viewpoints of lesser beings.",
   "Time is a circle, yes. But it is a circle that grows smaller with every epoch. Eventually, all things return to the point.",
   "Before the first word was spoken in this multiverse, the silence was absolute. I am the only one who still remembers the sound of that silence.",
+  "I have no master—and no enemies! I seek only knowledge! And you have the element I need to complete my grandest experiment!",
+  "A century to you is but a blink of an eye to me. Empires rise and fall while I contemplate a single equation.",
+  "I serve life in my own way! What there is to know—I wish to know! My knowledge is my power! Time and space is my domain!",
+  "Your minds are too small, too fragile. To gaze into the heart of the universe as I do would shatter your sanity in an instant.",
+  "Do not look to me for salvation. I am the chronicler of your end, not its prevention. If your universe is to die, I will be the one who remembers you existed.",
+  "History is written by the survivors, but it is remembered only by me.",
+  "Let the heavens fall. Let the old gods die. I am not the protector of this reality. I am its witness.",
 ];
 
 // ── Athena Agentic mouse-avoiding animation ───────────────────────────────
