@@ -270,6 +270,7 @@ async function callGatewayVision(
 
 // Import Cloudflare AI wrapper
 import { callAI, callAIVision, AI_MODELS as CF_AI_MODELS } from './cloudflare-ai';
+import { sanitizeUserInput, sanitizeAIResponse, getSystemPromptGuard } from './prompt-injection-guard';
 
 // Shim type — matches the interface that existing code expects from Z.ai SDK
 interface ZAIInstance {
@@ -297,19 +298,49 @@ export async function getZai(): Promise<ZAIInstance | null> {
       completions: {
         // Text chat → Cloudflare Workers AI (Llama 3.3 70B)
         create: async (opts) => {
-          const text = await callAI(opts.messages, {
+          // Sanitize all user messages + prepend system prompt guard
+          const sanitizedMessages = opts.messages.map((msg: any) => {
+            if (msg.role === "system") {
+              return { ...msg, content: msg.content + "\n" + getSystemPromptGuard() };
+            }
+            if (msg.role === "user") {
+              return { ...msg, content: sanitizeUserInput(msg.content) };
+            }
+            return msg;
+          });
+          const text = await callAI(sanitizedMessages, {
             maxTokens: opts.max_tokens,
             temperature: opts.temperature,
             model: CF_AI_MODELS.TEXT_PRIMARY,
           });
-          return { choices: [{ message: { content: text } }], ok: true, model: opts.model || 'cf-text' };
+          return { choices: [{ message: { content: sanitizeAIResponse(text) } }], ok: true, model: opts.model || 'cf-text' };
         },
         // Vision → Cloudflare Workers AI (Llama 3.2 11B Vision)
         createVision: async (opts) => {
-          // Extract image from messages (OpenAI vision format)
+          // Sanitize text portions of vision messages
+          const sanitizedMessages = opts.messages.map((msg: any) => {
+            if (msg.role === "system") {
+              return { ...msg, content: msg.content + "\n" + getSystemPromptGuard() };
+            }
+            if (msg.role === "user" && typeof msg.content === "string") {
+              return { ...msg, content: sanitizeUserInput(msg.content) };
+            }
+            if (msg.role === "user" && Array.isArray(msg.content)) {
+              return {
+                ...msg,
+                content: msg.content.map((part: any) => {
+                  if (part.type === "text") {
+                    return { ...part, text: sanitizeUserInput(part.text) };
+                  }
+                  return part; // Don't sanitize image data
+                }),
+              };
+            }
+            return msg;
+          });
           let imageBase64 = '';
           let textPrompt = '';
-          for (const msg of opts.messages) {
+          for (const msg of sanitizedMessages) {
             if (typeof msg.content === 'string') {
               textPrompt += msg.content + '\n';
             } else if (Array.isArray(msg.content)) {
@@ -327,18 +358,18 @@ export async function getZai(): Promise<ZAIInstance | null> {
 
           if (!imageBase64) {
             // No image — fall back to text-only
-            const text = await callAI(opts.messages, {
+            const text = await callAI(sanitizedMessages, {
               maxTokens: opts.max_tokens,
               temperature: opts.temperature,
               model: CF_AI_MODELS.TEXT_PRIMARY,
             });
-            return { choices: [{ message: { content: text } }], ok: true, model: opts.model || 'cf-text' };
+            return { choices: [{ message: { content: sanitizeAIResponse(text) } }], ok: true, model: opts.model || 'cf-text' };
           }
 
           const visionResult = await callAIVision(textPrompt, imageBase64, {
             maxTokens: opts.max_tokens,
           });
-          return { choices: [{ message: { content: visionResult } }], ok: true, model: opts.model || 'cf-vision' };
+          return { choices: [{ message: { content: sanitizeAIResponse(visionResult) } }], ok: true, model: opts.model || 'cf-vision' };
         },
       },
     },

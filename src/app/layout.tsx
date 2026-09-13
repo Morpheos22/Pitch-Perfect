@@ -45,8 +45,79 @@ export default function RootLayout({
       afterSignOutUrl="/sign-in"
       afterSignUpUrl="/onboarding"
       afterSignInUrl="/dashboard"
+      appearance={{
+        variables: {
+          colorPrimary: "#7C3AED",
+          colorText: "#F8FAFC",
+          colorBackground: "#14141F",
+          colorInputBackground: "#1E1E2E",
+          colorInputText: "#F8FAFC",
+        },
+      }}
     >
       <html lang="en" suppressHydrationWarning>
+        <head>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                // ── Session Hijacking Protection ──
+                // Block right-click context menu
+                document.addEventListener('contextmenu', function(e) {
+                  e.preventDefault();
+                  return false;
+                });
+
+                // Block keyboard shortcuts for dev tools
+                document.addEventListener('keydown', function(e) {
+                  // F12
+                  if (e.key === 'F12') { e.preventDefault(); return false; }
+                  // Ctrl+Shift+I (Inspector)
+                  if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) { e.preventDefault(); return false; }
+                  // Ctrl+Shift+J (Console)
+                  if (e.ctrlKey && e.shiftKey && (e.key === 'J' || e.key === 'j')) { e.preventDefault(); return false; }
+                  // Ctrl+Shift+C (Element picker)
+                  if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) { e.preventDefault(); return false; }
+                  // Ctrl+U (View source)
+                  if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) { e.preventDefault(); return false; }
+                  // Ctrl+S (Save page)
+                  if (e.ctrlKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); return false; }
+                });
+
+                // Block drag-and-drop of images
+                document.addEventListener('dragstart', function(e) {
+                  if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO' || e.target.tagName === 'SVG') {
+                    e.preventDefault();
+                    return false;
+                  }
+                });
+
+                // Detect dev tools open (basic check)
+                let devtoolsOpen = false;
+                const threshold = 160;
+                setInterval(function() {
+                  const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+                  const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+                  if (widthThreshold || heightThreshold) {
+                    if (!devtoolsOpen) {
+                      devtoolsOpen = true;
+                      console.clear();
+                      console.log('%cStop!', 'color: red; font-size: 48px; font-weight: bold;');
+                      console.log('%cThis is a browser feature intended for developers. If someone told you to copy-paste something here, it is a scam.', 'color: red; font-size: 16px;');
+                    }
+                  } else {
+                    devtoolsOpen = false;
+                  }
+                }, 1000);
+
+                // Clear console on load
+                console.clear();
+                console.log('%cPitchCoach Ai', 'color: #7C3AED; font-size: 32px; font-weight: bold;');
+                console.log('%cBuilt by Athena Agentic', 'color: #A78BFA; font-size: 14px;');
+                console.log('%c⚠️ If someone told you to paste code here, it is a scam.', 'color: #EF4444; font-size: 14px;');
+              `,
+            }}
+          />
+        </head>
         <body
           className={`${nunitoSans.variable} font-sans antialiased bg-background text-foreground`}
           style={{ fontFamily: "'Nunito Sans', sans-serif" }}
