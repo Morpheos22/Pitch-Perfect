@@ -63,7 +63,7 @@ export default function AboutPage() {
               expensive and limited to those in elite startup ecosystems. We wanted to change that.
             </p>
             <p>
-              Built by Athena Agentic in Lagos, Nigeria, PitchCoach Ai uses cutting-edge AI to
+              Built by Athena Agentic in Abuja, Nigeria, PitchCoach Ai uses cutting-edge AI to
               deliver instant, actionable feedback on pitch decks, scripts, and live delivery.
               Whether you are preparing for a seed round, a demo day, or your first investor
               meeting, we help you put your best foot forward.
@@ -127,7 +127,7 @@ export default function AboutPage() {
           </p>
           <div className="space-y-1">
             <p className="text-foreground font-semibold">PitchCoach Ai (Athena Agentic)</p>
-            <p className="text-muted-foreground">Location: Lagos, Nigeria</p>
+            <p className="text-muted-foreground">Location: Abuja, Nigeria</p>
             <p className="text-muted-foreground">Email: Metron@Athenagentic.app</p>
           </div>
         </div>

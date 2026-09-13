@@ -75,7 +75,7 @@ export default function ContactPage() {
             <CardContent className="p-6 text-center">
               <MapPin className="w-8 h-8 text-primary mx-auto mb-3" />
               <h3 className="font-semibold text-foreground mb-1">Location</h3>
-              <p className="text-sm text-muted-foreground">Lagos, Nigeria</p>
+              <p className="text-sm text-muted-foreground">Abuja, Nigeria</p>
               <p className="text-xs text-muted-foreground mt-1">West Africa</p>
             </CardContent>
           </Card>

@@ -19,7 +19,7 @@ export interface PlanModuleLimits {
 
 export const PLAN_LIMITS: Record<string, PlanModuleLimits> = {
   JJC: { e1: 2, e2: 2, e3: 0, e4: 0, e5: 0 },
-  NEWBIE: { e1: 10, e2: 10, e3: 0, e4: 0, e5: 0 },
+  INTERN: { e1: 10, e2: 10, e3: 0, e4: 0, e5: 0 },
   COFOUNDER: { e1: 25, e2: 25, e3: 5, e4: 1, e5: 3 },
   FOUNDER: { e1: 999, e2: 999, e3: 999, e4: 5, e5: 999 },
   // Legacy aliases for backward compatibility with existing DB rows
@@ -53,12 +53,12 @@ export const E5_PLAN_LIMITS: Record<string, number> = Object.fromEntries(
 export function formatPlanName(plan: string): string {
   const names: Record<string, string> = {
     JJC: "JJC",
-    NEWBIE: "Newbie",
+    INTERN: "Intern",
     COFOUNDER: "Cofounder",
     FOUNDER: "Founder",
     // Legacy aliases
     FREE: "JJC",
-    STARTER: "Newbie",
+    STARTER: "Intern",
     PROFESSIONAL: "Cofounder",
     ENTERPRISE: "Founder",
   };

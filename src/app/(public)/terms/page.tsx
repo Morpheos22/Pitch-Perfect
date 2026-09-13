@@ -35,7 +35,7 @@ export default function TermsPage() {
               <li>Founder coaching and investor readiness assessment</li>
             </ul>
             <p>
-              We offer multiple subscription tiers: JJC (Free), Newbie, Cofounder, and Founder
+              We offer multiple subscription tiers: JJC (Free), Intern, Cofounder, and Founder
               (one-time payment). Pricing is displayed in Naira by default, with geolocation-based
               currency conversion for international users.
             </p>
@@ -94,7 +94,7 @@ export default function TermsPage() {
             </p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li><strong>JJC (Free):</strong> Limited access to pitch deck and script check modules.</li>
-              <li><strong>Newbie (N9,000):</strong> Expanded access with more sessions.</li>
+              <li><strong>Intern (N9,000):</strong> Expanded access with more sessions.</li>
               <li><strong>Cofounder (N15,000):</strong> Full access to most modules.</li>
               <li><strong>Founder (N30,000 one-time):</strong> Full platform access with founder coaching.</li>
             </ul>
@@ -168,7 +168,7 @@ export default function TermsPage() {
             <h2 className="text-2xl font-semibold text-foreground mb-3">14. Governing Law</h2>
             <p>
               These Terms are governed by the laws of the Federal Republic of Nigeria. Any disputes
-              arising from these Terms shall be resolved in the courts of Lagos, Nigeria.
+              arising from these Terms shall be resolved in the courts of Abuja, Nigeria.
             </p>
           </section>
 
@@ -186,7 +186,7 @@ export default function TermsPage() {
             <p>If you have any questions about these Terms, contact us:</p>
             <div className="bg-muted p-4 rounded-lg mt-2">
               <p className="font-semibold text-foreground">PitchCoach Ai (Athena Agentic)</p>
-              <p className="text-muted-foreground">Location: Lagos, Nigeria</p>
+              <p className="text-muted-foreground">Location: Abuja, Nigeria</p>
               <p className="text-muted-foreground">Email: Metron@Athenagentic.app</p>
             </div>
           </section>

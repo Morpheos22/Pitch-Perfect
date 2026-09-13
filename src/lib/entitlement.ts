@@ -85,7 +85,7 @@ const MODULE_USAGE_FIELD: Record<CoachModule, keyof {
 };
 
 /** Subscription plans that grant access to all modules */
-const PAID_PLANS = ['NEWBIE', 'COFOUNDER', 'FOUNDER', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
+const PAID_PLANS = ['INTERN', 'COFOUNDER', 'FOUNDER', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
 
 /** Active subscription statuses — includes CANCELLED with remaining period */
 // CANCELLED subscriptions that still have a remaining billing period

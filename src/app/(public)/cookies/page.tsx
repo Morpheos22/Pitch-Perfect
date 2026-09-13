@@ -148,7 +148,7 @@ export default function CookiesPage() {
             <p>If you have questions about our use of cookies, contact us:</p>
             <div className="bg-muted p-4 rounded-lg mt-2">
               <p className="font-semibold text-foreground">PitchCoach Ai (Athena Agentic)</p>
-              <p className="text-muted-foreground">Location: Lagos, Nigeria</p>
+              <p className="text-muted-foreground">Location: Abuja, Nigeria</p>
               <p className="text-muted-foreground">Email: Metron@Athenagentic.app</p>
             </div>
           </section>

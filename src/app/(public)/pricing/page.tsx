@@ -6,14 +6,14 @@ import { Footer } from "@/components/layout/footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Check, Sparkles } from "lucide-react";
 
-// ── Pricing tiers (base prices in NGN) ────────────────────────────────────
+// ── Pricing tiers (base prices in NGN — ALL one-time payments) ────────────
 const TIERS = [
   {
     name: "JJC",
     tagline: "Just getting started",
     priceNGN: 0,
     isFree: true,
-    isOneTime: false,
+    isOneTime: true,
     features: [
       "2 pitch deck analyses",
       "2 script check sessions",
@@ -25,11 +25,11 @@ const TIERS = [
     popular: false,
   },
   {
-    name: "Newbie",
+    name: "Intern",
     tagline: "Building your first pitch",
     priceNGN: 9000,
     isFree: false,
-    isOneTime: false,
+    isOneTime: true,
     features: [
       "10 pitch deck analyses",
       "10 script check sessions",
@@ -38,7 +38,7 @@ const TIERS = [
       "Script rewriting suggestions",
       "Priority email support",
     ],
-    cta: "Get Newbie",
+    cta: "Get Intern",
     popular: false,
   },
   {
@@ -46,7 +46,7 @@ const TIERS = [
     tagline: "Serious about raising",
     priceNGN: 15000,
     isFree: false,
-    isOneTime: false,
+    isOneTime: true,
     features: [
       "25 pitch deck analyses",
       "25 script check sessions",
@@ -123,6 +123,23 @@ function formatPrice(ngnPrice: number, currency: keyof typeof CURRENCIES): strin
 export default function PricingPage() {
   const [currency, setCurrency] = useState<keyof typeof CURRENCIES>("NGN");
   const [detectedCountry, setDetectedCountry] = useState<string>("");
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  // Trust carousel items
+  const trustItems = [
+    "Used by startup founders, learning institutions and Y Combinator Applicants",
+    "Trusted by 500+ Entrepreneurs",
+    "Powered by Cloudflare Workers AI",
+    "NDPR Compliant — Built in Nigeria",
+  ];
+
+  useEffect(() => {
+    // Auto-scroll carousel every 3 seconds
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % trustItems.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [trustItems.length]);
 
   useEffect(() => {
     // Detect user's country via Vercel geolocation header
@@ -153,10 +170,27 @@ export default function PricingPage() {
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="container mx-auto px-4 py-16 max-w-6xl">
+        {/* Trust carousel */}
+        <div className="text-center mb-8 overflow-hidden">
+          <div
+            className="inline-block transition-transform duration-500 ease-in-out"
+            style={{ transform: `translateY(-${carouselIndex * 2}rem)` }}
+          >
+            {trustItems.map((item, i) => (
+              <div
+                key={i}
+                className="h-8 flex items-center justify-center text-sm font-medium text-muted-foreground"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-foreground mb-4">Simple, Transparent Pricing</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Choose the plan that fits your stage. From free to founder — we have you covered.
+            Choose the plan that fits your stage. All plans are one-time payments — no recurring charges.
           </p>
         </div>
 
@@ -243,6 +277,24 @@ export default function PricingPage() {
           ))}
         </div>
 
+        {/* Regional availability disclaimer */}
+        <div className="text-center mb-12 p-4 border border-border rounded-lg bg-muted/30">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">Disclaimer:</span>{" "}
+            This platform is not licensed to be used or distributed in{" "}
+            <span
+              className="relative inline-block cursor-help underline decoration-dotted underline-offset-2 text-foreground"
+              title="South Africa"
+            >
+              certain regions
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-foreground text-background text-xs rounded-md whitespace-nowrap opacity-0 hover:opacity-100 transition-opacity pointer-events-none z-10">
+                South Africa
+              </span>
+            </span>
+            .
+          </p>
+        </div>
+
         {/* Payment methods */}
         <div className="text-center mb-12">
           <p className="text-sm text-muted-foreground mb-4">
@@ -279,7 +331,7 @@ export default function PricingPage() {
                   What does "one-time" payment mean?
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  The Founder plan is a one-time payment of ₦30,000 (or local equivalent). You pay
+                  All paid plans (Intern, Cofounder, Founder) are one-time payments (or local equivalent). You pay
                   once and get lifetime access to all features. No recurring charges.
                 </p>
               </CardContent>
