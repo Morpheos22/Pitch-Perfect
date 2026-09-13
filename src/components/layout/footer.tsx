@@ -121,13 +121,18 @@ function MetronEmailLink() {
         Metron@Athenagentic.app
       </a>
       {showQuote && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 p-4 w-96 max-w-[90vw] text-center pointer-events-none z-50">
-          <p
-            className="italic text-sm leading-relaxed text-secondary/70 animate-in fade-in duration-500"
-            style={{ fontFamily: "Georgia, serif" }}
-          >
-            &ldquo;{metronQuotes[currentQuote]}&rdquo;
-          </p>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 p-6 w-[600px] max-w-[95vw] text-center pointer-events-none z-[9999]">
+          <div className="bg-background/95 backdrop-blur-md border border-primary/30 rounded-lg p-6 shadow-2xl shadow-primary/20">
+            <p
+              className="italic text-lg leading-relaxed text-secondary"
+              style={{ fontFamily: "Georgia, serif", textShadow: "0 0 12px rgba(167, 139, 250, 0.4)" }}
+            >
+              &ldquo;{metronQuotes[currentQuote]}&rdquo;
+            </p>
+            <p className="text-xs text-muted-foreground mt-3 tracking-widest uppercase">
+              — Metron
+            </p>
+          </div>
         </div>
       )}
     </>
