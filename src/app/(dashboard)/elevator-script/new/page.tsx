@@ -157,7 +157,7 @@ export default function ElevatorScriptNewPage() {
         try {
           setUploadProgress(0);
           const blobResult = await uploadFileToBlob(file, "script", (progress) => {
-            setUploadProgress(progress.percentage);
+            setUploadProgress(progress);
           });
           blobUrl = blobResult.url;
           setUploadProgress(100);

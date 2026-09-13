@@ -12,7 +12,6 @@ import { isAdminEmail } from '@/lib/dev-auth';
 // IMPORTANT: Import polyfills BEFORE any test that loads pdf-parse
 // The DOMMatrix polyfill must be installed at module level, before
 // pdf-parse's browser bundle evaluates its top-level code.
-import '@/lib/polyfills';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,7 +132,6 @@ async function testZaiGateway(): Promise<TestResult> {
       signal: AbortSignal.timeout(30_000),
     });
 
-
     const body = await resp.text();
     let responseSnippet = body.slice(0, 500);
 
@@ -242,22 +240,19 @@ async function testVercelBlob(): Promise<TestResult> {
 
   try {
     // WRITE
-    const { put } = await import('@vercel/blob');
+    const { uploadToR2 } = await import('@/lib/cloudflare-storage');
     const testContent = 'diagnostic test';
     const testKey = 'pitchcoach-diagnostic-test.txt';
 
 
-    const putResult = await put(testKey, testContent, {
-      access: 'public',
-      addRandomSuffix: true,
-    });
+    const putResult = await uploadToR2(Buffer.from(testContent), { filename: testKey, contentType: "text/plain" });
     blobUrl = putResult.url;
     steps.push(`✅ WRITE: Success — url=${blobUrl.slice(0, 80)}...`);
 
 
     // READ
-    const { get } = await import('@vercel/blob');
-    const getResult = await get(blobUrl, { access: 'public' });
+    const { downloadFromR2 } = await import('@/lib/cloudflare-storage');
+    const getResult = await downloadFromR2(putResult.key);
     if (!getResult) {
       steps.push('❌ READ: get() returned null');
       return {
@@ -282,8 +277,8 @@ async function testVercelBlob(): Promise<TestResult> {
 
 
     // DELETE
-    const { del } = await import('@vercel/blob');
-    await del(blobUrl);
+    const { deleteFromR2 } = await import('@/lib/cloudflare-storage');
+    await deleteFromR2(putResult.key);
     steps.push('✅ DELETE: Success — test blob cleaned up');
 
 
@@ -299,8 +294,8 @@ async function testVercelBlob(): Promise<TestResult> {
     // Try to clean up if write succeeded but something else failed
     if (blobUrl) {
       try {
-        const { del } = await import('@vercel/blob');
-        await del(blobUrl);
+        const { deleteFromR2 } = await import('@/lib/cloudflare-storage');
+        await deleteFromR2(blobUrl.split('/').pop() || blobUrl);
         steps.push('🧹 Cleanup: Deleted test blob after failure');
       } catch {
         steps.push('⚠️ Cleanup: Failed to delete test blob');
@@ -532,7 +527,7 @@ async function testE2Pipeline(): Promise<TestResult> {
             targetAudience: 'investor',
             targetDuration: 60,
           });
-          if (kalResult.success && kalResult.quickFeedback) {
+          if (kalResult && kalResult.success && kalResult.quickFeedback) {
             // Kal middleware returned partial analysis — mark as Strategy 2
             strategyUsed = 'Strategy 2 (Kal Agent — FALLBACK)';
             steps.push(`✅ Strategy 2 (Kal Agent): succeeded — got feedback response`);

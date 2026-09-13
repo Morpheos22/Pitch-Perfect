@@ -256,8 +256,8 @@ async function handlePost(request: NextRequest) {
           targetAudience,
           targetDuration,
         });
-        kalV2SessionId = kalV2.chatSessionId;
-        kalV2FirstQuestion = kalV2.firstQuestion;
+        kalV2SessionId = kalV2.chatSessionId ?? null;
+        kalV2FirstQuestion = kalV2.firstQuestion ?? null;
       } catch (kalV2Err) {
         log.error('Kal V2 activation failed (non-blocking):', kalV2Err);
       }

@@ -604,7 +604,7 @@ async function handlePost(request: NextRequest) {
               speed: 1.0,
               responseFormat: "wav",
             });
-            audioBase64 = audioBuffer.toString("base64");
+            audioBase64 = audioBuffer ? audioBuffer.toString("base64") : undefined;
           } catch (ttsErr) {
             log.warn("[E5] TTS generation failed:", ttsErr);
             // Continue without audio — text narration is still valuable

@@ -4,7 +4,6 @@
 
 // IMPORTANT: Import polyfills BEFORE any module that uses pdf-parse
 // The DOMMatrix polyfill must be installed before pdf-parse's browser bundle loads
-import './polyfills';
 
 // Dynamic imports for lazy loading
 async function parsePptxText(file: File): Promise<string> {

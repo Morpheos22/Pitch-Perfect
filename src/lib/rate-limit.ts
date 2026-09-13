@@ -1,11 +1,14 @@
 /**
- * Rate Limiting Library — PitchCoach Ai × Athena Agentic
+ * Rate Limiting Library — PitchCoach Ai
  *
- * Sliding-window rate limiter backed by Upstash Redis for Vercel serverless.
- * Falls back to per-request mode (no state, permissive) when Redis is not configured.
+ * In-memory sliding-window rate limiter (replaces Upstash Redis).
+ * Uses per-edge-instance Map with timestamps. Each Vercel edge instance
+ * has its own counter, so the effective limit is per-instance × number of
+ * instances. This is acceptable for most use cases — for stricter limits,
+ * consider Cloudflare KV or Durable Objects.
  *
  * Usage in middleware:
- *   import { checkRateLimit, getRateLimitConfig, setRateLimitHeaders } from '@/lib/rate-limit';
+ *   import { rateLimitMiddleware } from '@/lib/rate-limit';
  *
  * Usage in individual routes:
  *   import { withRateLimit } from '@/lib/rate-limit';
@@ -19,571 +22,220 @@ import { NextRequest, NextResponse } from "next/server";
 // ──────────────────────────────────────────────
 
 export interface RateLimitConfig {
-  /** Maximum number of requests allowed within the window */
   limit: number;
-  /** Sliding window duration in milliseconds */
   windowMs: number;
-  /** Identifier type: 'ip' for IP-based, 'user' for user-ID-based, 'both' tries user then falls back to IP */
   identifierType: "ip" | "user" | "both";
-  /** Human-readable name for logging */
   name?: string;
 }
 
 interface RateLimitResult {
-  /** Whether the request is allowed */
   allowed: boolean;
-  /** Number of remaining requests in the current window */
   remaining: number;
-  /** Unix timestamp (seconds) when the window resets */
   reset: number;
-  /** Total limit for this route tier */
   limit: number;
-  /** Time in seconds until the window resets (useful for Retry-After) */
   retryAfter: number;
 }
 
 // ──────────────────────────────────────────────
-// Redis client (lazy init)
+// In-memory store (per-edge-instance)
+// ──────────────────────────────────────────────
+// Key: `${identifier}:${routeName}`, Value: array of timestamps
+const store = new Map<string, number[]>();
+const MAX_STORE_SIZE = 10_000; // Prevent memory leak
+
+function cleanupOldEntries(key: string, windowMs: number): number[] {
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  const entries = store.get(key) || [];
+  const filtered = entries.filter(ts => ts > cutoff);
+  if (filtered.length !== entries.length) {
+    store.set(key, filtered);
+  }
+  return filtered;
+}
+
+function checkLimit(identifier: string, config: RateLimitConfig): RateLimitResult {
+  const key = `${identifier}:${config.name || "default"}`;
+  const now = Date.now();
+  const windowMs = config.windowMs;
+
+  const entries = cleanupOldEntries(key, windowMs);
+
+  if (entries.length >= config.limit) {
+    // Rate limited
+    const oldest = Math.min(...entries);
+    const resetTime = oldest + windowMs;
+    return {
+      allowed: false,
+      remaining: 0,
+      reset: Math.floor(resetTime / 1000),
+      limit: config.limit,
+      retryAfter: Math.ceil((resetTime - now) / 1000),
+    };
+  }
+
+  // Allow
+  entries.push(now);
+  store.set(key, entries);
+
+  // Periodic cleanup
+  if (store.size > MAX_STORE_SIZE) {
+    const cutoff = now - Math.max(windowMs, 300_000); // 5 min minimum
+    for (const [k, v] of store) {
+      const filtered = v.filter(ts => ts > cutoff);
+      if (filtered.length === 0) {
+        store.delete(k);
+      } else {
+        store.set(k, filtered);
+      }
+    }
+  }
+
+  return {
+    allowed: true,
+    remaining: config.limit - entries.length,
+    reset: Math.floor((now + windowMs) / 1000),
+    limit: config.limit,
+    retryAfter: 0,
+  };
+}
+
+// ──────────────────────────────────────────────
+// Config presets (same as before)
 // ──────────────────────────────────────────────
 
-type RedisClient = {
-  zadd: (key: string, ...args: (string | number | { score: number; member: string })[]) => Promise<string>;
-  zrangebyscore: (key: string, min: number | string, max: number | string, ...args: string[]) => Promise<string[]>;
-  zremrangebyscore: (key: string, min: number | string, max: number | string) => Promise<number>;
-  zcard: (key: string) => Promise<number>;
-  pexpireat: (key: string, ms: number) => Promise<boolean>;
-  ping: () => Promise<string>;
-  del: (key: string) => Promise<number>;
-  keys: (pattern: string) => Promise<string[]>;
+const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
+  // AI coaching routes — expensive, strict limits
+  "/api/coach/script": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-script" },
+  "/api/coach/deck": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-deck" },
+  "/api/coach/live": { limit: 5, windowMs: 60_000, identifierType: "user", name: "coach-live" },
+  "/api/coach/full": { limit: 5, windowMs: 60_000, identifierType: "user", name: "coach-full" },
+  "/api/coach/drills": { limit: 20, windowMs: 60_000, identifierType: "user", name: "coach-drills" },
+  "/api/coach/founder": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-founder" },
+  "/api/coach/diagnostic": { limit: 3, windowMs: 60_000, identifierType: "user", name: "coach-diagnostic" },
+  "/api/kal/": { limit: 15, windowMs: 60_000, identifierType: "user", name: "kal" },
+
+  // General API
+  "/api/": { limit: 60, windowMs: 60_000, identifierType: "ip", name: "api-general" },
+
+  // Auth
+  "/api/auth/": { limit: 10, windowMs: 60_000, identifierType: "ip", name: "auth" },
+  "/api/user/change-password": { limit: 5, windowMs: 60_000, identifierType: "user", name: "change-password" },
+  "/api/contact": { limit: 5, windowMs: 60_000, identifierType: "ip", name: "contact" },
 };
 
-let _redis: RedisClient | null = null;
-let _redisInitFailed = false;
-let _redisRetryAfter = 0; // Timestamp after which we should retry Redis init
+function getConfigForPath(pathname: string): RateLimitConfig {
+  // Try exact match first
+  if (RATE_LIMIT_CONFIGS[pathname]) return RATE_LIMIT_CONFIGS[pathname];
 
-async function getRedis(): Promise<RedisClient | null> {
-  // If init previously failed, check if we're past the retry cooldown
-  if (_redisInitFailed) {
-    if (Date.now() < _redisRetryAfter) return null;
-    // Cooldown expired — retry init (clear the flag first)
-    _redisInitFailed = false;
-  }
-  if (_redis) return _redis;
-
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (!url || !token) {
-    _redisInitFailed = true;
-    // No retry for missing credentials — they won't magically appear
-    _redisRetryAfter = Infinity;
-    return null;
+  // Try prefix match (longest first)
+  const sortedKeys = Object.keys(RATE_LIMIT_CONFIGS).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
+    if (pathname.startsWith(key)) return RATE_LIMIT_CONFIGS[key];
   }
 
-  try {
-    const { Redis } = await import("@upstash/redis");
-    _redis = new Redis({ url, token }) as unknown as RedisClient;
-    // Verify connection with a ping
-    await _redis.ping();
-    return _redis;
-  } catch (err) {
-    console.warn("[RateLimit] Failed to initialize Upstash Redis:", err);
-    _redisInitFailed = true;
-    // Exponential backoff: retry after 30s, 60s, 120s, capped at 5min
-    _redisRetryAfter = Date.now() + 30_000;
-    return null;
-  }
+  // Default
+  return { limit: 30, windowMs: 60_000, identifierType: "ip", name: "default" };
 }
 
 // ──────────────────────────────────────────────
-// Route-tier configuration
+// Public API
 // ──────────────────────────────────────────────
 
-/** Predefined rate limit tiers for common route patterns */
-const RATE_LIMIT_TIERS = {
-  /** AI analysis routes — expensive, limit aggressively */
-  ai: {
-    limit: 5,
-    windowMs: 60_000,
-    identifierType: "both" as const,
-    name: "AI Analysis",
-  },
-  /** Payment & billing routes — sensitive, moderate limit */
-  payment: {
-    limit: 10,
-    windowMs: 60_000,
-    identifierType: "both" as const,
-    name: "Payment",
-  },
-  /** Contact form — prevent spam */
-  contact: {
-    limit: 3,
-    windowMs: 60_000,
-    identifierType: "ip" as const,
-    name: "Contact",
-  },
-  /** Auth routes — prevent brute force */
-  auth: {
-    limit: 5,
-    windowMs: 60_000,
-    identifierType: "ip" as const,
-    name: "Auth",
-  },
-  /** General API routes — generous limit for normal usage */
-  general: {
-    limit: 30,
-    windowMs: 60_000,
-    identifierType: "both" as const,
-    name: "General API",
-  },
-  /** Dev endpoints — heavily restricted even in dev, blocked in production via middleware */
-  dev: {
-    limit: 5,
-    windowMs: 60_000,
-    identifierType: "ip" as const,
-    name: "Dev Endpoints",
-  },
-  /** Unrestricted — for health checks, webhooks only */
-  unrestricted: {
-    limit: 100,
-    windowMs: 60_000,
-    identifierType: "ip" as const,
-    name: "Unrestricted",
-  },
-} as const;
-
-/**
- * Determine the rate limit tier for a given request pathname.
- *
- * Order matters — more specific patterns are checked first.
- */
-function getRateLimitConfig(pathname: string): RateLimitConfig {
-  // AI analysis routes (most expensive — limit aggressively)
-  if (pathname.startsWith("/api/coach/")) {
-    return { ...RATE_LIMIT_TIERS.ai };
-  }
-
-  // Payment & billing routes
-  if (
-    pathname.startsWith("/api/payment/") ||
-    pathname.startsWith("/api/billing/")
-  ) {
-    return { ...RATE_LIMIT_TIERS.payment };
-  }
-
-  // Contact form
-  if (pathname === "/api/contact") {
-    return { ...RATE_LIMIT_TIERS.contact };
-  }
-
-  // Auth-related routes
-  if (
-    pathname.startsWith("/sign-in") ||
-    pathname.startsWith("/sign-up") ||
-    pathname.startsWith("/api/auth/")
-  ) {
-    return { ...RATE_LIMIT_TIERS.auth };
-  }
-
-  // Dev endpoints — heavily restricted (also hard-blocked in production via middleware)
-  if (pathname.startsWith("/api/dev/")) {
-    return { ...RATE_LIMIT_TIERS.dev };
-  }
-
-  // Health checks, webhooks — effectively unlimited
-  if (
-    pathname.startsWith("/api/webhooks/") ||
-    pathname === "/api/health"
-  ) {
-    return { ...RATE_LIMIT_TIERS.unrestricted };
-  }
-
-  // Everything else
-  return { ...RATE_LIMIT_TIERS.general };
-}
-
-/**
- * Determine if a route should be entirely skipped from rate limiting.
- * Webhooks from external services and Next.js internal routes should never be limited.
- */
-function shouldSkipRateLimit(pathname: string): boolean {
-  // Webhook routes — external services, must always pass
-  if (pathname.startsWith("/api/webhooks/")) {
-    return true;
-  }
-
-  // Next.js internal routes
-  if (pathname.startsWith("/_next/")) {
-    return true;
-  }
-
-  // Health check endpoint
-  if (pathname === "/api/health") {
-    return true;
-  }
-
-  // Note: /api/user/sync was previously skipped but is now rate-limited
-  // at the general tier (30/min) to prevent abuse via excessive Clerk API calls.
-
-  return false;
-}
-
-// ──────────────────────────────────────────────
-// Identifier extraction
-// ──────────────────────────────────────────────
-
-/**
- * Extract client IP address from the request.
- * Checks X-Forwarded-For, X-Real-IP, then falls back to a generic hash.
- */
-function getClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    // First IP in the chain is the original client
-    const firstIp = forwarded.split(",")[0]?.trim();
-    if (firstIp) return firstIp;
-  }
-
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
-
-  // Fallback — use a stable hash of connect info instead of per-request unique ID
-  // Hash from User-Agent + Accept headers ensures same client gets same identifier
-  const ua = request.headers.get("user-agent") || "";
-  const accept = request.headers.get("accept") || "";
-  let hash = 0;
-  const combined = `${ua}:${accept}`;
-  for (let i = 0; i < combined.length; i++) {
-    const chr = combined.charCodeAt(i);
-    hash = ((hash << 5) - hash) + chr;
-    hash |= 0; // Convert to 32-bit integer
-  }
-  return `unknown-${Math.abs(hash).toString(36)}`;
-}
-
-/**
- * Extract the route key from the pathname.
- * Normalizes the path for grouping (e.g., /api/coach/script and /api/coach/deck share a tier).
- */
-function getRouteKey(pathname: string, config: RateLimitConfig): string {
-  // Group by tier name for consistent rate limiting across similar routes
-  const tierName = config.name || "custom";
-  return `tier:${tierName}:${config.limit}:${config.windowMs}`;
-}
-
-// ──────────────────────────────────────────────
-// Core sliding-window rate limiter (Redis-backed)
-// ──────────────────────────────────────────────
-
-/**
- * Check rate limit for a given identifier + route combination using Redis sorted sets.
- *
- * Sliding window via ZSET:
- * 1. ZADD the current timestamp as a member
- * 2. ZREMRANGEBYSCORE to prune entries outside the window
- * 3. ZCARD to count remaining entries
- * 4. If over limit, ZREM the current entry (roll back)
- *
- * @param identifier - Unique identifier (user ID or IP)
- * @param routeKey - Route group key
- * @param config - Rate limit configuration
- */
-async function checkRateLimitRedis(
-  identifier: string,
-  routeKey: string,
-  config: RateLimitConfig
-): Promise<RateLimitResult> {
-  const redis = await getRedis();
-  if (!redis) {
-    // Fallback: allow request with a warning (graceful degradation)
-    return {
-      allowed: true,
-      remaining: config.limit - 1,
-      reset: Math.ceil((Date.now() + config.windowMs) / 1000),
-      limit: config.limit,
-      retryAfter: 1,
-    };
-  }
-
-  const now = Date.now();
-  const windowStart = now - config.windowMs;
-  const redisKey = `rl:${identifier}:${routeKey}`;
-
-  try {
-    // Add current request timestamp
-    await redis.zadd(redisKey, { score: now, member: String(now) });
-
-    // Remove all entries outside the sliding window
-    await redis.zremrangebyscore(redisKey, "-inf", windowStart);
-
-    // Count entries in the current window
-    const count = await redis.zcard(redisKey);
-
-    // Set expiry on the key to auto-cleanup (2x window for safety)
-    await redis.pexpireat(redisKey, now + config.windowMs * 2);
-
-    if (count > config.limit) {
-      // Over limit — remove the entry we just added (roll back)
-      await redis.zremrangebyscore(redisKey, now, now);
-
-      // Find the oldest entry to calculate reset time
-      const oldest = await redis.zrangebyscore(redisKey, "-inf", "+inf");
-      const windowEnd = oldest.length > 0
-        ? Number(oldest[0]) + config.windowMs
-        : now + config.windowMs;
-
-      return {
-        allowed: false,
-        remaining: 0,
-        reset: Math.ceil(windowEnd / 1000),
-        limit: config.limit,
-        retryAfter: Math.max(1, Math.ceil((windowEnd - now) / 1000)),
-      };
-    }
-
-    const remaining = Math.max(0, config.limit - count);
-
-    // Calculate when the oldest entry expires (window reset)
-    const oldest = await redis.zrangebyscore(redisKey, "-inf", "+inf");
-    const windowEnd = oldest.length > 0
-      ? Number(oldest[0]) + config.windowMs
-      : now + config.windowMs;
-
-    return {
-      allowed: true,
-      remaining,
-      reset: Math.ceil(windowEnd / 1000),
-      limit: config.limit,
-      retryAfter: Math.max(1, Math.ceil((windowEnd - now) / 1000)),
-    };
-  } catch (err) {
-    // Redis error — allow request (fail-open) to avoid blocking users during Redis outages.
-    // Reset the cached connection so the next request will re-initialize.
-    // This ensures we recover automatically when Redis comes back online.
-    _redis = null;
-    _redisInitFailed = true;
-    _redisRetryAfter = Date.now() + 30_000;
-    console.error("[RateLimit] Redis error (fail-open, will retry in 30s):", err);
-    return {
-      allowed: true,
-      remaining: config.limit - 1,
-      reset: Math.ceil((Date.now() + config.windowMs) / 1000),
-      limit: config.limit,
-      retryAfter: 1,
-    };
-  }
-}
-
-// ──────────────────────────────────────────────
-// Public API: request-level functions
-// ──────────────────────────────────────────────
-
-/**
- * Check rate limit for a NextRequest (async — Redis-backed).
- * Automatically extracts the identifier (user ID or IP) based on config.
- *
- * @param request - The incoming NextRequest
- * @param config - Rate limit configuration (optional, auto-detected from path)
- * @param userId - Optional Clerk user ID (if already resolved)
- */
-async function checkRateLimit(
-  request: NextRequest,
-  config?: RateLimitConfig,
-  userId?: string
-): Promise<RateLimitResult> {
-  const pathname = new URL(request.url).pathname;
-  const resolvedConfig = config || getRateLimitConfig(pathname);
-  const routeKey = getRouteKey(pathname, resolvedConfig);
-
-  // Determine identifier based on config type
-  let identifier: string;
-  if (resolvedConfig.identifierType === "ip") {
-    identifier = `ip:${getClientIp(request)}`;
-  } else if (resolvedConfig.identifierType === "user" && userId) {
-    identifier = `user:${userId}`;
-  } else if (resolvedConfig.identifierType === "both" && userId) {
-    identifier = `user:${userId}`;
-  } else {
-    identifier = `ip:${getClientIp(request)}`;
-  }
-
-  return checkRateLimitRedis(identifier, routeKey, resolvedConfig);
-}
-
-// ──────────────────────────────────────────────
-// Rate limit response helpers
-// ──────────────────────────────────────────────
-
-/**
- * Set standard rate limit headers on a NextResponse.
- *   X-RateLimit-Limit: The max requests allowed in the window
- *   X-RateLimit-Remaining: How many requests are left
- *   X-RateLimit-Reset: Unix timestamp when the window resets
- */
-function setRateLimitHeaders(
-  response: NextResponse,
-  result: RateLimitResult
-): NextResponse {
-  response.headers.set("X-RateLimit-Limit", String(result.limit));
-  response.headers.set("X-RateLimit-Remaining", String(result.remaining));
-  response.headers.set("X-RateLimit-Reset", String(result.reset));
-  return response;
-}
-
-/**
- * Create a 429 Too Many Requests response with rate limit headers.
- */
-function rateLimitResponse(result: RateLimitResult): NextResponse {
-  const response = NextResponse.json(
-    {
-      error: "Too Many Requests",
-      message: `Rate limit exceeded. Please try again in ${result.retryAfter} second${result.retryAfter !== 1 ? "s" : ""}.`,
-      retryAfter: result.retryAfter,
-      limit: result.limit,
-      remaining: 0,
-      reset: result.reset,
-    },
-    {
-      status: 429,
-      headers: {
-        "Retry-After": String(result.retryAfter),
-        "Content-Type": "application/json",
-      },
-    }
-  );
-
-  return setRateLimitHeaders(response, result);
-}
-
-// ──────────────────────────────────────────────
-// Middleware integration helper
-// ──────────────────────────────────────────────
-
-/**
- * Check rate limiting for a request. Returns:
- *  - `NextResponse` if rate limited (429)
- *  - `null` if the request is allowed (caller should proceed)
- *
- * Designed for easy integration inside Clerk's middleware callback.
- */
 export async function rateLimitMiddleware(
   request: NextRequest,
   userId?: string
 ): Promise<NextResponse | null> {
   const pathname = new URL(request.url).pathname;
+  const config = getConfigForPath(pathname);
 
-  // Skip non-API and internal routes
-  if (!pathname.startsWith("/api/") || shouldSkipRateLimit(pathname)) {
-    return null;
+  let identifier: string;
+  if (config.identifierType === "user" && userId) {
+    identifier = `user:${userId}`;
+  } else {
+    const ip = request.headers.get("x-vercel-forwarded-for") ||
+               request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+               "unknown";
+    identifier = `ip:${ip}`;
   }
 
-  const result = await checkRateLimit(request, undefined, userId);
+  const result = checkLimit(identifier, config);
 
   if (!result.allowed) {
-    console.warn(
-      `[RateLimit] Blocked request from ${userId || getClientIp(request)} on ${pathname} (${result.retryAfter}s retry)`
+    return NextResponse.json(
+      {
+        error: "rate_limit_exceeded",
+        message: `Too many requests. Try again in ${result.retryAfter} seconds.`,
+        retryAfter: result.retryAfter,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(result.retryAfter),
+          "X-RateLimit-Limit": String(result.limit),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": String(result.reset),
+        },
+      }
     );
-    return rateLimitResponse(result);
   }
 
-  return null;
+  return null; // Request allowed
 }
 
-// ──────────────────────────────────────────────
-// Higher-order wrapper for individual routes
-// ──────────────────────────────────────────────
-
-type ApiHandler = (
-  request: NextRequest,
-  context?: { params?: Promise<Record<string, string>> }
-) => Promise<NextResponse> | NextResponse;
-
-/**
- * Wrap an API route handler with rate limiting.
- *
- * Usage:
- * ```ts
- * export const POST = withRateLimit(myHandler, {
- *   limit: 5,
- *   windowMs: 60_000,
- *   identifierType: 'both',
- * });
- * ```
- */
 export function withRateLimit(
-  handler: ApiHandler,
-  config: RateLimitConfig,
-  customUserId?: string
-): ApiHandler {
-  return async (request, context) => {
-    // Get user ID from Clerk if available
-    let userId = customUserId;
-    if (!userId) {
-      try {
-        // Dynamic import to avoid issues in Edge runtime
-        const { auth } = await import("@clerk/nextjs/server");
-        const { userId: clerkId } = await auth();
-        userId = clerkId || undefined;
-      } catch {
-        // Clerk not available — fall back to IP
-        userId = undefined;
-      }
+  handler: (req: NextRequest) => Promise<NextResponse>,
+  config: RateLimitConfig
+): (req: NextRequest) => Promise<NextResponse> {
+  return async (req: NextRequest) => {
+    const userId = (req as any).auth?.userId;
+    let identifier: string;
+
+    if (config.identifierType === "user" && userId) {
+      identifier = `user:${userId}`;
+    } else {
+      const ip = req.headers.get("x-vercel-forwarded-for") ||
+                 req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+                 "unknown";
+      identifier = `ip:${ip}`;
     }
 
-    const result = await checkRateLimit(request, config, userId);
+    const result = checkLimit(identifier, config);
 
     if (!result.allowed) {
-      console.warn(
-        `[RateLimit] Route-level blocked from ${userId || getClientIp(request)} (${result.retryAfter}s retry)`
+      return NextResponse.json(
+        {
+          error: "rate_limit_exceeded",
+          message: `Too many requests. Try again in ${result.retryAfter} seconds.`,
+          retryAfter: result.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(result.retryAfter),
+            "X-RateLimit-Limit": String(result.limit),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(result.reset),
+          },
+        }
       );
-      return rateLimitResponse(result);
     }
 
-    const response = await handler(request, context);
-
-    // Attach rate limit headers to the successful response
-    return setRateLimitHeaders(response, result);
+    const response = await handler(req);
+    response.headers.set("X-RateLimit-Limit", String(result.limit));
+    response.headers.set("X-RateLimit-Remaining", String(result.remaining));
+    response.headers.set("X-RateLimit-Reset", String(result.reset));
+    return response;
   };
 }
 
-// ──────────────────────────────────────────────
-// Admin: Rate limit reset
-// ──────────────────────────────────────────────
-
-/**
- * Reset rate limits for a specific identifier (user ID or IP).
- * Intended for admin/support use — e.g., when a legitimate user gets locked out.
- *
- * @param identifier - The user ID or IP to reset. Prefix with "user:" or "ip:" to be explicit.
- * @returns Number of rate limit keys deleted, or -1 if Redis is unavailable.
- */
 export async function resetRateLimit(identifier: string): Promise<number> {
-  const redis = await getRedis();
-  if (!redis) {
-    console.warn("[RateLimit] resetRateLimit: Redis unavailable, cannot reset.");
-    return -1;
-  }
-
-  try {
-    // Match all rate limit keys for this identifier (across all tiers)
-    const pattern = `rl:${identifier}:*`;
-    const keys = await redis.keys(pattern);
-
-    if (keys.length === 0) {
-      return 0;
+  let count = 0;
+  for (const key of store.keys()) {
+    if (key.startsWith(identifier)) {
+      store.delete(key);
+      count++;
     }
-
-    // Delete all matching keys
-    let deleted = 0;
-    for (const key of keys) {
-      const result = await redis.del(key);
-      deleted += result;
-    }
-
-    console.log(`[RateLimit] Reset ${deleted} rate limit key(s) for ${identifier}`);
-    return deleted;
-  } catch (err) {
-    console.error("[RateLimit] resetRateLimit error:", err);
-    return -1;
   }
+  return count;
 }

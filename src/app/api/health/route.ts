@@ -126,9 +126,9 @@ export async function GET(request: NextRequest) {
   const configStatus = getZaiConfigStatus();
   checks.ai = {
     status: 'checking',
-    configFound: configStatus.hasApiKey || configStatus.hasToken,
-    configSource: configStatus.configSource,
-    baseUrl: configStatus.baseUrl,
+    configFound: configStatus.hasApiKey || configStatus.configured,
+    configSource: configStatus.provider,
+    baseUrl: configStatus.models.join(", "),
   };
 
 
@@ -137,9 +137,9 @@ export async function GET(request: NextRequest) {
     const aiHealth = await checkAIServiceHealth();
     checks.ai = {
       status: aiHealth.status,
-      configFound: aiHealth.configFound || configStatus.hasApiKey || configStatus.hasToken,
-      configSource: configStatus.configSource,
-      baseUrl: configStatus.baseUrl,
+      configFound: aiHealth.configFound || configStatus.hasApiKey || configStatus.configured,
+      configSource: configStatus.provider,
+      baseUrl: configStatus.models.join(", "),
       textModel: aiHealth.gatewayRouting?.text,
       visionModel: aiHealth.gatewayRouting?.vision,
       visionStatus: aiHealth.vision?.status,
@@ -148,9 +148,9 @@ export async function GET(request: NextRequest) {
   } catch {
     checks.ai = {
       status: 'unhealthy',
-      configFound: configStatus.hasApiKey || configStatus.hasToken,
-      configSource: configStatus.configSource,
-      baseUrl: configStatus.baseUrl,
+      configFound: configStatus.hasApiKey || configStatus.configured,
+      configSource: configStatus.provider,
+      baseUrl: configStatus.models.join(", "),
       visionStatus: 'unhealthy',
       visionMessage: 'AI health check failed — could not reach gateway',
     };
@@ -169,8 +169,8 @@ export async function GET(request: NextRequest) {
   const allHealthy = checks.database.status === 'ok' && checks.ai.status === 'ok';
 
 
-  if (!configStatus.hasApiKey && !configStatus.hasToken) warnings.push('AI API key/token not configured');
-  if (!configStatus.hasUserId) warnings.push('AI User ID not configured');
+  if (!configStatus.hasApiKey && !configStatus.configured) warnings.push('AI API key/token not configured');
+  if (!configStatus.configured) warnings.push('AI User ID not configured');
   if (!isStorageConfigured()) warnings.push('No persistent storage configured');
   if (checks.database.status === 'unhealthy') warnings.push('Database connection issue');
   if (!checks.entitlement.devEmailsConfigured) warnings.push('Developer emails not recognized — dev accounts will be on FREE tier');
@@ -187,8 +187,8 @@ export async function GET(request: NextRequest) {
   if (blobTokenSet) {
     // Test blob store connectivity by listing blobs (0 results, just checks auth)
     try {
-      const { list } = await import('@vercel/blob');
-      await list({ limit: 1, token: process.env.BLOB_READ_WRITE_TOKEN });
+      const isR2Configured = (await import("@/lib/cloudflare-storage")).isR2Configured;
+      blobStoreReachable = isR2Configured();
       blobStoreReachable = true;
     } catch (err: unknown) {
       blobStoreError = err instanceof Error ? err.message : String(err);

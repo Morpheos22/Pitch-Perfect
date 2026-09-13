@@ -1,33 +1,19 @@
-// AI Service Layer for PitchCoach Ai × Athena Agentic
-// Multi-provider via Z.ai Gateway: GLM, Gemini, Gemma + full capability suite
+// AI Service Layer for PitchCoach Ai
+// Powered by Cloudflare Workers AI (replaces Z.ai + Kal Agent + Vertex AI)
 //
 // ═══════════════════════════════════════════════════════════════════════
-// GATEWAY MODEL ROUTING (updated 2026-05-01)
+// CLOUDFLARE WORKERS AI ROUTING
 // ═══════════════════════════════════════════════════════════════════════
-// The Z.ai API uses a single /chat/completions endpoint for BOTH text
-// and vision. Vision requests include image_url content in messages
-// and use a vision model name (glm-4.5v, glm-5v-turbo, etc.).
+// All text and vision requests go through Cloudflare Workers AI.
 //
-// API ENDPOINT: https://api.z.ai/api/paas/v4/chat/completions
-// Auth: Authorization: Bearer <ZAI_API_KEY>
+// API ENDPOINT: https://api.cloudflare.com/client/v4/accounts/{id}/ai/run/{model}
+// Auth: Authorization: Bearer <CF_AI_TOKEN>
 //
-// AVAILABLE VISION MODELS (from https://z.ai/model-api + docs.z.ai):
-//   - glm-5v-turbo    (newest, fastest vision model)
-//   - glm-4.5v        (full-featured vision with thinking)
-//   - glm-4.6v        (previous vision model)
-//   - glm-ocr         (OCR-specialized)
+// TEXT MODEL: @cf/meta/llama-3.3-70b-instruct-fp8-fast
+// VISION MODEL: @cf/meta/llama-3.2-11b-vision-instruct
 //
-// TEXT MODELS:
-//   - glm-5.1, glm-5, glm-5-turbo, glm-4.7, glm-4.6, glm-4.5, etc.
-//
-// MODEL LABELS (semantic naming for code clarity):
-//   PRIMARY_TEXT:     glm-5.1             (flagship — matches Claude Opus 4.6, 8hr autonomous)
-//   UPGRADE_TEXT:     glm-5.1             (deeper analysis — same flagship)
-//   GLM_FLAGSHIP:     glm-5               (stronger coding + multi-step reasoning)
-//   GLM_FAST:         glm-5-turbo         (optimized for complex dynamic tasks)
-//   FAILSAFE_TEXT:    glm-4.7             (enhanced programming + stable reasoning)
-//   PRIMARY_VISION:   glm-4.5v            (vision tasks — full-featured VLM + thinking)
-//   GLM_VISION:       glm-4.5v            (vision + thinking, same as primary)
+// The getZai() function returns a shim object that wraps Cloudflare AI,
+// so all existing prompt engineering code works unchanged.
 //   FAST_VISION:      glm-5v-turbo        (fastest vision, newest)
 //   FAILSAFE_VISION:  glm-4.6v            (vision failsafe, proven stable)
 //
@@ -279,97 +265,86 @@ async function callGatewayVision(
 }
 
 // ============================================
-// Z.AI SDK INITIALIZATION
+// CLOUDFLARE WORKERS AI SHIM (replaces Z.ai SDK)
 // ============================================
 
-type ZAIInstance = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>;
+// Import Cloudflare AI wrapper
+import { callAI, callAIVision, AI_MODELS as CF_AI_MODELS } from './cloudflare-ai';
 
-let zaiInstance: ZAIInstance | null = null;
-let sdkInitAttempted = false;
-
-/**
- * Ensure the .z-ai-config file exists so the SDK can initialize.
- *
- * REFACTORED: Replaced synchronous writeFileSync with async writeFile.
- * The SDK (z-ai-web-dev-sdk) REQUIRES a .z-ai-config file — it has no
- * env-var-only initialization path. Its ZAI.create() reads from:
- *   1. process.cwd()/.z-ai-config  (primary — SDK hardcoded)
- *   2. homedir()/.z-ai-config      (secondary)
- *   3. /etc/.z-ai-config           (tertiary)
- *
- * On Vercel serverless, process.cwd() (/var/task) IS writable at runtime.
- * As a safety net, we also write to /tmp/.z-ai-config for read-only CWD scenarios.
- *
- * Security: The file contains API credentials. On Vercel, the function sandbox
- * is isolated per-request, so this is acceptable. The .z-ai-config is already
- * in .gitignore to prevent accidental commits.
- */
-async function ensureZaiConfigFile(): Promise<boolean> {
-  if (sdkInitAttempted) return zaiInstance !== null;
-  sdkInitAttempted = true;
-
-  const resolved = getResolvedConfig();
-
-  // Validate minimum requirements
-  if (!resolved.apiKey && !resolved.token) {
-    console.error('[ZAI] No API key or token configured. Set ZAI_API_KEY or ZAI_TOKEN env var.');
-    return false;
-  }
-
-  // Log resolved config for debugging (mask sensitive values)
-  console.log(`[ZAI] Config resolved from: ${resolved.source}`);
-  console.log(`[ZAI] Base URL: ${resolved.baseUrl}`);
-  console.log(`[ZAI] API Key: ${resolved.apiKey ? resolved.apiKey.slice(0, 8) + '...' : 'NOT SET'}`);
-  console.log(`[ZAI] Token: ${resolved.token ? resolved.token.slice(0, 8) + '...' : 'NOT SET'}`);
-  console.log(`[ZAI] User ID: ${resolved.userId || 'NOT SET'}`);
-
-  const configToWrite = {
-    baseUrl: resolved.baseUrl,
-    apiKey: resolved.apiKey || resolved.token,
-    token: resolved.token || resolved.apiKey,
-    userId: resolved.userId,
-    chatId: resolved.chatId,
+// Shim type — matches the interface that existing code expects from Z.ai SDK
+interface ZAIInstance {
+  chat: {
+    completions: {
+      create: (opts: { model?: string; messages: any[]; temperature?: number; max_tokens?: number }) => Promise<{ choices: { message: { content: string } }[]; ok: boolean; model: string }>;
+      createVision: (opts: { model?: string; messages: any[]; temperature?: number; max_tokens?: number; thinking?: any }) => Promise<{ choices: { message: { content: string } }[]; ok: boolean; model: string }>;
+    };
   };
-
-  // Write targets: CWD first (SDK's primary search path), then /tmp as fallback
-  const writeTargets = [
-    join(process.cwd(), '.z-ai-config'),
-    '/tmp/.z-ai-config',
-  ];
-
-  let wroteAny = false;
-  for (const configPath of writeTargets) {
-    try {
-      await writeFile(configPath, JSON.stringify(configToWrite, null, 2), { mode: 0o600 });
-      console.log(`[ZAI] Wrote config to ${configPath}`);
-      wroteAny = true;
-    } catch (writeErr: any) {
-      // Non-fatal — the SDK may still find an existing config or we have the direct HTTP fallback
-      console.warn(`[ZAI] Could not write to ${configPath} (non-fatal): ${writeErr?.code || writeErr?.message}`);
-    }
-  }
-
-  return wroteAny;
 }
 
+let zaiInstance: ZAIInstance | null = null;
+
 /**
- * Get or initialize the Z.ai SDK instance.
- *
- * Returns null if initialization fails — callers should fall back to
- * the direct HTTP path (callGatewayText / callGatewayVision).
+ * Get the AI instance (Cloudflare Workers AI shim).
+ * Returns a ZAI-compatible object so all existing prompt engineering code
+ * works unchanged — just the backend switched from Z.ai to Cloudflare.
  */
 export async function getZai(): Promise<ZAIInstance | null> {
   if (zaiInstance) return zaiInstance;
 
-  try {
-    await ensureZaiConfigFile();
-    const { default: ZAI } = await import('z-ai-web-dev-sdk');
-    zaiInstance = await ZAI.create();
-    return zaiInstance;
-  } catch (sdkErr: any) {
-    console.warn(`[ZAI] SDK initialization failed (will use direct HTTP fallback): ${sdkErr?.message}`);
-    return null;
-  }
+  // Build shim that wraps Cloudflare Workers AI
+  zaiInstance = {
+    chat: {
+      completions: {
+        // Text chat → Cloudflare Workers AI (Llama 3.3 70B)
+        create: async (opts) => {
+          const text = await callAI(opts.messages, {
+            maxTokens: opts.max_tokens,
+            temperature: opts.temperature,
+            model: CF_AI_MODELS.TEXT_PRIMARY,
+          });
+          return { choices: [{ message: { content: text } }], ok: true, model: opts.model || 'cf-text' };
+        },
+        // Vision → Cloudflare Workers AI (Llama 3.2 11B Vision)
+        createVision: async (opts) => {
+          // Extract image from messages (OpenAI vision format)
+          let imageBase64 = '';
+          let textPrompt = '';
+          for (const msg of opts.messages) {
+            if (typeof msg.content === 'string') {
+              textPrompt += msg.content + '\n';
+            } else if (Array.isArray(msg.content)) {
+              for (const part of msg.content) {
+                if (part.type === 'text') textPrompt += part.text + '\n';
+                if (part.type === 'image_url') {
+                  const url = part.image_url?.url || part.image_url;
+                  if (typeof url === 'string' && url.startsWith('data:')) {
+                    imageBase64 = url;
+                  }
+                }
+              }
+            }
+          }
+
+          if (!imageBase64) {
+            // No image — fall back to text-only
+            const text = await callAI(opts.messages, {
+              maxTokens: opts.max_tokens,
+              temperature: opts.temperature,
+              model: CF_AI_MODELS.TEXT_PRIMARY,
+            });
+            return { choices: [{ message: { content: text } }], ok: true, model: opts.model || 'cf-text' };
+          }
+
+          const visionResult = await callAIVision(textPrompt, imageBase64, {
+            maxTokens: opts.max_tokens,
+          });
+          return { choices: [{ message: { content: visionResult } }], ok: true, model: opts.model || 'cf-vision' };
+        },
+      },
+    },
+  };
+
+  return zaiInstance;
 }
 
 // ============================================
@@ -1987,23 +1962,19 @@ JSON structure (no markdown):
 }
 
 export function getZaiConfigStatus(): {
-  sdkInitAttempted: boolean;
-  hasToken: boolean;
+  configured: boolean;
+  provider: string;
   hasApiKey: boolean;
-  hasBaseUrl: boolean;
-  hasUserId: boolean;
-  configSource: string;
-  baseUrl: string;
+  hasAccountId: boolean;
+  models: string[];
 } {
-  const resolved = getResolvedConfig();
+  const configured = !!(process.env.CLOUDFLARE_ACCOUNT_ID && (process.env.CLOUDFLARE_AI_TOKEN || process.env.CF_API_TOKEN));
   return {
-    sdkInitAttempted,
-    hasToken: !!resolved.token,
-    hasApiKey: !!resolved.apiKey,
-    hasBaseUrl: !!resolved.baseUrl && resolved.baseUrl !== DEFAULT_GATEWAY_URL,
-    hasUserId: !!resolved.userId,
-    configSource: resolved.source,
-    baseUrl: resolved.baseUrl,
+    configured,
+    provider: "Cloudflare Workers AI",
+    hasApiKey: !!(process.env.CLOUDFLARE_AI_TOKEN || process.env.CF_API_TOKEN),
+    hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
+    models: Object.values(CF_AI_MODELS),
   };
 }
 

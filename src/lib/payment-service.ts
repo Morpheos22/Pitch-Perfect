@@ -349,7 +349,12 @@ export async function verifyPayment(
 }
 
 async function verifyPaystackPayment(reference: string): Promise<PaymentVerificationResult> {
-  const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+  // SSRF fix: validate reference is a safe path segment (alphanumeric + hyphens/underscores only).
+  // Prevents path traversal (../) and URL injection that could redirect the fetch.
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(reference)) {
+    return { success: false, amount: 0, currency: 'USD' };
+  }
+  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
     headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
   });
   const data = await response.json();
@@ -365,7 +370,13 @@ async function verifyPaystackPayment(reference: string): Promise<PaymentVerifica
 }
 
 async function verifyStripePayment(sessionId: string): Promise<PaymentVerificationResult> {
-  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+  // SSRF fix: validate sessionId is a safe path segment (alphanumeric + hyphens only).
+  // Stripe session IDs look like "cs_test_a1b2c3..." or "cs_live_x9y8z7...".
+  // Prevents path traversal and URL injection.
+  if (!/^[a-zA-Z0-9_-]{1,200}$/.test(sessionId)) {
+    return { success: false, amount: 0, currency: 'USD' };
+  }
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
     headers: { 'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}` },
   });
   const data = await response.json();

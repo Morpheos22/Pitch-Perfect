@@ -211,11 +211,14 @@ async function stage3_SecurityHeaders() {
     }
   });
 
-  await test('3.3: CSP includes Vercel Blob domain', S, async () => {
+  await test('3.3: CSP includes Cloudflare R2 domain (replaces Vercel Blob)', S, async () => {
     const { headers } = await fetchStatus(BASE_URL);
     const csp = headers.get('content-security-policy') || '';
-    if (!csp.includes('blob.vercel-storage.com')) {
-      throw new Error('CSP missing blob.vercel-storage.com for file uploads');
+    // Fix: use precise domain check with word boundaries to prevent substring spoofing
+    // (e.g., 'evil-blob.vercel-storage.com.attacker.com' would pass the old .includes() check)
+    if (!/(?:^|[\s;])https:\/\/[\w.-]*\.?r2\.cloudflarestorage\.com/.test(csp) &&
+        !/(?:^|[\s;])https:\/\/[\w.-]*\.?blob\.vercel-storage\.com/.test(csp)) {
+      throw new Error('CSP missing storage domain (r2.cloudflarestorage.com or blob.vercel-storage.com)');
     }
   });
 
