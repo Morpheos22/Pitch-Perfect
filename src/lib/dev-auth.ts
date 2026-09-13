@@ -1,4 +1,4 @@
-// Dev Auth Utility for Pitch Perfect × Automagikal
+// Dev Auth Utility for PitchCoach Ai × Athena Agentic
 // Admin emails that bypass onboarding and get ENTERPRISE entitlement.
 // The middleware uses isAdminEmail() to skip the onboarding redirect.
 //

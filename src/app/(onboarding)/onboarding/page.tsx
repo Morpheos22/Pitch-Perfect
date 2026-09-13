@@ -275,7 +275,7 @@ export default function OnboardingPage() {
             <span className="text-3xl">🎤</span>
           </div>
           <CardTitle className="text-2xl font-bold text-foreground">
-            Welcome to Pitch Perfect!
+            Welcome to PitchCoach Ai!
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             Let&apos;s personalize your experience
@@ -431,12 +431,12 @@ export default function OnboardingPage() {
             <p className="text-sm text-muted-foreground">
               Built by{" "}
               <a
-                href="https://automagikal.co.za/"
+                href="https://athena-agentic.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:text-primary/80 transition-colors"
               >
-                AutomagiKal
+                Athena Agentic
               </a>
             </p>
           </div>

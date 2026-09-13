@@ -119,7 +119,7 @@ export default function NetworkPage() {
     return (
       <FounderLayout
         title="Network Profile"
-        subtitle="Your investor-facing profile for the Automagikal Network"
+        subtitle="Your investor-facing profile for the PitchCoach Ai Network"
       >
         {/* AfriFlow Readiness */}
         <Card className={`border-2 ${result.afriFlowReadiness.ready ? "border-emerald-500/40 bg-emerald-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
@@ -322,7 +322,7 @@ export default function NetworkPage() {
   return (
     <FounderLayout
       title="Network Profile Builder"
-      subtitle="Create your investor-facing profile for the Automagikal Network"
+      subtitle="Create your investor-facing profile for the PitchCoach Ai Network"
     >
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="py-4">

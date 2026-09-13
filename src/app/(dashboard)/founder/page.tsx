@@ -170,7 +170,7 @@ export default function FounderPage() {
             </Badge>
           </div>
           <p className="text-muted-foreground">
-            E5 — Conversion layer to the Automagikal Network
+            E5 — Conversion layer to the PitchCoach Ai Network
           </p>
         </div>
       </div>
@@ -190,7 +190,7 @@ export default function FounderPage() {
                     The E5 Founder Coaching module is available on the{" "}
                     <span className="font-semibold text-foreground">Enterprise plan ($199/mo)</span>.
                     It includes all 6 sub-modules: Readiness, Pathway, Research, Cohort, Network, and Narration.
-                    Upgrade to unlock your journey into the Automagikal Network.
+                    Upgrade to unlock your journey into the PitchCoach Ai Network.
                   </p>
                 </div>
               </div>
@@ -243,7 +243,7 @@ export default function FounderPage() {
               </div>
               <p className="text-sm text-muted-foreground max-w-lg">
                 The Pitch Founder module transforms you from a user into a candidate for the
-                Automagikal Network. Complete all 6 steps to unlock your pathway to investors.
+                PitchCoach Ai Network. Complete all 6 steps to unlock your pathway to investors.
               </p>
               <div className="flex gap-2 mt-2">
                 <Badge variant="outline" className="text-xs border-primary/30 text-primary">

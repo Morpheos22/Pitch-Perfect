@@ -100,37 +100,19 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom bar — Metabuilder branding block */}
+        {/* Bottom bar — PitchCoach Ai branding */}
         <div className="mt-12 pt-8 border-t border-border">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex flex-col items-center md:items-start gap-3">
               <p className="text-sm text-muted-foreground">
-                © {new Date().getFullYear()} Pitch Perfect. All rights reserved.
+                © {new Date().getFullYear()} PitchCoach Ai. All rights reserved.
               </p>
               <div className="flex items-center gap-3">
                 <span className="text-xs uppercase tracking-widest text-muted-foreground font-bold">
                   Developed By
                 </span>
-                <span className="text-sm font-bold">
-                  <a
-                    href="https://www.linkedin.com/in/david-akanimoh/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-secondary hover:underline transition-colors"
-                    title="Akanimoh David on LinkedIn"
-                  >
-                    Akanimoh David
-                  </a>
-                  <span className="text-muted-foreground mx-2">&middot;</span>
-                  <a
-                    href="https://metabuildersolutions.org/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-foreground hover:text-primary hover:underline transition-colors"
-                    title="Metabuilder Solutions Limited"
-                  >
-                    Metabuilder Solutions Limited
-                  </a>
+                <span className="text-sm font-bold text-secondary">
+                  Athena Agentic
                 </span>
               </div>
               <a
@@ -141,23 +123,17 @@ export function Footer() {
               </a>
             </div>
 
-            <a
-              href="https://metabuildersolutions.org/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-              title="Metabuilder Solutions Limited"
-            >
+            <div className="flex items-center gap-2">
               <Image
-                src="/metabuilder-logo.png"
-                alt="Metabuilder Solutions Limited"
+                src="/logo.png"
+                alt="PitchCoach Ai"
                 width={140}
-                height={62}
-                className="h-10 w-auto"
+                height={40}
+                className="h-9 w-auto"
                 draggable={false}
                 priority
               />
-            </a>
+            </div>
           </div>
         </div>
       </div>

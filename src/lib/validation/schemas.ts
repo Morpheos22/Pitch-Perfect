@@ -1,4 +1,4 @@
-// Shared Zod Validation Schemas for Pitch Perfect API Routes
+// Shared Zod Validation Schemas for PitchCoach Ai API Routes
 // Centralises input validation to prevent malformed/malicious payloads.
 
 import { z } from 'zod';

@@ -21,7 +21,7 @@ export default function AuthLayout({
 
       {/* Footer */}
       <footer className="p-4 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Pitch Perfect × Automagikal. All rights reserved.
+        © {new Date().getFullYear()} PitchCoach Ai × Athena Agentic. All rights reserved.
       </footer>
     </div>
   );

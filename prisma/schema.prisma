@@ -1,4 +1,4 @@
-// Pitch Perfect × Automagikal - Prisma Schema
+// PitchCoach Ai × Athena Agentic - Prisma Schema
 // Database: PostgreSQL (Supabase)
 
 generator client {

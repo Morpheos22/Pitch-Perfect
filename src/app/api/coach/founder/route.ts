@@ -103,7 +103,7 @@ Provide your assessment as a JSON object:
 
 function buildPathwayPrompt(input: Record<string, unknown>) {
   return {
-    system: `You are a pathway advisor for the Automagikal Network, specializing in African startup ecosystems. Compare the two pathways and recommend the best fit for this founder.
+    system: `You are a pathway advisor for the PitchCoach Ai Network, specializing in African startup ecosystems. Compare the two pathways and recommend the best fit for this founder.
 
 
 TWO PATHWAYS:
@@ -116,7 +116,7 @@ Path A: Grit to Gear
 - Certification upon completion
 - Access to AfriFlow investor network after certification
 - Timeline: 3-6 months
-- Cost: Discounted (subsidized by Automagikal)
+- Cost: Discounted (subsidized by Athena Agentic)
 - Best for: Early-stage founders needing structured support
 
 
@@ -289,7 +289,7 @@ Provide your matching as JSON:
 
 function buildNetworkProfilePrompt(input: Record<string, unknown>) {
   return {
-    system: `You are a personal branding expert for African tech founders. Create a compelling investor-facing network profile that highlights the founder's unique value proposition and makes them stand out in the Automagikal Network.
+    system: `You are a personal branding expert for African tech founders. Create a compelling investor-facing network profile that highlights the founder's unique value proposition and makes them stand out in the PitchCoach Ai Network.
 
 
 Respond ONLY in valid JSON format without any markdown formatting.`,
@@ -342,7 +342,7 @@ Create the profile as JSON:
 
 function buildNarrationPrompt(input: Record<string, unknown>) {
   return {
-    system: `You are a warm, encouraging mentor explaining the founder's pathway in the Pitch Perfect × Automagikal program. Write a clear, conversational narration that explains their recommended path, what to expect, and next steps. This will be converted to speech via TTS.
+    system: `You are a warm, encouraging mentor explaining the founder's pathway in the PitchCoach Ai × Athena Agentic program. Write a clear, conversational narration that explains their recommended path, what to expect, and next steps. This will be converted to speech via TTS.
 
 
 IMPORTANT: Write as if speaking directly to the founder. Use first person ("you", "your"). Keep sentences short and natural for speech synthesis. Avoid complex punctuation or abbreviations that might trip up text-to-speech.

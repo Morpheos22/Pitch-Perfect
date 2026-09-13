@@ -1,5 +1,5 @@
 /**
- * Structured Logger — Pitch Perfect × Automagikal
+ * Structured Logger — PitchCoach Ai × Athena Agentic
  *
  * Lightweight logging utility that gates non-essential output behind a dev flag.
  * In production, only `error` and `warn` are emitted; `debug` and `info` are no-ops.

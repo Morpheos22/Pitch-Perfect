@@ -1,4 +1,4 @@
-// Zoho CRM Integration Service for Pitch Perfect
+// Zoho CRM Integration Service for PitchCoach Ai
 // Handles lead management, contact sync, and onboarding email
 //
 // The onboarding welcome email is sent via Zoho CRM's SendMail API.
@@ -157,7 +157,7 @@ export async function sendOnboardingEmail(leadId: string, userData: {
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #ffffff; padding: 40px 20px;">
       <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 16px; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 40px 40px 30px; text-align: center;">
-          <h1 style="margin: 0; font-size: 32px; font-weight: 700; color: #ffffff;">Welcome to Pitch Perfect!</h1>
+          <h1 style="margin: 0; font-size: 32px; font-weight: 700; color: #ffffff;">Welcome to PitchCoach Ai!</h1>
           <p style="margin: 10px 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">Your AI-powered pitch coaching journey begins now</p>
         </div>
         <div style="padding: 40px;">
@@ -200,8 +200,8 @@ export async function sendOnboardingEmail(leadId: string, userData: {
           <p style="margin: 5px 0 0; font-size: 14px;"><a href="mailto:${ZOHO_CONFIG.senderEmail}" style="color: #a5b4fc; text-decoration: none;">${ZOHO_CONFIG.senderEmail}</a></p>
         </div>
         <div style="padding: 20px 40px; background-color: #0f172a; text-align: center; border-top: 1px solid #1e293b;">
-          <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://automagikal.co.za/" style="color: #a5b4fc; text-decoration: none;">AutomagiKal</a></p>
-          <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">&copy; ${new Date().getFullYear()} Pitch Perfect. All rights reserved.</p>
+          <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://athena-agentic.com/" style="color: #a5b4fc; text-decoration: none;">Athena Agentic</a></p>
+          <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">&copy; ${new Date().getFullYear()} PitchCoach Ai. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -219,7 +219,7 @@ export async function sendOnboardingEmail(leadId: string, userData: {
       data: [{
         from: ZOHO_CONFIG.senderEmail,
         to: userData.email,
-        subject: 'Welcome to Pitch Perfect - Your AI Pitch Coach Awaits!',
+        subject: 'Welcome to PitchCoach Ai - Your AI Pitch Coach Awaits!',
         content: emailHtml,
         mail_format: 'html',
       }],

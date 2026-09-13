@@ -392,7 +392,7 @@ async function sendKalCompletionEmail(
         <p>You can view the detailed analysis in your <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color: #4f46e5;">dashboard</a>.</p>
         <p style="color: #666; font-size: 14px;">If you have any questions, please contact support.</p>
         <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-        <p style="color: #999; font-size: 12px;">Pitch Perfect by AutomagiKal</p>
+        <p style="color: #999; font-size: 12px;">PitchCoach Ai by Athena Agentic</p>
       </div>
     `;
 
@@ -429,7 +429,7 @@ async function sendKalFailureEmail(
         </div>
         <p>You can also try submitting again from your <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="color: #4f46e5;">dashboard</a>.</p>
         <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-        <p style="color: #999; font-size: 12px;">Pitch Perfect by AutomagiKal</p>
+        <p style="color: #999; font-size: 12px;">PitchCoach Ai by Athena Agentic</p>
       </div>
     `;
 

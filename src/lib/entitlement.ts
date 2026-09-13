@@ -1,5 +1,5 @@
 /**
- * Module Entitlement Checker — Pitch Perfect × Automagikal
+ * Module Entitlement Checker — PitchCoach Ai × Athena Agentic
  *
  * Verifies that a user has an active subscription or one-time module access
  * before allowing them to use AI-powered coach endpoints (E1–E5).

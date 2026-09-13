@@ -110,7 +110,7 @@ async function stage1() {
   {
     const content = readFile("src/lib/zoho-auth.ts");
     const hasNewEmail = content.includes("akanimohdavid@yahoo.com");
-    const noOldEmail = !content.includes("sherwyn@automagikal.co.za");
+    const noOldEmail = !content.includes("sherwyn@athena agentic.co.za");
     hasNewEmail && noOldEmail
       ? pass("1.8 ZOHO_SENDER_EMAIL default updated", "akanimohdavid@yahoo.com")
       : fail("1.8 ZOHO_SENDER_EMAIL", `new=${hasNewEmail}, old-removed=${noOldEmail}`);

@@ -1,4 +1,4 @@
-// Z.ai Capabilities Layer for Pitch Perfect × Automagikal
+// Z.ai Capabilities Layer for PitchCoach Ai × Athena Agentic
 // Active capabilities: TTS, Web Search
 // Powered by the z-ai-web-dev-sdk
 //

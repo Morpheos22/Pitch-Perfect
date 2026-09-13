@@ -1,4 +1,4 @@
-// Shared AI Utility Functions for Pitch Perfect × Automagikal
+// Shared AI Utility Functions for PitchCoach Ai × Athena Agentic
 //
 // Previously duplicated across ai-service.ts and vertex-ai.ts.
 // Now consolidated here as the single source of truth.

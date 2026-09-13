@@ -94,7 +94,7 @@ async function handlePost(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Something went wrong",
-        message: "We couldn't process your message. Please try again or email us directly at hello@automagikal.co.za.",
+        message: "We couldn't process your message. Please try again or email us directly at hello@athena agentic.co.za.",
       },
       { status: 500 }
     );

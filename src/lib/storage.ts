@@ -6,7 +6,7 @@ import {
 } from '@/lib/file-validation';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Storage Utilities for Pitch Perfect × Automagikal
+// Storage Utilities for PitchCoach Ai × Athena Agentic
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // DUAL-PATH UPLOAD ARCHITECTURE:

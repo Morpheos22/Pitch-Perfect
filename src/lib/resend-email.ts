@@ -27,8 +27,8 @@ function getResend(): Resend | null {
 
 // Default "from" address for Resend emails.
 // Resend requires a verified domain or their onboarding domain.
-// Format: "Pitch Perfect <onboarding@pitchcoachai.tech>" or the Resend default.
-const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'Pitch Perfect <onboarding@pitchcoachai.tech>';
+// Format: "PitchCoach Ai <onboarding@pitchcoachai.tech>" or the Resend default.
+const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'PitchCoach Ai <onboarding@pitchcoachai.tech>';
 
 // ============================================
 // ONBOARDING WELCOME EMAIL (Resend fallback)
@@ -49,7 +49,7 @@ export async function sendOnboardingEmailViaResend(userData: {
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #ffffff; padding: 40px 20px;">
       <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 16px; overflow: hidden;">
         <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 40px 40px 30px; text-align: center;">
-          <h1 style="margin: 0; font-size: 32px; font-weight: 700; color: #ffffff;">Welcome to Pitch Perfect!</h1>
+          <h1 style="margin: 0; font-size: 32px; font-weight: 700; color: #ffffff;">Welcome to PitchCoach Ai!</h1>
           <p style="margin: 10px 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">Your AI-powered pitch coaching journey begins now</p>
         </div>
         <div style="padding: 40px;">
@@ -92,8 +92,8 @@ export async function sendOnboardingEmailViaResend(userData: {
           <p style="margin: 5px 0 0; font-size: 14px;"><a href="mailto:support@pitchcoachai.tech" style="color: #a5b4fc; text-decoration: none;">support@pitchcoachai.tech</a></p>
         </div>
         <div style="padding: 20px 40px; background-color: #0f172a; text-align: center; border-top: 1px solid #1e293b;">
-          <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://automagikal.co.za/" style="color: #a5b4fc; text-decoration: none;">AutomagiKal</a></p>
-          <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">&copy; ${new Date().getFullYear()} Pitch Perfect. All rights reserved.</p>
+          <p style="margin: 0; font-size: 12px; color: #64748b;">Built by <a href="https://athena-agentic.com/" style="color: #a5b4fc; text-decoration: none;">Athena Agentic</a></p>
+          <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">&copy; ${new Date().getFullYear()} PitchCoach Ai. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -103,7 +103,7 @@ export async function sendOnboardingEmailViaResend(userData: {
     const { data, error } = await resend.emails.send({
       from: RESEND_FROM,
       to: userData.email,
-      subject: 'Welcome to Pitch Perfect - Your AI Pitch Coach Awaits!',
+      subject: 'Welcome to PitchCoach Ai - Your AI Pitch Coach Awaits!',
       html,
     });
 

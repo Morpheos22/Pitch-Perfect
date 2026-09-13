@@ -288,7 +288,7 @@ export default function ReadinessPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 We evaluate your deck quality, pitch confidence, market timing, team readiness,
                 traction evidence, and financial understanding to recommend the best pathway
-                into the Automagikal Network.
+                into the PitchCoach Ai Network.
               </p>
             </div>
           </div>

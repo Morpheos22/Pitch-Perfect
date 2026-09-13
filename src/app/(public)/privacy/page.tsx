@@ -87,7 +87,7 @@ export default function PrivacyPage() {
                 </span>
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-                Your privacy matters to us. This policy explains how AutomagiKal
+                Your privacy matters to us. This policy explains how Athena Agentic
                 collects, uses, and protects your personal information.
               </p>
               <p className="text-sm text-muted-foreground mt-4">
@@ -126,10 +126,10 @@ export default function PrivacyPage() {
               <div className="mb-12">
                 <h2 className="text-2xl font-bold mb-4">Introduction</h2>
                 <p className="text-muted-foreground">
-                  Roshwyle (Pty) Ltd, trading as AutomagiKal ("we," "our," or
+                  Athena Agentic ("we," "our," or
                   "us"), is committed to protecting your privacy. This Privacy
                   Policy explains how we collect, use, disclose, and safeguard
-                  your information when you use our Pitch Perfect platform and
+                  your information when you use our PitchCoach Ai platform and
                   related services (collectively, the "Services").
                 </p>
                 <p className="text-muted-foreground mt-4">
@@ -373,10 +373,10 @@ export default function PrivacyPage() {
                 <p className="text-muted-foreground mt-6">
                   To exercise these rights, please contact us at{" "}
                   <a
-                    href="mailto:hello@automagikal.co.za"
+                    href="mailto:hello@athena agentic.co.za"
                     className="text-primary hover:underline"
                   >
-                    hello@automagikal.co.za
+                    hello@athena agentic.co.za
                   </a>
                   .
                 </p>
@@ -412,14 +412,14 @@ export default function PrivacyPage() {
                   please contact us:
                 </p>
                 <div className="mt-4 p-6 bg-muted/30 rounded-lg">
-                  <p className="font-semibold">AutomagiKal (Roshwyle (Pty) Ltd)</p>
+                  <p className="font-semibold">Athena Agentic</p>
                   <p className="text-muted-foreground mt-2">
                     Email:{" "}
                     <a
-                      href="mailto:hello@automagikal.co.za"
+                      href="mailto:hello@athena agentic.co.za"
                       className="text-primary hover:underline"
                     >
-                      hello@automagikal.co.za
+                      hello@athena agentic.co.za
                     </a>
                   </p>
                   <p className="text-muted-foreground">

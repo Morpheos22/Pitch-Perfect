@@ -1,4 +1,4 @@
--- Pitch Perfect × Automagikal — Initial Baseline Migration
+-- PitchCoach Ai × Athena Agentic — Initial Baseline Migration
 -- This is a consolidated migration that creates the entire database schema.
 -- Generated from the current prisma/schema.prisma as a single baseline.
 --

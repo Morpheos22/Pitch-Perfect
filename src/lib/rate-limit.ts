@@ -1,5 +1,5 @@
 /**
- * Rate Limiting Library — Pitch Perfect × Automagikal
+ * Rate Limiting Library — PitchCoach Ai × Athena Agentic
  *
  * Sliding-window rate limiter backed by Upstash Redis for Vercel serverless.
  * Falls back to per-request mode (no state, permissive) when Redis is not configured.

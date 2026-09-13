@@ -1,5 +1,5 @@
 // src/lib/file-parser.ts
-// Unified file parser for Pitch Perfect
+// Unified file parser for PitchCoach Ai
 // Supports: PDF, PPTX, DOCX, TXT
 
 // IMPORTANT: Import polyfills BEFORE any module that uses pdf-parse

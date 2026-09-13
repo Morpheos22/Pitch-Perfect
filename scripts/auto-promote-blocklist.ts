@@ -75,7 +75,7 @@ async function main() {
   }
 
   console.log("══════════════════════════════════════════════════════════════════════");
-  console.log("Pitch-Perfect — Auto-promote probe IPs to blocklist");
+  console.log("PitchCoach Ai — Auto-promote probe IPs to blocklist");
   console.log("══════════════════════════════════════════════════════════════════════");
   console.log(`URL:        ${args.url}`);
   console.log(`Threshold:  ${args.threshold ?? 3} attempts`);

@@ -23,7 +23,7 @@ export function Logo({ size = "md", showText = true, className = "", href = "/" 
     <Link href={href} className={`flex items-center gap-2 ${className}`}>
       <Image
         src="/logo.png"
-        alt="Pitch Perfect"
+        alt="PitchCoach Ai"
         width={width}
         height={height}
         className="rounded-lg"
@@ -31,7 +31,7 @@ export function Logo({ size = "md", showText = true, className = "", href = "/" 
       />
       {showText && (
         <span className={`font-bold ${text} text-primary`}>
-          Pitch<span className="text-secondary">Perfect</span>
+          Pitch<span className="text-secondary">Coach</span> Ai
         </span>
       )}
     </Link>

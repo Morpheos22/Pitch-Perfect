@@ -48,7 +48,7 @@ export default function BlogPage() {
           <div className="container mx-auto px-4 py-20 md:py-32 relative">
             <div className="max-w-4xl mx-auto text-center">
               <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
-                Pitch Perfect{" "}
+                PitchCoach Ai{" "}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
                   Blog
                 </span>

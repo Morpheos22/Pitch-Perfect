@@ -49,7 +49,7 @@ const cookiesTable = [
   },
   {
     name: "theme",
-    provider: "Pitch Perfect",
+    provider: "PitchCoach Ai",
     purpose: "Stores theme preference (light/dark)",
     type: "Functional",
     expiry: "1 year",
@@ -92,7 +92,7 @@ export default function CookiesPage() {
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
                 This policy explains how we use cookies and similar technologies
-                on Pitch Perfect.
+                on PitchCoach Ai.
               </p>
               <p className="text-sm text-muted-foreground mt-4">
                 Last updated: January 2025
@@ -375,14 +375,14 @@ export default function CookiesPage() {
                 contact us:
               </p>
               <div className="inline-block p-6 bg-background rounded-lg border border-border text-left">
-                <p className="font-semibold">AutomagiKal (Roshwyle (Pty) Ltd)</p>
+                <p className="font-semibold">Athena Agentic</p>
                 <p className="text-muted-foreground mt-2">
                   Email:{" "}
                   <a
-                    href="mailto:hello@automagikal.co.za"
+                    href="mailto:hello@athena agentic.co.za"
                     className="text-primary hover:underline"
                   >
-                    hello@automagikal.co.za
+                    hello@athena agentic.co.za
                   </a>
                 </p>
                 <p className="text-muted-foreground">

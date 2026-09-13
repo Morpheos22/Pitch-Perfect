@@ -17,16 +17,16 @@ const nunitoSans = Nunito_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Pitch Perfect - Master Your Pitch",
+  title: "PitchCoach Ai — Master Your Pitch",
   description: "AI-powered pitch coaching platform. Analyze your deck, perfect your script, and deliver with confidence.",
-  keywords: ["pitch coaching", "startup", "investor pitch", "AI coaching", "presentation training"],
-  authors: [{ name: "Pitch Perfect" }],
+  keywords: ["pitch coaching", "startup", "investor pitch", "AI coaching", "presentation training", "PitchCoach Ai"],
+  authors: [{ name: "PitchCoach Ai" }],
   icons: {
     icon: "/favicon.png",
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Pitch Perfect - Master Your Pitch",
+    title: "PitchCoach Ai — Master Your Pitch",
     description: "AI-powered pitch coaching for founders and entrepreneurs",
     type: "website",
     images: ["/logo.png"],

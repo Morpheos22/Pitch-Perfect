@@ -105,7 +105,7 @@ const plans = [
     price: 400,
     priceDisplay: "$400",
     period: "one-time",
-    description: "Lifetime access with inclusion in the Automagikal Founder and Partner Network. Hands-on support and assistance.",
+    description: "Lifetime access with inclusion in the Athena Agentic Founder and Partner Network. Hands-on support and assistance.",
     icon: Crown,
     color: "text-amber-600",
     bgColor: "bg-amber-500/10",
@@ -116,7 +116,7 @@ const plans = [
       { label: "Live Pitch Sessions", value: "Unlimited" },
       { label: "Full Pitch Sessions", value: "Unlimited" },
       { label: "Founder Coaching (E5)", value: true },
-      { label: "Automagikal Network Access", value: true },
+      { label: "PitchCoach Ai Network Access", value: true },
       { label: "Hands-On Support & Assistance", value: true },
     ],
   },
@@ -148,7 +148,7 @@ const comparisonRows: PlanFeature[] = [
   { label: "Priority Support", free: false, starter: false, pro: true, enterprise: true },
   { label: "Dedicated Support", free: false, starter: false, pro: false, enterprise: true },
   { label: "Custom Integrations", free: false, starter: false, pro: false, enterprise: true },
-  { label: "Automagikal Network Access", free: false, starter: false, pro: false, enterprise: true },
+  { label: "PitchCoach Ai Network Access", free: false, starter: false, pro: false, enterprise: true },
   { label: "Hands-On Support & Assistance", free: false, starter: false, pro: false, enterprise: true },
 ];
 

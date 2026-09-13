@@ -268,7 +268,7 @@ function buildRpcHeaders(): Record<string, string> {
   if (mode === 'agent') {
     base['x-kal-api-key'] = KAL_API_KEY;
   } else {
-    base['X-Source'] = 'pitch-perfect';
+    base['X-Source'] = 'pitchcoach-ai';
     base['X-Module'] = 'kal-v2';
   }
 

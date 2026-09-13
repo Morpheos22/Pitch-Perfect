@@ -47,7 +47,7 @@ const values = [
 const milestones = [
   {
     year: "Founded",
-    title: "AutomagiKal is Born",
+    title: "Athena Agentic is Born",
     description:
       "Established with a mission to help growing businesses build scalable systems without losing the entrepreneurial spark that got them started.",
   },
@@ -61,7 +61,7 @@ const milestones = [
     year: "Innovation",
     title: "AI-Powered Solutions",
     description:
-      "Launched Pitch Perfect, an AI-powered pitch coaching platform helping founders and entrepreneurs master their pitch with confidence.",
+      "Launched PitchCoach Ai, an AI-powered pitch coaching platform helping founders and entrepreneurs master their pitch with confidence.",
   },
   {
     year: "Today",
@@ -85,7 +85,7 @@ export default function AboutPage() {
               <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-foreground">
                 About{" "}
                 <span className="text-secondary">
-                  AutomagiKal
+                  Athena Agentic
                 </span>
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto">
@@ -108,7 +108,7 @@ export default function AboutPage() {
               </div>
               <div className="prose prose-lg max-w-none text-center">
                 <p className="text-lg text-muted-foreground leading-relaxed">
-                  At AutomagiKal, we coach leaders, train managers, shift cultures,
+                  At Athena Agentic, we coach leaders, train managers, shift cultures,
                   and consult on systems and process development. We streamline
                   sales, marketing, customer, and culture systems for ambitious
                   businesses in South Africa, other African countries, the United
@@ -185,15 +185,15 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Pitch Perfect Section */}
+        {/* PitchCoach Ai Section */}
         <section className="py-20 md:py-32">
           <div className="container mx-auto px-4">
             <div className="max-w-4xl mx-auto text-center">
               <h2 className="text-3xl md:text-4xl font-bold mb-4 text-foreground">
-                Pitch Perfect: Our AI Innovation
+                PitchCoach Ai: Our AI Innovation
               </h2>
               <p className="text-lg text-muted-foreground mb-8">
-                Pitch Perfect represents our commitment to leveraging AI for
+                PitchCoach Ai represents our commitment to leveraging AI for
                 practical business solutions. This platform helps founders and
                 entrepreneurs master their pitch through intelligent coaching,
                 providing expert-level feedback on pitch decks, scripts, and

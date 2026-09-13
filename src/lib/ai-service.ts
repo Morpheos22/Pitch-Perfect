@@ -1,4 +1,4 @@
-// AI Service Layer for Pitch Perfect × Automagikal
+// AI Service Layer for PitchCoach Ai × Athena Agentic
 // Multi-provider via Z.ai Gateway: GLM, Gemini, Gemma + full capability suite
 //
 // ═══════════════════════════════════════════════════════════════════════
@@ -544,10 +544,10 @@ export const MODULE_MODEL_MAP = {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // E5: PITCH FOUNDER — Conversion Layer to Automagikal Network
+  // E5: PITCH FOUNDER — Conversion Layer to PitchCoach Ai Network
   // ═══════════════════════════════════════════════════════════════════════
   // The conversion layer where a founder stops being a user and starts
-  // being a candidate for the Automagikal Network.
+  // being a candidate for the PitchCoach Ai Network.
   //
   // Two pathways:
   //   Path A: Grit to Gear → Discounted cohort → Small Axe education →
@@ -591,7 +591,7 @@ export const MODULE_MODEL_MAP = {
     models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.FAILSAFE_TEXT],
     temperature: 0.6,
     method: 'chat' as const,
-    description: 'Generate Automagikal Network founder profile: craft investor-facing summary, highlight standout elements, prepare for AfriFlow submission',
+    description: 'Generate PitchCoach Ai Network founder profile: craft investor-facing summary, highlight standout elements, prepare for AfriFlow submission',
   },
   E5_PATHWAY_NARRATION: {
     models: [AI_MODELS.PRIMARY_TEXT, AI_MODELS.FAILSAFE_TEXT],

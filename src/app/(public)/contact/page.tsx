@@ -26,8 +26,8 @@ const contactMethods = [
     icon: Mail,
     title: "Email Us",
     description: "For general inquiries and support",
-    value: "hello@automagikal.co.za",
-    href: "mailto:hello@automagikal.co.za",
+    value: "hello@athena agentic.co.za",
+    href: "mailto:hello@athena agentic.co.za",
   },
   {
     icon: Phone,
@@ -56,12 +56,12 @@ const socialLinks = [
   {
     icon: Linkedin,
     label: "LinkedIn",
-    href: "https://linkedin.com/company/automagikal",
+    href: "https://linkedin.com/company/athena agentic",
   },
   {
     icon: Twitter,
     label: "Twitter",
-    href: "https://twitter.com/automagikal",
+    href: "https://twitter.com/athena agentic",
   },
 ];
 

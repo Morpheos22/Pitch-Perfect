@@ -32,8 +32,9 @@ import {
 //   - All other routes (HTML/auth) → 307 redirect to /maintenance.html
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TEMPORARY: hard toggle while we rebuild. Flip to false to bring the site back.
-const MAINTENANCE_FORCE_ON = true;
+// Maintenance is OFF. To re-enable, set to true or set MAINTENANCE_MODE=true
+// in Vercel env vars.
+const MAINTENANCE_FORCE_ON = false;
 
 function isMaintenanceEnabled(): boolean {
   // Env var takes precedence so ops can override at runtime without redeploy.
@@ -155,7 +156,7 @@ async function maintenanceResponse(request: Request): Promise<NextResponse> {
       {
         error: "service_unavailable",
         message:
-          "Pitch-Perfect is currently undergoing scheduled maintenance. Please check back soon.",
+          "PitchCoach Ai is currently undergoing scheduled maintenance. Please check back soon.",
       },
       {
         status: 503,

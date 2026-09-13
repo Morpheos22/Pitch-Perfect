@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════
- * PRODUCTION E2E HEALTHCHECK — Pitch Perfect
+ * PRODUCTION E2E HEALTHCHECK — PitchCoach Ai
  * ═══════════════════════════════════════════════════════════════════════
  *
  * Tests the production deployment at pitchcoachai.tech:
@@ -422,7 +422,7 @@ async function stage4_CodeIntegrity() {
 function printReport() {
   console.log('\n');
   console.log('╔══════════════════════════════════════════════════════════════════════════╗');
-  console.log('║          PRODUCTION E2E HEALTHCHECK — Pitch Perfect                    ║');
+  console.log('║          PRODUCTION E2E HEALTHCHECK — PitchCoach Ai                    ║');
   console.log('╠══════════════════════════════════════════════════════════════════════════╣');
 
   const stages = [

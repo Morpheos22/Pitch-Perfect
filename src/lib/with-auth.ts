@@ -1,4 +1,4 @@
-// Shared Auth Middleware for Pitch Perfect × Automagikal
+// Shared Auth Middleware for PitchCoach Ai × Athena Agentic
 //
 // Eliminates the duplicated auth() → prisma.user.findUnique → 401/404
 // boilerplate across 16+ API routes (30+ handler functions).

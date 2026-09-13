@@ -10,7 +10,7 @@ const highlights = [
     icon: FileText,
     title: "Service Agreement",
     description:
-      "These terms govern your use of Pitch Perfect, our AI-powered pitch coaching platform.",
+      "These terms govern your use of PitchCoach Ai, our AI-powered pitch coaching platform.",
   },
   {
     icon: Scale,
@@ -73,7 +73,7 @@ export default function TermsPage() {
                 </span>
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-                Please read these terms carefully before using Pitch Perfect. By
+                Please read these terms carefully before using PitchCoach Ai. By
                 using our services, you agree to be bound by these terms.
               </p>
               <p className="text-sm text-muted-foreground mt-4">
@@ -114,8 +114,8 @@ export default function TermsPage() {
                 <p className="text-muted-foreground">
                   These Terms of Service ("Terms") constitute a legally binding
                   agreement between you ("User," "you," or "your") and Roshwyle
-                  (Pty) Ltd, trading as AutomagiKal ("Company," "we," "us," or
-                  "our"), concerning your access to and use of the Pitch Perfect
+                  (Pty) Ltd, trading as Athena Agentic ("Company," "we," "us," or
+                  "our"), concerning your access to and use of the PitchCoach Ai
                   platform and related services.
                 </p>
                 <p className="text-muted-foreground mt-4">
@@ -129,7 +129,7 @@ export default function TermsPage() {
               <div className="mb-12">
                 <h2 className="text-2xl font-bold mb-4">Our Services</h2>
                 <p className="text-muted-foreground mb-6">
-                  Pitch Perfect is an AI-powered pitch coaching platform that
+                  PitchCoach Ai is an AI-powered pitch coaching platform that
                   provides the following services:
                 </p>
                 <div className="overflow-x-auto">
@@ -310,7 +310,7 @@ export default function TermsPage() {
                     Important Notice
                   </h4>
                   <p className="text-amber-700 text-sm">
-                    The AI-powered analysis and coaching provided by Pitch Perfect
+                    The AI-powered analysis and coaching provided by PitchCoach Ai
                     is intended to assist you in improving your pitch materials.
                     It does not constitute professional investment advice,
                     legal advice, or a guarantee of funding success. The quality
@@ -332,9 +332,9 @@ export default function TermsPage() {
                   providing the AI analysis.
                 </p>
                 <p className="text-muted-foreground mb-4">
-                  <strong>Our Platform:</strong> The Pitch Perfect platform,
+                  <strong>Our Platform:</strong> The PitchCoach Ai platform,
                   including our AI models, algorithms, interface designs, and all
-                  related intellectual property, belongs to AutomagiKal and is
+                  related intellectual property, belongs to Athena Agentic and is
                   protected by copyright, trademark, and other laws.
                 </p>
                 <p className="text-muted-foreground">
@@ -423,14 +423,14 @@ export default function TermsPage() {
                   If you have any questions about these Terms, please contact us:
                 </p>
                 <div className="mt-4 p-6 bg-muted/30 rounded-lg">
-                  <p className="font-semibold">AutomagiKal (Roshwyle (Pty) Ltd)</p>
+                  <p className="font-semibold">Athena Agentic</p>
                   <p className="text-muted-foreground mt-2">
                     Email:{" "}
                     <a
-                      href="mailto:hello@automagikal.co.za"
+                      href="mailto:hello@athena agentic.co.za"
                       className="text-primary hover:underline"
                     >
-                      hello@automagikal.co.za
+                      hello@athena agentic.co.za
                     </a>
                   </p>
                   <p className="text-muted-foreground">

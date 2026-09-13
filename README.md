@@ -1,6 +1,6 @@
-# PitchCoach AI (Pitch-Perfect)
+# PitchCoach AI (PitchCoach Ai)
 
-AI-powered pitch coaching platform for founders and entrepreneurs — built by Automagikal.
+AI-powered pitch coaching platform for founders and entrepreneurs — built by Athena Agentic.
 
 ---
 
@@ -161,8 +161,8 @@ scripts/
 ### Installation
 
 ```bash
-git clone https://github.com/Morpheos22/Pitch-Perfect.git
-cd Pitch-Perfect
+git clone https://github.com/Morpheos22/PitchCoach Ai.git
+cd PitchCoach Ai
 npm install
 ```
 
