@@ -48,10 +48,30 @@ export default function RootLayout({
       appearance={{
         variables: {
           colorPrimary: "#7C3AED",
-          colorText: "#F8FAFC",
-          colorBackground: "#14141F",
-          colorInputBackground: "#1E1E2E",
-          colorInputText: "#F8FAFC",
+          colorText: "#0B0B12",
+          colorTextSecondary: "#6B7280",
+          colorBackground: "#FFFFFF",
+          colorInputBackground: "#FFFFFF",
+          colorInputText: "#0B0B12",
+          colorBorder: "#E5E7EB",
+          borderRadius: "0.625rem",
+          fontFamily: "'Nunito Sans', sans-serif",
+        },
+        elements: {
+          formButtonPrimary:
+            "bg-primary text-white hover:bg-primary/90 text-sm font-normal",
+          card: "bg-white shadow-xl border border-border",
+          headerTitle: "text-foreground",
+          headerSubtitle: "text-muted-foreground",
+          socialButtonsBlockButton:
+            "border border-border bg-background text-foreground hover:bg-muted",
+          socialButtonsBlockButtonText: "text-foreground",
+          formFieldLabel: "text-foreground",
+          formFieldInput:
+            "bg-background text-foreground border border-input rounded-md",
+          dividerLine: "bg-border",
+          dividerText: "text-muted-foreground",
+          footerActionLink: "text-primary hover:text-primary/80",
         },
       }}
     >

@@ -199,6 +199,58 @@ export default function PricingPage() {
           </p>
         </div>
 
+        {/* Pricing tiers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          {TIERS.map((tier) => (
+            <Card
+              key={tier.name}
+              className={tier.popular ? "border-primary border-2 relative" : ""}
+            >
+              {tier.popular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Most Popular
+                </div>
+              )}
+              <CardContent className="p-6">
+                <h3 className="text-xl font-bold text-foreground mb-1">{tier.name}</h3>
+                <p className="text-sm text-muted-foreground mb-4">{tier.tagline}</p>
+
+                <div className="mb-4">
+                  <span className="text-3xl font-bold text-foreground">
+                    {formatPrice(tier.priceNGN, currency)}
+                  </span>
+                  {!tier.isFree && (
+                    <span className="text-sm text-muted-foreground ml-1">
+                      {tier.isOneTime ? "one-time" : "/month"}
+                    </span>
+                  )}
+                </div>
+
+                <ul className="space-y-2 mb-6">
+                  {tier.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2 text-sm">
+                      <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span className="text-muted-foreground">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <a
+                  href="/sign-up"
+                  className={`block w-full text-center py-2.5 rounded-md font-semibold transition-colors ${
+                    tier.popular
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "bg-muted text-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {tier.cta}
+                </a>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
         {/* Regional availability disclaimer with SA flag on hover */}
         <div className="text-center mb-12 p-4 border border-border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground">

@@ -125,7 +125,7 @@ function HowItWorksSection() {
   useEffect(() => {
     if (!isBeaming) return;
 
-    // Slow animation: 50ms intervals, 1% per step = 5 seconds forward + 5 seconds back
+    // Fast animation: 20ms intervals, 2% per step = ~1 second forward + ~1 second back
     animationRef.current = setInterval(() => {
       setBeamProgress((prev) => {
         if (beamDirection === "forward") {
@@ -134,7 +134,7 @@ function HowItWorksSection() {
             setBeamDirection("backward");
             return 100;
           }
-          return prev + 1;
+          return prev + 2;
         } else {
           if (prev <= 0) {
             // Back to step 1, stop
@@ -142,10 +142,10 @@ function HowItWorksSection() {
             setBeamDirection("forward");
             return 0;
           }
-          return prev - 1;
+          return prev - 2;
         }
       });
-    }, 50);
+    }, 20);
 
     return () => {
       if (animationRef.current) {
@@ -309,14 +309,13 @@ function AthenaAgenticLink() {
   );
 }
 
-// ── Metron Email with Hover Quotes (centered) ─────────────────────────────
+// ── Metron Email with Hover Quotes (centered at footer bottom) ────────────
 function MetronEmailLink() {
   const [showQuote, setShowQuote] = useState(false);
   const [currentQuote, setCurrentQuote] = useState(0);
 
   const handleMouseEnter = () => {
     setShowQuote(true);
-    // Pick a random quote
     setCurrentQuote(Math.floor(Math.random() * metronQuotes.length));
   };
 
@@ -325,7 +324,7 @@ function MetronEmailLink() {
   };
 
   return (
-    <div className="relative">
+    <>
       <a
         href="mailto:Metron@Athenagentic.app"
         className="text-sm text-muted-foreground hover:text-primary transition-colors"
@@ -335,7 +334,7 @@ function MetronEmailLink() {
         Metron@Athenagentic.app
       </a>
       {showQuote && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 p-4 w-96 max-w-[90vw] text-center pointer-events-none z-50">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 p-4 w-96 max-w-[90vw] text-center pointer-events-none z-50">
           <p
             className="italic text-sm leading-relaxed text-secondary/70 animate-in fade-in duration-500"
             style={{ fontFamily: "Georgia, serif" }}
@@ -344,7 +343,7 @@ function MetronEmailLink() {
           </p>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -546,6 +545,7 @@ export default function LandingPage() {
       {/* Custom Footer: contact bottom-left, logo bottom-right, Metron quotes centered on hover */}
       <footer className="border-t border-border bg-muted/30">
         <div className="container mx-auto px-4 py-12">
+          {/* Top row: contact bottom-left, logo bottom-right */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             {/* Bottom-left: copyright + developed by + email */}
             <div className="flex flex-col gap-3 items-start">
@@ -558,7 +558,7 @@ export default function LandingPage() {
                 </span>
                 <AthenaAgenticLink />
               </div>
-              {/* Metron email with hover quotes (centered above the footer) */}
+              {/* Metron email link */}
               <MetronEmailLink />
             </div>
 
@@ -575,6 +575,10 @@ export default function LandingPage() {
               />
             </div>
           </div>
+
+          {/* Metron quotes appear at bottom-center of footer on email hover */}
+          {/* The quote is positioned absolutely from the MetronEmailLink above,
+              centered relative to the full footer width */}
         </div>
       </footer>
     </div>
