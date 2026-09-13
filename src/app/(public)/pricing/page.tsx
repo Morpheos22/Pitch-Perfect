@@ -142,29 +142,34 @@ export default function PricingPage() {
   }, [trustItems.length]);
 
   useEffect(() => {
-    // Detect user's country via Vercel geolocation header
-    // On Vercel, x-vercel-ip-country is set automatically
-    fetch("/api/health", { method: "GET" })
-      .then(() => {
-        // We can't read response headers from fetch due to CORS in some cases
-        // So we use a dedicated endpoint approach — fall back to NGN
-        // In production, middleware sets the country header and we read it here
+    // Auto-detect user's country and currency via /api/geo-currency
+    // This uses Vercel's x-vercel-ip-country header (IP-based, cannot be spoofed)
+    fetch("/api/geo-currency")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.currency) {
+          setCurrency(data.currency as keyof typeof CURRENCIES);
+          setDetectedCountry(data.country || "");
+        }
       })
-      .catch(() => {});
-
-    // Try to detect country from the browser's timezone as a fallback
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (tz) {
-      const country = tz.split("/")[0];
-      setDetectedCountry(country);
-      const curr = COUNTRY_CURRENCY[country] || "NGN";
-      setCurrency(curr);
-    }
+      .catch(() => {
+        // Fallback: detect from timezone
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) {
+          const country = tz.split("/")[0];
+          setDetectedCountry(country);
+          const curr = COUNTRY_CURRENCY[country] || "NGN";
+          setCurrency(curr);
+        }
+      });
   }, []);
 
   const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setCurrency(e.target.value as keyof typeof CURRENCIES);
   };
+
+  // Disclaimer hover state
+  const [showSAFlag, setShowSAFlag] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -194,6 +199,60 @@ export default function PricingPage() {
           </p>
         </div>
 
+        {/* Regional availability disclaimer with SA flag on hover */}
+        <div className="text-center mb-12 p-4 border border-border rounded-lg bg-muted/30">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">Disclaimer:</span>{" "}
+            This platform is not legally licensed to be distributed in{" "}
+            <span
+              className="relative inline-block cursor-help underline decoration-dotted underline-offset-2 text-foreground"
+              onMouseEnter={() => setShowSAFlag(true)}
+              onMouseLeave={() => setShowSAFlag(false)}
+            >
+              certain regions
+              {showSAFlag && (
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-none z-50">
+                  {/* South African flag (CSS-drawn) */}
+                  <div className="relative w-24 h-16 rounded shadow-lg overflow-hidden border border-border">
+                    {/* Red top */}
+                    <div className="absolute top-0 left-0 w-full h-1/2 bg-[#DE3831]"></div>
+                    {/* Blue bottom */}
+                    <div className="absolute bottom-0 left-0 w-full h-1/2 bg-[#002395]"></div>
+                    {/* White center wedge */}
+                    <div className="absolute top-0 left-0 w-0 h-0"
+                      style={{
+                        borderTop: '32px solid transparent',
+                        borderBottom: '32px solid transparent',
+                        borderLeft: '48px solid white',
+                      }}
+                    ></div>
+                    {/* Green Y center */}
+                    <div className="absolute top-1/2 left-1/3 -translate-y-1/2 w-8 h-3 bg-[#007A4D] rotate-12"></div>
+                    <div className="absolute top-1/2 left-1/3 -translate-y-1/2 w-3 h-8 bg-[#007A4D] -rotate-45 origin-bottom-left"></div>
+                    {/* Black triangle */}
+                    <div className="absolute top-1/2 left-0 -translate-y-1/2 w-0 h-0"
+                      style={{
+                        borderTop: '16px solid transparent',
+                        borderBottom: '16px solid transparent',
+                        borderLeft: '24px solid #000',
+                      }}
+                    ></div>
+                    {/* Gold triangle inner */}
+                    <div className="absolute top-1/2 left-0 -translate-y-1/2 w-0 h-0"
+                      style={{
+                        borderTop: '10px solid transparent',
+                        borderBottom: '10px solid transparent',
+                        borderLeft: '16px solid #FFB612',
+                      }}
+                    ></div>
+                  </div>
+                  <span className="block text-xs mt-1 font-semibold text-foreground">South Africa</span>
+                </span>
+              )}
+            </span>
+            .
+          </p>
+        </div>
 
         {/* FAQ section */}
         <div className="max-w-3xl mx-auto">

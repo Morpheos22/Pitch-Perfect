@@ -118,49 +118,65 @@ const metronQuotes = [
 function HowItWorksSection() {
   const [hoveredStep, setHoveredStep] = useState<number | null>(null);
   const [beamProgress, setBeamProgress] = useState(0);
+  const [beamDirection, setBeamDirection] = useState<"forward" | "backward">("forward");
   const [isBeaming, setIsBeaming] = useState(false);
-  const beamTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!isBeaming) return;
+
+    // Slow animation: 50ms intervals, 1% per step = 5 seconds forward + 5 seconds back
+    animationRef.current = setInterval(() => {
+      setBeamProgress((prev) => {
+        if (beamDirection === "forward") {
+          if (prev >= 100) {
+            // Reached step 4, pause briefly then reverse
+            setBeamDirection("backward");
+            return 100;
+          }
+          return prev + 1;
+        } else {
+          if (prev <= 0) {
+            // Back to step 1, stop
+            setIsBeaming(false);
+            setBeamDirection("forward");
+            return 0;
+          }
+          return prev - 1;
+        }
+      });
+    }, 50);
+
+    return () => {
+      if (animationRef.current) {
+        clearInterval(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, [isBeaming, beamDirection]);
 
   const handleStepHover = (index: number) => {
     setHoveredStep(index);
     if (index === 0 && !isBeaming) {
       setIsBeaming(true);
       setBeamProgress(0);
-
-      // Animate beam from step 1 → step 4 → back
-      const animate = () => {
-        setBeamProgress((prev) => {
-          if (prev < 100) {
-            return prev + 2;
-          }
-          // Reverse animation
-          if (prev === 100) {
-            setTimeout(() => {
-              setBeamProgress((prev2) => {
-                if (prev2 > 0) return prev2 - 2;
-                setIsBeaming(false);
-                return 0;
-              });
-              if (beamTimeoutRef.current) clearTimeout(beamTimeoutRef.current);
-            }, 300);
-          }
-          return prev;
-        });
-      };
-
-      beamTimeoutRef.current = setInterval(animate, 20);
+      setBeamDirection("forward");
     }
   };
 
   const handleStepLeave = () => {
     setHoveredStep(null);
-    if (beamTimeoutRef.current) {
-      clearInterval(beamTimeoutRef.current);
-      beamTimeoutRef.current = null;
+    if (animationRef.current) {
+      clearInterval(animationRef.current);
+      animationRef.current = null;
     }
     setIsBeaming(false);
     setBeamProgress(0);
+    setBeamDirection("forward");
   };
+
+  // Calculate which step the beam is currently highlighting
+  const activeStep = isBeaming ? Math.min(3, Math.floor(beamProgress / 25)) : -1;
 
   return (
     <section id="how-it-works" className="py-20 md:py-32">
@@ -177,17 +193,16 @@ function HowItWorksSection() {
           onMouseLeave={handleStepLeave}
         >
           {/* Light beam track */}
-          <div className="absolute top-8 left-0 right-0 h-1 hidden md:block pointer-events-none">
+          <div className="absolute top-8 left-[12.5%] right-[12.5%] h-0.5 hidden md:block pointer-events-none">
             <div
-              className="h-full rounded-full transition-all duration-75 ease-linear"
+              className="h-full rounded-full transition-all duration-100 ease-linear"
               style={{
                 background: isBeaming
-                  ? `linear-gradient(to right, var(--primary) 0%, var(--secondary) ${beamProgress}%, transparent ${beamProgress}%)`
+                  ? `linear-gradient(to right, var(--primary) 0%, var(--secondary) ${beamProgress}%, var(--border) ${beamProgress}%)`
                   : "var(--border)",
                 boxShadow: isBeaming
-                  ? `0 0 20px var(--primary), 0 0 40px var(--secondary)`
+                  ? `0 0 12px var(--primary), 0 0 24px var(--secondary)`
                   : "none",
-                width: "100%",
               }}
             />
           </div>
@@ -201,14 +216,14 @@ function HowItWorksSection() {
               <div className="flex flex-col items-center text-center">
                 <div
                   className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${
-                    hoveredStep === index || (isBeaming && Math.round(beamProgress / 100 * 3) === index)
+                    hoveredStep === index || activeStep === index
                       ? "bg-primary scale-110 shadow-lg shadow-primary/30"
                       : "bg-primary/10"
                   }`}
                 >
                   <step.icon
                     className={`h-8 w-8 transition-colors duration-300 ${
-                      hoveredStep === index || (isBeaming && Math.round(beamProgress / 100 * 3) === index)
+                      hoveredStep === index || activeStep === index
                         ? "text-primary-foreground"
                         : "text-primary"
                     }`}
@@ -294,11 +309,10 @@ function AthenaAgenticLink() {
   );
 }
 
-// ── Metron Email with Hover Quotes ────────────────────────────────────────
+// ── Metron Email with Hover Quotes (centered) ─────────────────────────────
 function MetronEmailLink() {
   const [showQuote, setShowQuote] = useState(false);
   const [currentQuote, setCurrentQuote] = useState(0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
     setShowQuote(true);
@@ -308,14 +322,10 @@ function MetronEmailLink() {
 
   const handleMouseLeave = () => {
     setShowQuote(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
   };
 
   return (
-    <div className="relative inline-block">
+    <div className="relative">
       <a
         href="mailto:Metron@Athenagentic.app"
         className="text-sm text-muted-foreground hover:text-primary transition-colors"
@@ -325,9 +335,9 @@ function MetronEmailLink() {
         Metron@Athenagentic.app
       </a>
       {showQuote && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 p-4 max-w-md min-w-[300px] text-center pointer-events-none">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 p-4 w-96 max-w-[90vw] text-center pointer-events-none z-50">
           <p
-            className="italic text-sm leading-relaxed text-secondary/80 animate-in fade-in duration-500"
+            className="italic text-sm leading-relaxed text-secondary/70 animate-in fade-in duration-500"
             style={{ fontFamily: "Georgia, serif" }}
           >
             "{metronQuotes[currentQuote]}"
@@ -442,7 +452,7 @@ export default function LandingPage() {
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold mb-4">Choose Your Coaching Journey</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
-                Every product includes two full cycles — submit, get feedback, improve, submit again.
+                Select the coaching module that fits your needs — from pitch deck analysis to full founder coaching.
               </p>
             </div>
 
@@ -533,24 +543,27 @@ export default function LandingPage() {
         </section>
       </main>
 
-      {/* Custom Footer with Athena Agentic animation + Metron quotes */}
+      {/* Custom Footer: contact bottom-left, logo bottom-right, Metron quotes centered on hover */}
       <footer className="border-t border-border bg-muted/30">
         <div className="container mx-auto px-4 py-12">
-          <div className="flex flex-col items-center justify-center gap-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} PitchCoach Ai. All rights reserved.
-            </p>
-            <div className="flex items-center gap-3">
-              <span className="text-xs uppercase tracking-widest text-muted-foreground font-bold">
-                Developed By
-              </span>
-              <AthenaAgenticLink />
-            </div>
-            {/* Metron email with hover quotes */}
-            <div className="relative min-h-[2rem] flex items-center justify-center">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            {/* Bottom-left: copyright + developed by + email */}
+            <div className="flex flex-col gap-3 items-start">
+              <p className="text-sm text-muted-foreground">
+                © {new Date().getFullYear()} PitchCoach Ai. All rights reserved.
+              </p>
+              <div className="flex items-center gap-3">
+                <span className="text-xs uppercase tracking-widest text-muted-foreground font-bold">
+                  Developed By
+                </span>
+                <AthenaAgenticLink />
+              </div>
+              {/* Metron email with hover quotes (centered above the footer) */}
               <MetronEmailLink />
             </div>
-            <div className="flex items-center gap-2 mt-2">
+
+            {/* Bottom-right: logo */}
+            <div className="flex items-center">
               <img
                 src="/logo.png"
                 alt="PitchCoach Ai"
