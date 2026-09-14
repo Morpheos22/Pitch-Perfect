@@ -3,9 +3,35 @@
 --   1. Job table — generic async AI analysis job records with retries + dead-letter
 --   2. ProcessedWebhook table — idempotency for Stripe / Paystack / Clerk webhooks
 --
--- These tables are NEW (no ALTER TABLE on existing tables). Safe to apply
--- without downtime. The User table gets a new relation (jobs Job[]) but no
--- column change — the foreign key lives on the Job side.
+-- IMPORTANT: Enum types MUST be created BEFORE the tables that reference them.
+-- This migration was reordered to fix "type JobType does not exist" errors.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- JobType enum (must exist before jobs table)
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$ BEGIN
+    CREATE TYPE "JobType" AS ENUM ('DECK_ANALYSIS', 'SCRIPT_CHECK', 'LIVE_PITCH', 'FULL_SESSION', 'FOUNDER_COACHING');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- JobStatus enum (must exist before jobs table)
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$ BEGIN
+    CREATE TYPE "JobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'DEAD_LETTER', 'CANCELLED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WebhookProvider enum (must exist before processed_webhooks table)
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$ BEGIN
+    CREATE TYPE "WebhookProvider" AS ENUM ('STRIPE', 'PAYSTACK', 'CLERK');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Job table
@@ -47,24 +73,6 @@ ALTER TABLE "jobs"
   ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- JobType enum
--- ─────────────────────────────────────────────────────────────────────────────
-DO $$ BEGIN
-    CREATE TYPE "JobType" AS ENUM ('DECK_ANALYSIS', 'SCRIPT_CHECK', 'LIVE_PITCH', 'FULL_SESSION', 'FOUNDER_COACHING');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
--- ─────────────────────────────────────────────────────────────────────────────
--- JobStatus enum
--- ─────────────────────────────────────────────────────────────────────────────
-DO $$ BEGIN
-    CREATE TYPE "JobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'DEAD_LETTER', 'CANCELLED');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
--- ─────────────────────────────────────────────────────────────────────────────
 -- ProcessedWebhook table
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE "processed_webhooks" (
@@ -85,12 +93,3 @@ CREATE UNIQUE INDEX "processed_webhooks_provider_eventId_key"
     ON "processed_webhooks"("provider", "eventId");
 CREATE INDEX "processed_webhooks_provider_processedAt_idx"
     ON "processed_webhooks"("provider", "processedAt");
-
--- ─────────────────────────────────────────────────────────────────────────────
--- WebhookProvider enum
--- ─────────────────────────────────────────────────────────────────────────────
-DO $$ BEGIN
-    CREATE TYPE "WebhookProvider" AS ENUM ('STRIPE', 'PAYSTACK', 'CLERK');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;

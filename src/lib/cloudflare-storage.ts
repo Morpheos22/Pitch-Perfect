@@ -20,16 +20,31 @@ const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || "";
 const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || "";
 const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || "pitch-perfect";
 
-// R2 public URL pattern
-// - If R2_PUBLIC_DOMAIN is set (e.g., "https://files.pitchcoachai.tech"), use that
-// - Otherwise, use the r2.dev pattern: https://pub-<hash>.r2.dev
-// - Fallback: internal URL for authenticated proxy downloads
+// R2 URL strategy — PRIVATE BY DEFAULT
+//
+// There are three possible R2 URL patterns:
+//   1. R2_PUBLIC_DOMAIN — a custom domain like https://files.pitchcoachai.tech
+//      (PUBLIC — anyone with the URL can read the file)
+//   2. r2.dev — https://<bucket>.<account>.r2.dev
+//      (PUBLIC if "Allow Access" is enabled on the bucket's r2.dev subdomain)
+//   3. r2.cloudflarestorage.com — the S3-compatible API endpoint
+//      (PRIVATE — always requires SigV4 signed requests)
+//
+// CONFIRMED: the R2 bucket has NO public domain attached and r2.dev
+// access is disabled. So we ALWAYS use the internal S3 endpoint for
+// upload/download operations. Files are ONLY accessible through the
+// /api/blob/download proxy route, which enforces auth + ownership checks.
+//
+// The `url` field returned to clients is the proxy URL, not a direct
+// R2 URL — so even if a URL leaks, it can't be accessed without auth.
+
 const R2_PUBLIC_DOMAIN = process.env.R2_PUBLIC_DOMAIN || "";
-const R2_DEV_URL = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.dev`;
 const R2_INTERNAL_URL = `https://${R2_BUCKET_NAME}.${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
-// Use custom domain if set, otherwise r2.dev, otherwise internal URL
-const R2_BASE_URL = R2_PUBLIC_DOMAIN || R2_DEV_URL;
+// For S3-compatible operations (PUT/GET/DELETE with SigV4 signing),
+// always use the internal endpoint. This works regardless of public
+// access settings on the bucket.
+const R2_BASE_URL = R2_INTERNAL_URL;
 
 // ── AWS S3-compatible signature v4 for R2 ─────────────────────────────────
 // R2 uses the same SigV4 signing as S3, but with a different host pattern.
@@ -161,13 +176,15 @@ export async function uploadToR2(
     throw new Error(`R2 upload failed ${response.status}: ${errText.slice(0, 200)}`);
   }
 
-  // Return the public URL — uses custom domain if set, otherwise r2.dev
-  const publicUrl = R2_PUBLIC_DOMAIN
-    ? `${R2_PUBLIC_DOMAIN}/${key}`
-    : `${R2_DEV_URL}/${key}`;
+  // Return the PROXY URL — not a direct R2 URL. The proxy route
+  // /api/blob/download enforces auth + ownership checks before serving
+  // the file. This means even if the URL leaks, the file can't be
+  // accessed without the authenticated user's session matching the
+  // file's owner.
+  const proxyUrl = `/api/blob/download?pathname=${encodeURIComponent(key)}`;
 
   return {
-    url: publicUrl,
+    url: proxyUrl,
     key,
     size: buffer.length,
     contentType,
@@ -255,14 +272,18 @@ export async function deleteFromR2(key: string): Promise<void> {
 }
 
 /**
- * Get the public URL for an R2 object.
- * Uses custom domain if R2_PUBLIC_DOMAIN is set, otherwise r2.dev pattern.
+ * Get the access URL for an R2 object.
+ *
+ * SECURITY: Always returns the /api/blob/download proxy URL, never a
+ * direct R2 URL. The proxy route enforces auth + ownership checks.
+ *
+ * The R2_PUBLIC_DOMAIN env var is no longer used — it exists only for
+ * backward compatibility with older code that may reference it. If set,
+ * it is IGNORED (uploads/downloads always go through the internal S3
+ * endpoint, and the returned URL is always the proxy).
  */
 export function getR2PublicUrl(key: string): string {
-  if (R2_PUBLIC_DOMAIN) {
-    return `${R2_PUBLIC_DOMAIN}/${key}`;
-  }
-  return `${R2_DEV_URL}/${key}`;
+  return `/api/blob/download?pathname=${encodeURIComponent(key)}`;
 }
 
 /**
