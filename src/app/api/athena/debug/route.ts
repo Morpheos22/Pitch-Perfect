@@ -2,20 +2,15 @@
  * GET /api/athena/debug
  *
  * Diagnostic endpoint that tests the function-calling pipeline end-to-end.
- * Returns the raw Cloudflare AI response so we can see exactly what the
- * model returns when tools are provided.
- *
- * This route is for debugging only — it should be removed after the
- * function-calling loop is verified working.
+ * Tests: tool discovery → model tool call → tool execution → second model call.
  *
  * Requires auth (admin/founder email only).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { getAvailableTools, toolsToFunctionSchema } from "@/lib/athena-mcp";
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { getAvailableTools, toolsToFunctionSchema, callTool } from "@/lib/athena-mcp";
 import { isAdminEmail } from "@/lib/dev-auth";
-import { clerkClient } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +22,6 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Only allow admin/founder emails to access debug
   const client = await clerkClient();
   const clerkUser = await client.users.getUser(clerkId);
   const email = clerkUser.emailAddresses[0]?.emailAddress;
@@ -39,13 +33,14 @@ export async function GET(_request: NextRequest) {
   const CF_AI_TOKEN = process.env.CLOUDFLARE_AI_TOKEN || process.env.CF_API_TOKEN || "";
   const CF_BASE = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/run`;
   const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 
   // Step 1: Get available tools
   const tools = await getAvailableTools();
   const functionSchema = toolsToFunctionSchema(tools);
 
-  // Step 2: Build a test message that should trigger a tool call
-  const messages = [
+  // Step 2: Build a test message
+  const messages: any[] = [
     {
       role: "system",
       content: "You are a helpful assistant with access to tools. When asked to read a file from a repo, use the github_read_file tool.",
@@ -57,12 +52,7 @@ export async function GET(_request: NextRequest) {
   ];
 
   // Step 3: Call Cloudflare AI WITH tools
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  let rawResponse: any = null;
-  let requestError: string | null = null;
-
+  let step3Result: any = {};
   try {
     const res = await fetch(`${CF_BASE}/${MODEL}`, {
       method: "POST",
@@ -76,81 +66,97 @@ export async function GET(_request: NextRequest) {
         temperature: 0.5,
         tools: functionSchema,
       }),
-      signal: controller.signal,
     });
+    const raw = await res.json();
+    step3Result = {
+      status: res.status,
+      tool_calls: raw?.result?.tool_calls || null,
+      response: raw?.result?.response || null,
+      errors: raw?.errors || null,
+    };
+  } catch (err) {
+    step3Result = { error: String(err) };
+  }
 
-    const text = await res.text();
+  // Step 4: If we got tool calls, EXECUTE the tool
+  let step4Result: any = {};
+  const toolCalls = step3Result.tool_calls || [];
+  if (toolCalls.length > 0) {
+    const tc = toolCalls[0];
+    const toolName = tc.name;
+    const args = tc.arguments || {};
+    step4Result = {
+      tool_name: toolName,
+      args: args,
+      github_token_set: !!GITHUB_TOKEN,
+      github_token_length: GITHUB_TOKEN.length,
+      github_token_prefix: GITHUB_TOKEN.slice(0, 8) + "...",
+    };
     try {
-      rawResponse = JSON.parse(text);
-    } catch {
-      rawResponse = { rawText: text.slice(0, 500) };
+      const result = await callTool(toolName, args);
+      step4Result.result_content = result.content.slice(0, 500);
+      step4Result.result_is_error = result.isError;
+    } catch (err) {
+      step4Result.execution_error = String(err);
     }
 
-    if (!res.ok) {
-      requestError = `HTTP ${res.status}`;
+    // Step 5: Call model AGAIN without tools, with the tool result
+    const messagesWithResult = [...messages, {
+      role: "user",
+      content: `[Tool result from ${toolName}]: ${step4Result.result_content || "no result"}\n\nBased on this, answer my original question concisely.`,
+    }];
+    let step5Result: any = {};
+    try {
+      const res2 = await fetch(`${CF_BASE}/${MODEL}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${CF_AI_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: messagesWithResult,
+          max_tokens: 512,
+          temperature: 0.5,
+          // NO tools — force text response
+        }),
+      });
+      const raw2 = await res2.json();
+      step5Result = {
+        status: res2.status,
+        response: raw2?.result?.response?.slice(0, 500) || null,
+        errors: raw2?.errors || null,
+      };
+    } catch (err) {
+      step5Result = { error: String(err) };
     }
-  } catch (err) {
-    requestError = err instanceof Error ? err.message : String(err);
-  } finally {
-    clearTimeout(timeout);
+    step4Result.second_model_call = step5Result;
   }
 
-  // Step 4: Also test WITHOUT tools (plain text mode)
-  let plainResponse: any = null;
-  try {
-    const res2 = await fetch(`${CF_BASE}/${MODEL}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${CF_AI_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages,
-        max_tokens: 256,
-        temperature: 0.5,
-      }),
-    });
-    plainResponse = await res2.json();
-  } catch (err) {
-    plainResponse = { error: err instanceof Error ? err.message : String(err) };
-  }
-
-  // Return everything for debugging
   return NextResponse.json({
-    step1_tools_available: {
+    step1_tools: {
       count: tools.length,
-      tool_names: tools.map(t => t.name),
-      // Show the first tool's schema to verify format
-      first_tool_schema: functionSchema[0] || null,
+      names: tools.map(t => t.name),
     },
-    step2_cf_config: {
-      has_account_id: !!CF_ACCOUNT_ID,
-      has_ai_token: !!CF_AI_TOKEN,
-      model: MODEL,
-      endpoint: CF_BASE,
+    step2_config: {
+      has_github_token: !!GITHUB_TOKEN,
+      github_token_length: GITHUB_TOKEN.length,
+      has_cf_account_id: !!CF_ACCOUNT_ID,
+      has_cf_ai_token: !!CF_AI_TOKEN,
     },
-    step3_with_tools: {
-      request_error: requestError,
-      has_result: !!rawResponse?.result,
-      response_text: rawResponse?.result?.response?.slice(0, 500) || null,
-      tool_calls: rawResponse?.result?.tool_calls || null,
-      errors: rawResponse?.errors || null,
-      raw: rawResponse,
-    },
-    step4_without_tools: {
-      response_text: plainResponse?.result?.response?.slice(0, 300) || null,
-      errors: plainResponse?.errors || null,
-    },
+    step3_model_call_with_tools: step3Result,
+    step4_tool_execution: step4Result,
     conclusion: {
-      tools_are_working: !!(rawResponse?.result?.tool_calls?.length > 0),
-      model_returned_text: !!rawResponse?.result?.response,
-      issue: rawResponse?.result?.tool_calls?.length > 0
-        ? "Tools are working — the issue is elsewhere"
-        : rawResponse?.errors
-          ? `Cloudflare API error: ${JSON.stringify(rawResponse.errors)}`
-          : rawResponse?.result?.response
-            ? "Model responded with text only — it did NOT call any tools. The tools format may be wrong, or the model may not support function calling."
-            : "No response from Cloudflare API — check token/config",
+      tools_discovered: tools.length,
+      model_called_tool: toolCalls.length > 0,
+      tool_executed: !!step4Result.result_content,
+      second_call_succeeded: !!step4Result.second_model_call?.response,
+      issue: !toolCalls.length
+        ? "Model did not call any tools"
+        : !step4Result.result_content
+          ? "Tool execution failed — see execution_error"
+          : !step4Result.second_model_call?.response
+            ? "Second model call (text response) failed — see second_model_call"
+            : "Full pipeline works — issue is in the chat route code, not the tools",
     },
   }, { status: 200 });
 }
