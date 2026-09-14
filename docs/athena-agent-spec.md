@@ -216,3 +216,44 @@ If anything breaks:
 3. **Context limit** — if I lose track during the build, I read THIS file (the checklist) to re-orient. The checklist tells me exactly where I am.
 
 4. **Supabase MCP server may not exist or may require different auth** — if `https://mcp.supabase.com` doesn't work, I use direct Prisma queries as the "tool" instead. Athena calls a local function that queries the DB, returns JSON. Same outcome, no external dependency.
+
+---
+
+## SESSION 1 COMPLETE — 2026-09-15
+
+### What was built:
+- ✅ `src/lib/athena-mcp.ts` — MCP client connecting to Supabase (`https://mcp.supabase.com/mcp`) + GitHub direct API wrapper (3 tools: read_file, list_issues, get_repo_info)
+- ✅ `askAthenaWithTools()` in `src/lib/athena-agent.ts` — function calling loop (max 5 iterations, 30s timeout, falls back to `askAthena()` on error)
+- ✅ Chat route wired: signed-in users get `askAthenaWithTools()`, anon users get `askAthena()` (no tools for anon — can't trust identity)
+- ✅ Vercel env vars set: `SUPABASE_ACCESS_TOKEN`, `GITHUB_TOKEN` (both encrypted, production+preview+development)
+- ✅ MCP SDK installed: `@modelcontextprotocol/sdk` in package.json + lockfile
+
+### Verification:
+- TypeScript: 0 errors
+- Tests: 102/102 pass
+- CI: 10/10 GitHub Actions checks pass
+- Vercel deployment: READY (live on pitchcoachai.tech)
+
+### Commits:
+- `206c086` add: athena-agent-spec.md — build spec + strict protocols + checklist
+- `ea1c7f2` add: athena-mcp.ts — MCP client (Supabase) + GitHub API wrapper + fix middleware type
+- `025d94a` add: askAthenaWithTools() — function calling loop with MCP tools
+- `308b5f0` wire: chat route uses askAthenaWithTools for auth users, askAthena fallback for anon
+- `a011669` fix: add @modelcontextprotocol/sdk to package.json + lockfile
+
+### How to test:
+1. Sign in at pitchcoachai.tech (morphylee22@gmail.com — FOUNDER tier)
+2. Open Athena widget (bottom-right)
+3. Ask: "What's my latest deck score?" → Athena should query Supabase MCP and return real data
+4. Ask: "Read the README of my Pitch-Perfect repo" → Athena should call github_read_file and return content
+5. Ask a normal question: "How do I upload my deck?" → Athena should answer normally (no tool call needed)
+
+### Known risks:
+- Supabase MCP server may require OAuth (not just the access token). If the MCP connection fails, Athena falls back to `askAthena()` (no tools) — the chatbot still works, just without data queries.
+- Cloudflare Workers AI function calling support depends on the model. Llama 3.3 70B supports it. If the model doesn't return tool calls, Athena responds with text only (same as before).
+
+### Session 2 (next):
+- Add Vercel MCP connection
+- Add ElevenLabs TTS + STT (voice)
+- Update widget with mic button + audio playback
+- Add more skills from skills.sh
