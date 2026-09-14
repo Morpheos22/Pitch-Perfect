@@ -21,7 +21,10 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 // ── Env vars (NEVER hardcoded — read at runtime) ──────────────────────────
 const SUPABASE_ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN || "";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
-const SUPABASE_MCP_URL = "https://mcp.supabase.com/mcp";
+const SUPABASE_PROJECT_REF = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/https:\/\/|.supabase\.co.*/, "") || "iwbshmshegewmctfucaz";
+// Correct Supabase MCP URL with project_ref + features (this was the bug —
+// without these query params, the MCP server returns 0 tools)
+const SUPABASE_MCP_URL = `https://mcp.supabase.com/mcp?project_ref=${SUPABASE_PROJECT_REF}&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching`;
 
 // ── Tool cache (refresh every hour) ────────────────────────────────────────
 let supabaseClient: Client | null = null;
@@ -34,8 +37,8 @@ export interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  /** Which backend handles this tool — "supabase-mcp" or "github-api" */
-  backend: "supabase-mcp" | "github-api";
+  /** Which backend handles this tool — "supabase-mcp", "github-api", or "agent-browser" */
+  backend: "supabase-mcp" | "github-api" | "agent-browser";
 }
 
 export interface ToolCallResult {
@@ -170,6 +173,48 @@ const githubTools: Tool[] = [
   },
 ];
 
+// ── Agent Browser tool (via CLI) ──────────────────────────────────────────
+// Athena can control a headless browser using the agent-browser CLI.
+// This lets her navigate websites, take screenshots, fill forms, and
+// extract data from web pages.
+
+const browserTools: Tool[] = [
+  {
+    name: "browser_navigate",
+    description: "Navigate to a URL in a headless browser. Returns the page title and a snapshot of interactive elements. Use this when the user asks to open a website, check a page, or interact with web content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The URL to navigate to (e.g., 'https://pitchcoachai.tech')" },
+      },
+      required: ["url"],
+    },
+    backend: "agent-browser",
+  },
+  {
+    name: "browser_screenshot",
+    description: "Take a screenshot of the current page in the browser. Returns the file path of the saved screenshot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        full: { type: "boolean", description: "If true, capture the full page (not just the viewport)" },
+      },
+    },
+    backend: "agent-browser",
+  },
+  {
+    name: "browser_get_text",
+    description: "Extract text content from the current page. Useful for reading article content, checking if a page loaded correctly, or scraping data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector to extract text from (optional — defaults to full page)" },
+      },
+    },
+    backend: "agent-browser",
+  },
+];
+
 async function callGithubTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   if (!GITHUB_TOKEN) {
     return { content: "GitHub token not configured — GitHub tools unavailable.", isError: true };
@@ -224,10 +269,45 @@ async function callGithubTool(toolName: string, args: Record<string, unknown>): 
   }
 }
 
+// ── Agent Browser tool handler (via CLI) ──────────────────────────────────
+
+import { execSync } from "child_process";
+
+async function callBrowserTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+  try {
+    if (toolName === "browser_navigate") {
+      const url = args.url as string;
+      if (!url) return { content: "URL is required", isError: true };
+      const output = execSync(`agent-browser open "${url}" --timeout 15000`, { encoding: "utf-8", timeout: 20000 });
+      return { content: output.slice(0, 2000) };
+    }
+
+    if (toolName === "browser_screenshot") {
+      const full = args.full as boolean;
+      const path = `/tmp/athena-screenshot-${Date.now()}.png`;
+      const output = execSync(`agent-browser screenshot ${path} ${full ? "--full" : ""}`, { encoding: "utf-8", timeout: 15000 });
+      return { content: `Screenshot saved to ${path}` };
+    }
+
+    if (toolName === "browser_get_text") {
+      const selector = args.selector as string | undefined;
+      const output = execSync(`agent-browser get text ${selector ? `--selector "${selector}"` : ""}`, { encoding: "utf-8", timeout: 15000 });
+      return { content: output.slice(0, 3000) };
+    }
+
+    return { content: `Unknown browser tool: ${toolName}`, isError: true };
+  } catch (err) {
+    return {
+      content: `Browser tool '${toolName}' failed: ${err instanceof Error ? err.message : String(err)}`,
+      isError: true,
+    };
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
- * Get all available tools from Supabase MCP + GitHub API.
+ * Get all available tools from Supabase MCP + GitHub API + Browser.
  * Used by the function-calling loop to pass tool definitions to the model.
  */
 export async function getAvailableTools(): Promise<Tool[]> {
@@ -235,23 +315,24 @@ export async function getAvailableTools(): Promise<Tool[]> {
     getSupabaseTools(),
     Promise.resolve(githubTools),
   ]);
-  return [...supabaseTools, ...ghTools];
+  return [...supabaseTools, ...ghTools, ...browserTools];
 }
 
 /**
- * Route a tool call to the right backend (Supabase MCP or GitHub API).
- * The toolName includes the prefix ("supabase_" or "github_") so we know
- * which backend to use.
+ * Route a tool call to the right backend (Supabase MCP, GitHub API, or Browser).
  */
 export async function callTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   if (toolName.startsWith("supabase_")) {
-    // Strip the "supabase_" prefix to get the original tool name
     const originalName = toolName.replace(/^supabase_/, "");
     return callSupabaseTool(originalName, args);
   }
 
   if (toolName.startsWith("github_")) {
     return callGithubTool(toolName, args);
+  }
+
+  if (toolName.startsWith("browser_")) {
+    return callBrowserTool(toolName, args);
   }
 
   return { content: `Unknown tool: ${toolName}`, isError: true };

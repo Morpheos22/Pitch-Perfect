@@ -315,7 +315,11 @@ export async function askAthenaWithTools(
   const model = AI_MODELS.TEXT_PRIMARY;
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     try {
-      const { text, toolCalls } = await callAIWithTools(messages, functionSchema, model);
+      // On the first iteration, send tools. On subsequent iterations,
+      // send NO tools — this forces the model to produce text instead
+      // of calling more tools, avoiding multi-turn format issues.
+      const toolsForThisCall = i === 0 ? functionSchema : [];
+      const { text, toolCalls } = await callAIWithTools(messages, toolsForThisCall, model);
 
       // No tool calls -> we have the final response
       if (toolCalls.length === 0) {
@@ -324,31 +328,37 @@ export async function askAthenaWithTools(
 
       // Process tool calls
       for (const tc of toolCalls) {
-        // Cloudflare format: { name, arguments } — arguments is already an object
         const toolName = tc.name;
         const args = tc.arguments || {};
 
-        // Call the tool
         console.log(`[Athena Agent] Calling tool: ${toolName} with args: ${JSON.stringify(args).slice(0, 200)}`);
         const result = await callTool(toolName, args);
-
         console.log(`[Athena Agent] Tool ${toolName} returned: ${result.content.slice(0, 200)}`);
 
-        // Instead of sending a "role: tool" message back (which Cloudflare
-        // may not support), we inject the tool result into the conversation
-        // as a user message. The model reads it and produces a final
-        // text response. This avoids the multi-turn tool result format issue.
+        // Inject tool result as a user message (not role:tool — Cloudflare
+        // doesn't support that format in multi-turn conversations)
         messages.push({
           role: "user",
-          content: `[Tool result from ${toolName}]: ${result.content.slice(0, 3000)}\n\nBased on this tool result, answer my original question. If the tool returned useful data, use it in your response. If the tool failed, tell me what went wrong.`,
+          content: `[Tool result from ${toolName}]: ${result.content.slice(0, 3000)}\n\nBased on this tool result, answer my original question concisely.`,
         });
       }
 
-      // Loop continues — the model will see the tool results and either call
-      // another tool or produce a final text response.
+      // Loop continues — next iteration sends NO tools, so the model
+      // must produce a text response from the tool results.
     } catch (err) {
       console.error(`[Athena Agent] Iteration ${i} failed:`, err);
-      // Fall back to the non-tool askAthena
+      // Only fall back to askAthena on the FIRST iteration.
+      // If we already have tool results (i > 0), return them directly
+      // instead of falling back to the tool-less chatbot.
+      if (i === 0) {
+        return askAthena(userMessage, context, conversationHistory);
+      }
+      // We have tool results — extract the last user message (tool result)
+      // and return it as Athena's response
+      const lastToolResult = messages.filter(m => m.role === "user").pop();
+      if (lastToolResult?.content) {
+        return String(lastToolResult.content).slice(0, 1000);
+      }
       return askAthena(userMessage, context, conversationHistory);
     }
   }
