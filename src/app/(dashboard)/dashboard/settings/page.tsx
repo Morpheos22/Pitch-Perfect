@@ -529,8 +529,9 @@ export default function SettingsPage() {
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPw({ ...showPw, current: !showPw.current })}
+                  aria-label={showPw.current ? "Hide password" : "Show password"}
                 >
-                  {showPw.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPw.current ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -549,8 +550,9 @@ export default function SettingsPage() {
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPw({ ...showPw, newPassword: !showPw.newPassword })}
+                  aria-label={showPw.newPassword ? "Hide password" : "Show password"}
                 >
-                  {showPw.newPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPw.newPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -569,8 +571,9 @@ export default function SettingsPage() {
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPw({ ...showPw, confirm: !showPw.confirm })}
+                  aria-label={showPw.confirm ? "Hide password" : "Show password"}
                 >
-                  {showPw.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPw.confirm ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
             </div>

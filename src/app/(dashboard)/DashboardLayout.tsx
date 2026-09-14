@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/layout/logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { AthenaWidget } from "@/components/athena/athena-widget";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -266,6 +267,9 @@ export default function DashboardLayout({
         {/* Page Content */}
         <main className="p-4 lg:p-6">{children}</main>
       </div>
+
+      {/* Athena AI Guide Widget */}
+      <AthenaWidget />
     </div>
   );
 }

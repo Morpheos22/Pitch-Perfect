@@ -60,6 +60,33 @@ async function fetchSubscriptionPeriodEnd(
 
 export async function POST(request: NextRequest) {
   try {
+    // ── Session hijacking protection ──
+    // Webhooks should NEVER have session cookies — they're server-to-server.
+    // If a session cookie is present, it's likely a hijacking attempt.
+    const cookieHeader = request.headers.get('cookie') || '';
+    if (cookieHeader.includes('__session') || cookieHeader.includes('__client')) {
+      log.warn('Stripe webhook called with session cookies — possible hijacking attempt');
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Also check for Authorization header (webhooks use signature, not bearer tokens)
+    const authHeader = request.headers.get('authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      log.warn('Stripe webhook called with Bearer token — possible hijacking attempt');
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Verify origin — Stripe webhooks come from Stripe's servers, not browsers
+    const userAgent = request.headers.get('user-agent') || '';
+    if (userAgent.includes('Mozilla') || userAgent.includes('Chrome') || userAgent.includes('Safari')) {
+      // Browser-like UA on a webhook = suspicious
+      // Stripe's webhook requests have UA like "Stripe/1.0 (+https://stripe.com/docs/webhooks)"
+      if (!userAgent.toLowerCase().includes('stripe')) {
+        log.warn('Stripe webhook called with browser User-Agent — possible hijacking attempt');
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    }
+
     const signature = request.headers.get('stripe-signature') || '';
     const body = await request.text();
 
