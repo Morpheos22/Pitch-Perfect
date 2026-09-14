@@ -37,8 +37,8 @@ export interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  /** Which backend handles this tool — "supabase-mcp", "github-api", or "agent-browser" */
-  backend: "supabase-mcp" | "github-api" | "agent-browser";
+  /** Which backend handles this tool */
+  backend: "supabase-mcp" | "github-api" | "agent-browser" | "cloudflare-mcp";
 }
 
 export interface ToolCallResult {
@@ -118,6 +118,110 @@ async function callSupabaseTool(originalName: string, args: Record<string, unkno
   } catch (err) {
     return {
       content: `Supabase tool '${originalName}' failed: ${err instanceof Error ? err.message : String(err)}`,
+      isError: true,
+    };
+  }
+}
+
+// ── Cloudflare MCP client ─────────────────────────────────────────────────
+// Cloudflare's own MCP servers — native to our stack. These let Athena:
+//   - Observability: query logs, metrics, traces for Cloudflare Workers
+//   - Workers Builds: manage and inspect builds
+//   - Bindings: access KV, R2, D1 bindings
+//
+// Auth: uses the Cloudflare API token (CLOUDFLARE_AI_TOKEN or CF_API_TOKEN).
+// These servers use OAuth, but the API token works as a bearer token for
+// server-side MCP connections.
+
+const CF_API_TOKEN = process.env.CLOUDFLARE_AI_TOKEN || process.env.CF_API_TOKEN || "";
+const CF_MCP_SERVERS = [
+  { name: "observability", url: "https://observability.mcp.cloudflare.com/mcp" },
+  { name: "builds", url: "https://builds.mcp.cloudflare.com/mcp" },
+  { name: "bindings", url: "https://bindings.mcp.cloudflare.com/mcp" },
+];
+
+const cfMcpClients: Map<string, Client> = new Map();
+let cfToolsCache: Tool[] | null = null;
+let cfToolsCachedAt = 0;
+
+async function getCloudflareMcpClient(serverName: string, serverUrl: string): Promise<Client | null> {
+  if (cfMcpClients.has(serverName)) return cfMcpClients.get(serverName)!;
+
+  try {
+    const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+    const client = new Client(
+      { name: "athena-agent", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(transport);
+    cfMcpClients.set(serverName, client);
+    console.log(`[athena-mcp] Connected to Cloudflare ${serverName} MCP server`);
+    return client;
+  } catch (err) {
+    console.error(`[athena-mcp] Failed to connect to Cloudflare ${serverName} MCP:`, err);
+    return null;
+  }
+}
+
+async function getCloudflareTools(): Promise<Tool[]> {
+  if (cfToolsCache && Date.now() - cfToolsCachedAt < CACHE_TTL_MS) {
+    return cfToolsCache;
+  }
+
+  if (!CF_API_TOKEN) {
+    console.warn("[athena-mcp] CF_API_TOKEN not configured — Cloudflare MCP tools unavailable");
+    return [];
+  }
+
+  const allTools: Tool[] = [];
+  for (const server of CF_MCP_SERVERS) {
+    const client = await getCloudflareMcpClient(server.name, server.url);
+    if (!client) continue;
+
+    try {
+      const toolsResponse = await client.listTools();
+      const tools: Tool[] = (toolsResponse.tools || []).map((t: any) => ({
+        name: `cf_${server.name}_${t.name}`,
+        description: `[Cloudflare ${server.name}] ${t.description || t.name}`,
+        inputSchema: t.inputSchema || {},
+        backend: "cloudflare-mcp" as const,
+      }));
+      allTools.push(...tools);
+    } catch (err) {
+      console.error(`[athena-mcp] Failed to list Cloudflare ${server.name} tools:`, err);
+    }
+  }
+
+  cfToolsCache = allTools;
+  cfToolsCachedAt = Date.now();
+  console.log(`[athena-mcp] Discovered ${allTools.length} Cloudflare MCP tools`);
+  return allTools;
+}
+
+async function callCloudflareMcpTool(prefixedName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+  // Tool name format: cf_{serverName}_{originalToolName}
+  // e.g., cf_observability_query_logs -> server="observability", tool="query_logs"
+  const match = prefixedName.match(/^cf_([a-z]+)_(.+)$/);
+  if (!match) {
+    return { content: `Invalid Cloudflare tool name: ${prefixedName}`, isError: true };
+  }
+  const [, serverName, originalName] = match;
+  const client = cfMcpClients.get(serverName);
+  if (!client) {
+    return { content: `Cloudflare ${serverName} MCP not connected`, isError: true };
+  }
+
+  try {
+    const result = await client.callTool({ name: originalName, arguments: args });
+    const contentArray = Array.isArray(result.content) ? result.content : [];
+    const textContent = contentArray
+      .filter((c: any) => c.type === "text")
+      .map((c: any) => c.text)
+      .join("\n");
+    return { content: textContent || "No output from tool." };
+  } catch (err) {
+    return {
+      content: `Cloudflare ${serverName} tool '${originalName}' failed: ${err instanceof Error ? err.message : String(err)}`,
       isError: true,
     };
   }
@@ -311,11 +415,12 @@ async function callBrowserTool(toolName: string, args: Record<string, unknown>):
  * Used by the function-calling loop to pass tool definitions to the model.
  */
 export async function getAvailableTools(): Promise<Tool[]> {
-  const [supabaseTools, ghTools] = await Promise.all([
+  const [supabaseTools, ghTools, cfTools] = await Promise.all([
     getSupabaseTools(),
     Promise.resolve(githubTools),
+    getCloudflareTools(),
   ]);
-  return [...supabaseTools, ...ghTools, ...browserTools];
+  return [...supabaseTools, ...ghTools, ...browserTools, ...cfTools];
 }
 
 /**
@@ -333,6 +438,10 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
 
   if (toolName.startsWith("browser_")) {
     return callBrowserTool(toolName, args);
+  }
+
+  if (toolName.startsWith("cf_")) {
+    return callCloudflareMcpTool(toolName, args);
   }
 
   return { content: `Unknown tool: ${toolName}`, isError: true };
