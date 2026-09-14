@@ -7,6 +7,7 @@ import Stripe from 'stripe';
 import { prisma } from '@/lib/db';
 import { getPlanFromProduct, createModuleAccess, PRODUCTS } from '@/lib/payment-service';
 import { createLogger } from '@/lib/logger';
+import { checkWebhookIdempotency, markWebhookProcessed } from '@/lib/webhook-idempotency';
 
 const log = createLogger('StripeWebhook');
 
@@ -109,6 +110,17 @@ export async function POST(request: NextRequest) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error('Stripe signature verification failed:', msg);
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+    }
+
+    // ── Idempotency check ──────────────────────────────────────────────────
+    // Stripe retries webhooks up to ~16 times over 3 days. Without dedup,
+    // a single checkout.session.completed event could create duplicate
+    // entitlements. We store the Stripe event.id in ProcessedWebhook and
+    // skip if we've already seen it.
+    const dedup = await checkWebhookIdempotency("STRIPE", stripeEvent.id);
+    if (dedup.alreadyProcessed) {
+      log.info(`Duplicate Stripe event ${stripeEvent.id} skipped (already processed at ${dedup.processedAt?.toISOString()})`);
+      return NextResponse.json({ received: true, deduplicated: true });
     }
 
     const event = stripeEvent.type;
@@ -320,6 +332,20 @@ export async function POST(request: NextRequest) {
         // Unhandled event — acknowledge but don't process
         break;
     }
+
+    // ── Mark event as processed (idempotency) ──────────────────────────────
+    // Record the event ID so retries from Stripe are skipped. We do this
+    // AFTER successful processing — if the handler threw, the event is NOT
+    // marked as processed, so Stripe will retry (which is the desired
+    // behaviour for transient failures).
+    await markWebhookProcessed("STRIPE", stripeEvent.id, {
+      eventType: event,
+      payload: { type: event, id: stripeEvent.id, created: stripeEvent.created },
+    }).catch((err) => {
+      // Non-fatal — the unique constraint may have fired (race condition
+      // with another worker), which is fine.
+      log.warn(`Failed to mark Stripe event ${stripeEvent.id} as processed:`, err);
+    });
 
     return NextResponse.json({ received: true, event });
   } catch (error) {

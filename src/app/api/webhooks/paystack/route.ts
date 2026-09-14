@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseWebhookPayload, verifyPayment, PRODUCTS } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
 import { getPlanFromProduct, getModuleCycles, createModuleAccess } from '@/lib/payment-service';
+import { checkWebhookIdempotency, markWebhookProcessed } from '@/lib/webhook-idempotency';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -21,6 +22,19 @@ export async function POST(request: NextRequest) {
 
     if (!valid) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+    }
+
+    // ── Idempotency check ──────────────────────────────────────────────────
+    // Paystack retries webhooks on non-2xx responses. Without dedup, a
+    // single charge.success event could create duplicate entitlements.
+    // We use the Paystack reference (unique per transaction) as the event ID.
+    const paystackReference = (data as Record<string, unknown>)?.reference as string | undefined;
+    const eventId = paystackReference || `${event}:${request.headers.get('x-paystack-signature')?.slice(0, 16)}`;
+
+    const dedup = await checkWebhookIdempotency("PAYSTACK", eventId);
+    if (dedup.alreadyProcessed) {
+      console.log(`[Paystack] Duplicate event ${eventId} skipped (already processed at ${dedup.processedAt?.toISOString()})`);
+      return NextResponse.json({ received: true, deduplicated: true });
     }
 
 
@@ -98,9 +112,31 @@ export async function POST(request: NextRequest) {
       });
 
 
+      // Mark charge.success as processed BEFORE the early return so Paystack
+      // doesn't retry it. If we reach this point, processing succeeded.
+      await markWebhookProcessed("PAYSTACK", eventId, {
+        eventType: event,
+        userId: transaction.userId,
+        payload: { event, reference: paystackReference, amount: paymentResult.amount },
+      }).catch((err) => {
+        console.warn(`[Paystack] Failed to mark event ${eventId} as processed:`, err);
+      });
+
       return NextResponse.json({ success: true });
     }
 
+    // Note: charge.success events are marked as processed inside the
+    // if-block above (before the early return). The markWebhookProcessed
+    // call below handles all OTHER event types.
+
+
+    // ── Mark event as processed (idempotency) ──────────────────────────────
+    await markWebhookProcessed("PAYSTACK", eventId, {
+      eventType: event,
+      payload: { event, reference: paystackReference },
+    }).catch((err) => {
+      console.warn(`[Paystack] Failed to mark event ${eventId} as processed:`, err);
+    });
 
     // Acknowledge other events
     return NextResponse.json({ received: true, event });

@@ -66,6 +66,9 @@ model User {
   // Kal Protocol 2.0
   kalChatSessions KalChatSession[]
 
+  // Job Queue — async AI analysis jobs owned by this user
+  jobs Job[]
+
   // Timestamps
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -532,6 +535,116 @@ model Transaction {
   @@index([provider])
   @@index([provider, providerReference])
   @@map("transactions")
+}
+
+// ============================================
+// JOB QUEUE — async AI analysis jobs with retries + dead-letter
+// ============================================
+// A generic job record for any background AI work (deck analysis, script
+// check, live pitch, full session, founder coaching). The API route
+// creates a Job row with status=PENDING, then either:
+//   (a) processes synchronously and updates to COMPLETED/FAILED, OR
+//   (b) enqueues to a queue (QStash / BullMQ) and a worker picks it up.
+//
+// Retries: attempts increments on each try. When attempts >= maxAttempts,
+// the job is moved to deadLetterAt and status=DEAD_LETTER for manual review.
+
+model Job {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // What kind of job — determines which worker handler processes it
+  type JobType
+
+  // Link to the session row (PitchDeck.id, PitchScript.id, etc.)
+  sessionType String? // "deck" | "script" | "live" | "full" | "founder"
+  sessionId   String?
+
+  // Job state
+  status      JobStatus @default(PENDING)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+
+  // Timing
+  queuedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  deadLetterAt DateTime?
+
+  // Error tracking
+  lastError    String?
+  lastErrorAt  DateTime?
+  errorHistory Json? // array of { attempt, error, at } objects
+
+  // Idempotency — prevents duplicate job creation for the same request
+  idempotencyKey String? @unique
+
+  // Payload — the input data for the job (JSON: file pathname, options, etc.)
+  payload Json?
+
+  // Result — the output data (JSON: scores, feedback, etc.)
+  result Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([type, status])
+  @@index([deadLetterAt])
+  @@map("jobs")
+}
+
+enum JobType {
+  DECK_ANALYSIS
+  SCRIPT_CHECK
+  LIVE_PITCH
+  FULL_SESSION
+  FOUNDER_COACHING
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+// ============================================
+// PROCESSED WEBHOOK — idempotency for Stripe / Paystack / Clerk webhooks
+// ============================================
+// When a webhook arrives, we store its event ID here BEFORE processing.
+// If the same event ID arrives again (Stripe/Paystack retry), we skip
+// processing and return 200 OK (so the provider stops retrying).
+
+model ProcessedWebhook {
+  id        String          @id @default(cuid())
+  provider  WebhookProvider
+  eventId   String // Stripe event.id, Paystack reference, Clerk svix-id
+  eventType String? // checkout.session.completed, user.created, etc.
+  userId    String? // affected user (if known)
+
+  // Result of processing
+  processed    Boolean @default(true)
+  errorMessage String?
+
+  // Raw payload (truncated to 10KB for forensics)
+  payload Json?
+
+  processedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, processedAt])
+  @@map("processed_webhooks")
+}
+
+enum WebhookProvider {
+  STRIPE
+  PAYSTACK
+  CLERK
 }
 
 // ============================================
