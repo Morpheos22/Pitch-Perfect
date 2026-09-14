@@ -328,25 +328,20 @@ export async function askAthenaWithTools(
         const toolName = tc.name;
         const args = tc.arguments || {};
 
-        // Add the assistant's tool call to the conversation
-        messages.push({
-          role: "assistant",
-          content: null,
-          tool_calls: [{ name: toolName, arguments: args }],
-        });
-
         // Call the tool
         console.log(`[Athena Agent] Calling tool: ${toolName} with args: ${JSON.stringify(args).slice(0, 200)}`);
         const result = await callTool(toolName, args);
 
-        // Add the tool result to the conversation
-        messages.push({
-          role: "tool",
-          name: toolName,
-          content: result.content,
-        });
-
         console.log(`[Athena Agent] Tool ${toolName} returned: ${result.content.slice(0, 200)}`);
+
+        // Instead of sending a "role: tool" message back (which Cloudflare
+        // may not support), we inject the tool result into the conversation
+        // as a user message. The model reads it and produces a final
+        // text response. This avoids the multi-turn tool result format issue.
+        messages.push({
+          role: "user",
+          content: `[Tool result from ${toolName}]: ${result.content.slice(0, 3000)}\n\nBased on this tool result, answer my original question. If the tool returned useful data, use it in your response. If the tool failed, tell me what went wrong.`,
+        });
       }
 
       // Loop continues — the model will see the tool results and either call
