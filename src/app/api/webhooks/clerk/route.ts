@@ -197,7 +197,10 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
       where: { userId: user.id },
       create: {
         userId: user.id,
-        plan: isDeveloper ? 'ENTERPRISE' : 'FREE',
+        // PERMANENT_FOUNDER_EMAILS + DEVELOPER_EMAILS → FOUNDER tier.
+        // This fires on user.created — morphylee22@gmail.com gets
+        // FOUNDER at signup, before the first page load.
+        plan: isDeveloper ? 'FOUNDER' : 'FREE',
         status: 'ACTIVE',
       },
       update: {}, // no-op if already exists from onboarding race

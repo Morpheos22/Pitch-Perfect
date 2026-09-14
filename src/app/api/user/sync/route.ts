@@ -157,14 +157,17 @@ export async function POST(request: NextRequest) {
     });
 
 
-    // ── Developer/Admin override: Auto-upgrade to ENTERPRISE ──
-    // Developer emails (configured via DEVELOPER_EMAILS env var) always get
-    // ENTERPRISE access. This ensures the dashboard, sidebar, and billing
-    // pages all show the correct plan from the very first page load.
+    // ── Developer/Admin override: Auto-upgrade to FOUNDER ──
+    // Developer emails (PERMANENT_FOUNDER_EMAILS in dev-auth.ts +
+    // DEVELOPER_EMAILS env var) always get FOUNDER tier. This is the
+    // highest tier and cannot be altered by any other code path.
+    // morphylee22@gmail.com is in PERMANENT_FOUNDER_EMAILS and will
+    // ALWAYS be on FOUNDER tier regardless of DB state, env vars, or
+    // any other condition.
     if (isAdminEmail(email)) {
       await prisma.subscription.updateMany({
         where: { userId: user.id },
-        data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+        data: { plan: 'FOUNDER', status: 'ACTIVE' },
       });
     }
 
@@ -296,18 +299,22 @@ export async function GET() {
     };
 
 
-    // ── Developer/Admin override: Ensure ENTERPRISE plan is returned ──
+    // ── Developer/Admin override: Ensure FOUNDER plan is returned ──
     // The POST handler auto-upgrades the DB record, but this GET handler
     // may be called before the POST runs (e.g. page refresh). Apply the
     // override at read time too, and backfill the DB if needed.
+    // morphylee22@gmail.com is in PERMANENT_FOUNDER_EMAILS — this check
+    // fires on every page load and forces FOUNDER tier, so even if the
+    // DB row gets corrupted or a migration resets it, the next request
+    // restores FOUNDER. The tier can NEVER be altered for this user.
     if (user.email && isAdminEmail(user.email)) {
-      if (user.subscription?.plan !== 'ENTERPRISE' || user.subscription?.status !== 'ACTIVE') {
+      if (user.subscription?.plan !== 'FOUNDER' || user.subscription?.status !== 'ACTIVE') {
         await prisma.subscription.updateMany({
           where: { userId: user.id },
-          data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
+          data: { plan: 'FOUNDER', status: 'ACTIVE' },
         });
       }
-      // Return ENTERPRISE regardless of DB state (avoids stale cache).
+      // Return FOUNDER regardless of DB state (avoids stale cache).
       // Preserve all other subscription + transaction fields so the billing
       // page can still render payment history for admin users.
       return NextResponse.json({
@@ -316,7 +323,7 @@ export async function GET() {
           ...userWithTransactions,
           subscription: {
             ...(user.subscription ?? {}),
-            plan: 'ENTERPRISE',
+            plan: 'FOUNDER',
             status: 'ACTIVE',
           },
         },
