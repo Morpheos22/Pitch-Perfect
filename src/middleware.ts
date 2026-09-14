@@ -777,7 +777,7 @@ export default clerkMiddleware(async (auth, request) => {
     // SLOW PATH: JWT is stale/missing AND no cache — ask Clerk API with timeout
     try {
       const client = await clerkClient();
-      const user = await withTimeout(client.users.getUser(userId), 5000);
+      const user = await withTimeout(client.users.getUser(userId), 5000) as Awaited<ReturnType<typeof client.users.getUser>>;
 
       // Admin bypass via Clerk API (always fresh)
       const email = user.emailAddresses[0]?.emailAddress;
