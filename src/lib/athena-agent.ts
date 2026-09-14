@@ -188,3 +188,185 @@ export async function askAthenaVision(
     return "I couldn't analyze that image. Please try again or contact Metron@Athenagentic.app.";
     }
 }
+
+// ── Athena WITH TOOLS (agent mode) ────────────────────────────────────────
+// This function adds function-calling support to Athena. When tools are
+// available (Supabase MCP, GitHub API), the model can choose to call them
+// to fetch real data before responding.
+//
+// The existing askAthena() function is unchanged — it's the fallback when
+// tools are unavailable or the function-calling loop fails.
+//
+// Architecture:
+//   1. Get available tools from athena-mcp.ts
+//   2. Send messages + tool definitions to Cloudflare Workers AI
+//   3. If model returns a tool call -> call the tool -> add result to messages -> call model again
+//   4. Max 5 iterations (prevent infinite loops)
+//   5. Return final text response
+
+import { getAvailableTools, callTool, toolsToFunctionSchema } from "./athena-mcp";
+
+const CF_AGENT_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || "";
+const CF_AGENT_AI_TOKEN = process.env.CLOUDFLARE_AI_TOKEN || process.env.CF_API_TOKEN || "";
+const CF_AGENT_BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${CF_AGENT_ACCOUNT_ID}/ai/run`;
+
+const MAX_TOOL_ITERATIONS = 5;
+const TOOL_CALL_TIMEOUT_MS = 30_000;
+
+interface CloudflareToolCall {
+  id: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+interface CloudflareAIResponse {
+  result?: {
+    response?: string;
+    tool_calls?: CloudflareToolCall[];
+  };
+  errors?: Array<{ message: string }>;
+}
+
+async function callAIWithTools(
+  messages: any[],
+  tools: any[],
+  model: string,
+): Promise<{ text: string; toolCalls: CloudflareToolCall[] }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TOOL_CALL_TIMEOUT_MS);
+
+  try {
+    const body: Record<string, unknown> = {
+      messages,
+      max_tokens: 4096,
+      temperature: 0.5,
+    };
+    if (tools.length > 0) {
+      body.tools = tools;
+    }
+
+    const res = await fetch(`${CF_AGENT_BASE_URL}/${model}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${CF_AGENT_AI_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Cloudflare AI error ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data: CloudflareAIResponse = await res.json();
+    if (data.errors && data.errors.length > 0) {
+      throw new Error(data.errors.map(e => e.message).join("; "));
+    }
+
+    return {
+      text: data.result?.response || "",
+      toolCalls: data.result?.tool_calls || [],
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function askAthenaWithTools(
+  userMessage: string,
+  context: AthenaContext | undefined,
+  conversationHistory: AthenaMessage[]
+): Promise<string> {
+  const sanitized = sanitizeUserInput(userMessage);
+
+  // Profanity check (same as askAthena)
+  if (context?.userId) {
+    const profanityResult = checkProfanity(context.userId, userMessage);
+    if (profanityResult.blocked) return profanityResult.message || "Session terminated.";
+    if (profanityResult.warning > 0 && profanityResult.message) return profanityResult.message;
+  }
+
+  // Get available tools
+  const availableTools = await getAvailableTools();
+  const functionSchema = toolsToFunctionSchema(availableTools);
+
+  // Build messages
+  let systemPrompt = ATHENA_SYSTEM_PROMPT;
+  if (context?.firstName) systemPrompt += `\n\nUser's name: ${context.firstName}`;
+  if (context?.currentModule) systemPrompt += `\nCurrently using: ${context.currentModule}`;
+  if (context?.plan) systemPrompt += `\nPlan: ${context.plan}`;
+  if (context?.currentPage) systemPrompt += `\nOn page: ${context.currentPage}`;
+
+  if (availableTools.length > 0) {
+    systemPrompt += `\n\nYou have access to tools that can query the user's database (Supabase) and read GitHub repositories. When the user asks about their data (scores, sessions, usage) or code, USE the appropriate tool instead of guessing. Call the tool, read the result, then answer based on the real data.`;
+  }
+
+  const messages: any[] = [
+    { role: "system", content: systemPrompt },
+    ...(conversationHistory || []).map(m => ({
+      role: m.role,
+      content: sanitizeUserInput(m.content),
+    })),
+    { role: "user", content: sanitized },
+  ];
+
+  // Function calling loop
+  const model = AI_MODELS.TEXT_PRIMARY;
+  for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    try {
+      const { text, toolCalls } = await callAIWithTools(messages, functionSchema, model);
+
+      // No tool calls -> we have the final response
+      if (toolCalls.length === 0) {
+        return sanitizeAIResponse(text) || "I don't have enough information to answer that.";
+      }
+
+      // Process tool calls
+      for (const tc of toolCalls) {
+        // Add the assistant's tool call to the conversation
+        messages.push({
+          role: "assistant",
+          content: null,
+          tool_calls: [tc],
+        });
+
+        // Parse the arguments
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          args = {};
+        }
+
+        // Call the tool
+        console.log(`[Athena Agent] Calling tool: ${tc.function.name} with args: ${JSON.stringify(args).slice(0, 200)}`);
+        const result = await callTool(tc.function.name, args);
+
+        // Add the tool result to the conversation
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          name: tc.function.name,
+          content: result.content,
+        });
+
+        console.log(`[Athena Agent] Tool ${tc.function.name} returned: ${result.content.slice(0, 200)}`);
+      }
+
+      // Loop continues — the model will see the tool results and either call
+      // another tool or produce a final text response.
+    } catch (err) {
+      console.error(`[Athena Agent] Iteration ${i} failed:`, err);
+      // Fall back to the non-tool askAthena
+      return askAthena(userMessage, context, conversationHistory);
+    }
+  }
+
+  // If we hit max iterations, return the last response we got
+  console.warn("[Athena Agent] Hit max tool iterations — returning fallback");
+  return askAthena(userMessage, context, conversationHistory);
+}
