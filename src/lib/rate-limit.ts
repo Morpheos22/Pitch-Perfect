@@ -105,18 +105,18 @@ function checkLimit(identifier: string, config: RateLimitConfig): RateLimitResul
 // ──────────────────────────────────────────────
 
 const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
-  // AI coaching routes — expensive, strict limits
-  "/api/coach/script": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-script" },
-  "/api/coach/deck": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-deck" },
-  "/api/coach/live": { limit: 5, windowMs: 60_000, identifierType: "user", name: "coach-live" },
-  "/api/coach/full": { limit: 5, windowMs: 60_000, identifierType: "user", name: "coach-full" },
-  "/api/coach/drills": { limit: 20, windowMs: 60_000, identifierType: "user", name: "coach-drills" },
-  "/api/coach/founder": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-founder" },
-  "/api/coach/diagnostic": { limit: 3, windowMs: 60_000, identifierType: "user", name: "coach-diagnostic" },
-  "/api/kal/": { limit: 15, windowMs: 60_000, identifierType: "user", name: "kal" },
+  // AI coaching routes — increased limits for faster dashboard
+  "/api/coach/script": { limit: 20, windowMs: 60_000, identifierType: "user", name: "coach-script" },
+  "/api/coach/deck": { limit: 20, windowMs: 60_000, identifierType: "user", name: "coach-deck" },
+  "/api/coach/live": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-live" },
+  "/api/coach/full": { limit: 10, windowMs: 60_000, identifierType: "user", name: "coach-full" },
+  "/api/coach/drills": { limit: 30, windowMs: 60_000, identifierType: "user", name: "coach-drills" },
+  "/api/coach/founder": { limit: 20, windowMs: 60_000, identifierType: "user", name: "coach-founder" },
+  "/api/coach/diagnostic": { limit: 5, windowMs: 60_000, identifierType: "user", name: "coach-diagnostic" },
+  "/api/kal/": { limit: 30, windowMs: 60_000, identifierType: "user", name: "kal" },
 
-  // General API
-  "/api/": { limit: 60, windowMs: 60_000, identifierType: "ip", name: "api-general" },
+  // General API — increased for faster dashboard load
+  "/api/": { limit: 120, windowMs: 60_000, identifierType: "ip", name: "api-general" },
 
   // Auth
   "/api/auth/": { limit: 10, windowMs: 60_000, identifierType: "ip", name: "auth" },

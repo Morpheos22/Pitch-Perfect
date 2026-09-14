@@ -67,7 +67,14 @@ export default function SettingsPage() {
   const [pwForm, setPwForm] = useState({ current: "", newPassword: "", confirm: "" });
   const [pwSaving, setPwSaving] = useState(false);
   const [pwMessage, setPwMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [showPw, setShowPw] = useState({ current: false, newPassword: false, confirm: false });
+  const [showPw, setShowPw] = useState({ current: false, newPassword: false, confirm: false, delete: false });
+
+  // Delete account state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteStep2, setDeleteStep2] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -87,6 +94,35 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
+
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      // Verify password by attempting to sign in
+      const res = await fetch("/api/user/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: deletePassword,
+          newPassword: deletePassword, // Same password — just verifying
+        }),
+      });
+
+      if (!res.ok) {
+        setDeleteError("Incorrect password. Please try again.");
+        setDeletingAccount(false);
+        return;
+      }
+
+      // Password verified — delete account
+      await clerkUser?.delete();
+      window.location.href = "/sign-in?reason=account_deleted";
+    } catch {
+      setDeleteError("Failed to delete account. Please contact Metron@Athenagentic.app.");
+      setDeletingAccount(false);
+    }
+  };
 
   const handleEdit = () => {
     setFirstName(clerkUser?.firstName || "");
@@ -646,7 +682,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Danger Zone */}
+      {/* Danger Zone — Delete Account */}
       <Card className="border-destructive/30">
         <CardHeader>
           <CardTitle className="text-lg text-destructive flex items-center gap-2">
@@ -655,17 +691,92 @@ export default function SettingsPage() {
           </CardTitle>
           <CardDescription>Irreversible and destructive actions</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Sign Out — moved here from danger zone, not destructive */}
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">Sign Out</p>
               <p className="text-sm text-muted-foreground">Sign out of your account on this device</p>
             </div>
-            <Button variant="destructive" className="gap-2" onClick={() => signOut()}>
+            <Button variant="outline" className="gap-2" onClick={() => signOut()}>
               <LogOut className="w-4 h-4" />
               Sign Out
             </Button>
           </div>
+          <Separator />
+          {/* Delete Account — requires password authentication */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-destructive">Delete Account</p>
+              <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
+            </div>
+            <Button
+              variant="destructive"
+              className="gap-2"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Delete Account
+            </Button>
+          </div>
+
+          {/* Delete Account Confirmation Flow */}
+          {showDeleteConfirm && (
+            <div className="mt-4 p-4 border border-destructive/30 rounded-lg bg-destructive/5 space-y-4">
+              {!deleteStep2 ? (
+                <>
+                  <p className="text-sm font-medium text-destructive">
+                    ⚠️ Are you sure you want to delete your account?
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    This will permanently delete your profile, all coaching sessions, pitch decks, scripts, and videos.
+                    This action CANNOT be undone.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="destructive" onClick={() => setDeleteStep2(true)}>
+                      Yes, continue
+                    </Button>
+                    <Button variant="outline" onClick={() => { setShowDeleteConfirm(false); setDeleteStep2(false); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">Enter your password to confirm deletion:</p>
+                  <Input
+                    type={showPw.delete ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowPw({ ...showPw, delete: !showPw.delete })}
+                  >
+                    {showPw.delete ? "Hide" : "Show"} password
+                  </button>
+                  {deleteError && <p className="text-xs text-destructive">{deleteError}</p>}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      disabled={deletingAccount || !deletePassword}
+                      onClick={handleDeleteAccount}
+                    >
+                      {deletingAccount ? "Deleting..." : "Permanently Delete My Account"}
+                    </Button>
+                    <Button variant="outline" onClick={() => { setShowDeleteConfirm(false); setDeleteStep2(false); setDeletePassword(""); setDeleteError(null); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Final confirmation: This is your last chance to cancel.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

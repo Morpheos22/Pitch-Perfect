@@ -215,24 +215,18 @@ export default function DashboardLayout({
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
+              <DropdownMenuContent className="w-64" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">
                       {user?.firstName} {user?.lastName}
                     </p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {user?.primaryEmailAddress?.emailAddress}
+                    <p className="text-xs leading-none text-muted-foreground font-mono">
+                      ID: {user?.id?.slice(0, 12)}...
                     </p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/dashboard" className="flex items-center">
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    Dashboard
-                  </Link>
-                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/dashboard/settings" className="flex items-center">
                     <User className="mr-2 h-4 w-4" />
@@ -251,9 +245,14 @@ export default function DashboardLayout({
                     Settings
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/history" className="flex items-center">
+                    <History className="mr-2 h-4 w-4" />
+                    History
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
-                  className="text-destructive focus:text-destructive"
                   onClick={() => signOut()}
                 >
                   <LogOut className="mr-2 h-4 w-4" />

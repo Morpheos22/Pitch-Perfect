@@ -31,7 +31,7 @@ const COUNTRY_CURRENCY: Record<string, { code: string; symbol: string; name: str
   AU: { code: "AUD", symbol: "A$", name: "AUD" },
 };
 
-const DEFAULT_CURRENCY = { code: "USD", symbol: "$", name: "USD" };
+const DEFAULT_CURRENCY = { code: "NGN", symbol: "₦", name: "Naira" };
 
 export async function GET(request: NextRequest) {
   const country = request.headers.get("x-vercel-ip-country") || "NG";

@@ -89,7 +89,7 @@ export async function callAI(
   options: { maxTokens?: number; temperature?: number; model?: string } = {}
 ): Promise<string> {
   const model = options.model || AI_MODELS.TEXT_PRIMARY;
-  const maxTokens = options.maxTokens || 4096;
+  const maxTokens = options.maxTokens || 8192; // Max reasoning tokens
   const temperature = options.temperature ?? 0.7;
 
   if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) {
@@ -166,7 +166,7 @@ export async function callAIVision(
   options: { maxTokens?: number } = {}
 ): Promise<string> {
   const model = AI_MODELS.VISION;
-  const maxTokens = options.maxTokens || 4096;
+  const maxTokens = options.maxTokens || 8192; // Max reasoning tokens
 
   if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) {
     throw new Error("Cloudflare AI not configured — set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_TOKEN");

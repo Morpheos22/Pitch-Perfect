@@ -156,14 +156,9 @@ export default function PricingPage() {
         }
       })
       .catch(() => {
-        // Fallback: detect from timezone
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz) {
-          const country = tz.split("/")[0];
-          setDetectedCountry(country);
-          const curr = COUNTRY_CURRENCY[country] || "NGN";
-          setCurrency(curr);
-        }
+        // Fallback: default to NGN (Naira) — platform is Nigeria-based
+        setCurrency("NGN");
+        setDetectedCountry("NG");
       });
   }, []);
 
