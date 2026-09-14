@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { askAthena, AthenaMessage } from "@/lib/athena-agent";
+import { askAthena, askAthenaWithTools, AthenaMessage } from "@/lib/athena-agent";
 import {
   checkAthenaQuota,
   reserveAnonSlot,
@@ -124,21 +124,26 @@ export async function POST(request: NextRequest) {
   if (isAnon) reserveAnonSlot();
 
   try {
-    const response = await askAthena(
-      message,
-      // Pass userId/plan context only for signed-in users — never trust
-      // client-supplied context for an anonymous request.
-      userId
-        ? {
+    // Use askAthenaWithTools (agent mode with MCP tools) for signed-in users.
+    // For anon users, fall back to askAthena (no tools — can't trust identity).
+    // If askAthenaWithTools fails, it internally falls back to askAthena.
+    const response = userId
+      ? await askAthenaWithTools(
+          message,
+          {
             userId,
             firstName: (context as { firstName?: string } | null)?.firstName,
             currentModule: (context as { currentModule?: string } | null)?.currentModule,
             currentPage: (context as { currentPage?: string } | null)?.currentPage,
             plan: (context as { plan?: string } | null)?.plan,
-          }
-        : undefined,
-      (history as AthenaMessage[]) ?? [],
-    );
+          },
+          (history as AthenaMessage[]) ?? [],
+        )
+      : await askAthena(
+          message,
+          undefined,
+          (history as AthenaMessage[]) ?? [],
+        );
 
     return NextResponse.json(
       {
