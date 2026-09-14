@@ -285,6 +285,29 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   });
 
 
+  // ── Email verification trigger ──────────────────────────────────────────
+  // When the user's email transitions from unverified → verified, send a
+  // confirmation email. This is separate from the welcome email (which
+  // fires on user.created) and the onboarding email (which fires when
+  // onboarding completes).
+  const emailJustVerified = emailVerified
+    && existingUser
+    && !existingUser.emailVerified;
+
+  if (emailJustVerified) {
+    import("@/lib/email")
+      .then(({ sendEmailVerifiedConfirmation }) => {
+        return sendEmailVerifiedConfirmation(email, data.first_name || undefined);
+      })
+      .then(() => {
+        console.log(`[Clerk Webhook] Email verification confirmation sent to ${email}`);
+      })
+      .catch((emailErr) => {
+        console.warn(`[Clerk Webhook] Email verification confirmation failed for ${email}:`, emailErr instanceof Error ? emailErr.message : emailErr);
+      });
+  }
+
+
   // ── CRM onboarding completion + welcome email ──
   // When onboarding data (country, primaryUseCase) appears in public_metadata,
   // update the CRM lead with the complete profile AND send the welcome email

@@ -23,14 +23,14 @@ export const PRODUCTS: Record<string, { name: string; description: string }> = {
 // SHARED PRODUCT → PLAN MAPPING
 // ============================================
 
-export function getPlanFromProduct(productId: string | null | undefined): 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' {
+export function getPlanFromProduct(productId: string | null | undefined): 'STARTER' | 'PROFESSIONAL' | 'FOUNDER' {
   if (!productId) return 'STARTER';
-  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE'> = {
+  const planMap: Record<string, 'STARTER' | 'PROFESSIONAL' | 'FOUNDER'> = {
     'pitch-deck': 'STARTER',
     'elevator-script': 'STARTER',
     'elevator-live': 'PROFESSIONAL',
     'pitch-deck-live': 'PROFESSIONAL',
-    'master': 'ENTERPRISE',
+    'master': 'FOUNDER',
     'founder': 'PROFESSIONAL',
     'founder-readiness': 'PROFESSIONAL',
   };

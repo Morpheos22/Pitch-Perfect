@@ -130,12 +130,14 @@ export async function requireModuleAccess(
     return { allowed: false, reason: 'User not found' };
   }
 
-  // ── Developer/Admin bypass: Always grant ENTERPRISE-level access ──
-  // Developer emails (configured via DEVELOPER_EMAILS env var) get full
-  // access to all modules regardless of subscription status. This ensures
-  // admins can test all functionalities in production.
+  // ── Developer/Admin bypass: Always grant FOUNDER-level access ──
+  // morphylee22@gmail.com and other PERMANENT_FOUNDER_EMAILS always get
+  // FOUNDER tier. This is enforced at 3 levels:
+  //   1. Application: PERMANENT_FOUNDER_EMAILS in dev-auth.ts
+  //   2. Application: /api/user/sync forces FOUNDER on every page load
+  //   3. Database: trigger blocks any SQL UPDATE to non-FOUNDER plan
   if (isAdminEmail(user.email)) {
-    // Auto-upgrade subscription to ENTERPRISE if it isn't already
+    // Auto-upgrade subscription to FOUNDER if it isn't already
     const sub = user.subscription;
     if (sub && (sub.plan !== 'FOUNDER' || sub.status !== 'ACTIVE')) {
       await prisma.subscription.updateMany({

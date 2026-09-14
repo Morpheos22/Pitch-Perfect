@@ -146,7 +146,7 @@ export const contactSchema = z.object({
 // ── Dev Tools ──
 
 export const devSetModeSchema = z.object({
-  mode: z.enum(['FREE', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE']),
+  mode: z.enum(['FREE', 'STARTER', 'PROFESSIONAL', 'FOUNDER', 'ENTERPRISE']),
 });
 
 export const devImpersonateSchema = z.object({

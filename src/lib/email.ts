@@ -187,3 +187,47 @@ export async function sendContactNotification(data: { name: string; email: strin
     text: `Name: ${data.name}\nEmail: ${data.email}\nMessage: ${data.message}`,
   });
 }
+
+// ── Email verification confirmation ──────────────────────────────────────
+// Sent when the user verifies their email address (transitions from
+// unverified → verified). Triggered by the Clerk user.updated webhook
+// when the verification status changes.
+
+export async function sendEmailVerifiedConfirmation(email: string, firstName?: string): Promise<void> {
+  const name = firstName || "there";
+  await sendEmail({
+    to: email,
+    subject: "Email verified — Your PitchCoach Ai account is ready",
+    html: `
+      <div style="font-family: 'Nunito Sans', sans-serif; max-width: 600px; margin: 0 auto; background: #0B0B12; color: #F8FAFC; padding: 40px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #A78BFA; font-size: 28px; margin: 0;">Pitch<span style="color: #7C3AED;">Coach</span> Ai</h1>
+        </div>
+        <h2 style="color: #F8FAFC;">Email confirmed, ${name}!</h2>
+        <p style="color: #9CA3AF; line-height: 1.6; font-size: 16px;">
+          Your email address has been verified. Your PitchCoach Ai account is now
+          fully active and ready to use.
+        </p>
+        <p style="color: #9CA3AF; line-height: 1.6; font-size: 16px;">
+          <strong style="color: #A78BFA;">Next steps:</strong>
+        </p>
+        <ul style="color: #9CA3AF; line-height: 1.8; font-size: 15px;">
+          <li>Complete your onboarding to personalize your coaching experience</li>
+          <li>Upload your first pitch deck for AI analysis</li>
+          <li>Try the Script Check module to refine your elevator pitch</li>
+        </ul>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="https://pitchcoachai.tech/dashboard" style="background: #7C3AED; color: #FFFFFF; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+            Go to Dashboard
+          </a>
+        </div>
+        <p style="color: #6B7280; font-size: 13px; margin-top: 40px; border-top: 1px solid #2D2D44; padding-top: 20px;">
+          PitchCoach Ai — Built by Athena Agentic<br/>
+          Abuja, Nigeria<br/>
+          <a href="mailto:Metron@Athenagentic.app" style="color: #A78BFA;">Metron@Athenagentic.app</a>
+        </p>
+      </div>
+    `,
+    text: `Hi ${name}, your email has been verified. Your PitchCoach Ai account is now fully active. Visit https://pitchcoachai.tech/dashboard to get started.\n\nPitchCoach Ai — Built by Athena Agentic\nAbuja, Nigeria\nMetron@Athenagentic.app`,
+  });
+}
