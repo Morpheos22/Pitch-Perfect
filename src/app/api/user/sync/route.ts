@@ -194,21 +194,6 @@ export async function GET() {
             e5FounderSessions: true,
           },
         },
-        // Payment history — newest first, capped at 20 rows.
-        transactions: {
-          orderBy: { createdAt: "desc" },
-          take: 20,
-          select: {
-            id: true,
-            type: true,
-            amount: true,
-            currency: true,
-            provider: true,
-            providerReference: true,
-            creditsAdded: true,
-            createdAt: true,
-          },
-        },
       },
     });
 
@@ -219,6 +204,33 @@ export async function GET() {
         { status: 404 }
       );
     }
+
+    // ── Fetch payment history separately ─────────────────────────────────
+    // The User model doesn't have a `transactions Transaction[]` relation
+    // declared in schema.prisma, so we can't include it inline in the
+    // user.findUnique select. Querying it separately is safer than adding
+    // a schema relation + migration (which would touch the DB).
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        type: true,
+        amount: true,
+        currency: true,
+        provider: true,
+        providerReference: true,
+        creditsAdded: true,
+        createdAt: true,
+      },
+    });
+
+    // Attach the transactions to the user object for the response.
+    const userWithTransactions = {
+      ...user,
+      transactions,
+    };
 
 
     // ── Developer/Admin override: Ensure ENTERPRISE plan is returned ──
@@ -238,7 +250,7 @@ export async function GET() {
       return NextResponse.json({
         success: true,
         user: {
-          ...user,
+          ...userWithTransactions,
           subscription: {
             ...(user.subscription ?? {}),
             plan: 'ENTERPRISE',
@@ -249,7 +261,7 @@ export async function GET() {
     }
 
 
-    return NextResponse.json({ success: true, user });
+    return NextResponse.json({ success: true, user: userWithTransactions });
   } catch (error) {
     console.error("Get user error:", error);
     return NextResponse.json(
