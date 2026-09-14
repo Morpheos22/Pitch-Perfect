@@ -30,6 +30,21 @@ model User {
   onboardingCompleted Boolean @default(false)
   emailVerified       Boolean @default(false)
 
+  // ── Device Tracking ────────────────────────────────────────────────────
+  // Captured on first authenticated request after signup (signupDeviceId)
+  // and refreshed on every subsequent /api/user/sync POST call (lastSignin*).
+  // Used for security forensics, account recovery, and the "different device
+  // = mail reauth" rule. deviceId is the SHA-256 hash of UA + Client Hints
+  // (see src/lib/security.ts:getDeviceFingerprint).
+  signupDeviceId      String?
+  signupIp            String?
+  signupUserAgent     String?
+  signupAt            DateTime?
+  lastSigninDeviceId  String?
+  lastSigninIp        String?
+  lastSigninUserAgent String?
+  lastSigninAt        DateTime?
+
   // Subscription & Billing
   subscription Subscription?
   usage        Usage?
@@ -69,17 +84,16 @@ model Subscription {
   status SubscriptionStatus @default(ACTIVE)
 
   // Paystack Integration (African Markets)
-  paystackCustomerId     String?    // Paystack customer code
-  paystackSubscriptionId String?    // Paystack subscription code
-  paystackPlanCode       String?    // Paystack plan code
+  paystackCustomerId     String? // Paystack customer code
+  paystackSubscriptionId String? // Paystack subscription code
+  paystackPlanCode       String? // Paystack plan code
 
   // Stripe Integration (International)
-  stripeCustomerId        String?    @unique // Stripe customer ID
-  stripeSubscriptionId    String?             // Stripe subscription ID
-  stripePlanId            String?             // Stripe price/plan ID
-  stripePaymentMethodId   String?             // Stripe payment method ID
-  stripeCurrentPeriodEnd  DateTime?           // Stripe billing cycle end
-
+  stripeCustomerId       String?   @unique // Stripe customer ID
+  stripeSubscriptionId   String? // Stripe subscription ID
+  stripePlanId           String? // Stripe price/plan ID
+  stripePaymentMethodId  String? // Stripe payment method ID
+  stripeCurrentPeriodEnd DateTime? // Stripe billing cycle end
 
   // Billing Cycle
   currentPeriodStart DateTime?
@@ -133,7 +147,7 @@ model Usage {
   e5FounderSessions     Int @default(0)
 
   // AI Token Usage (for cost tracking)
-  zaiTokensUsed    Int @default(0) // Z.ai Gateway token usage
+  zaiTokensUsed Int @default(0) // Z.ai Gateway token usage
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -191,12 +205,12 @@ model PitchDeck {
   notes String?
 
   // Iteration Tracking
-  version        Int     @default(1)
-  parentDeckId   String? // For tracking iterations
+  version      Int     @default(1)
+  parentDeckId String? // For tracking iterations
 
   // Relations
-  fullSessions     FullPitchSession[]
-  founderSessions  FounderSession[]
+  fullSessions    FullPitchSession[]
+  founderSessions FounderSession[]
 
   // Timestamps
   createdAt  DateTime  @default(now())
@@ -394,8 +408,8 @@ model FullPitchSession {
   notes String?
 
   // Iteration Tracking
-  version              Int     @default(1)
-  parentFullSessionId  String?
+  version             Int     @default(1)
+  parentFullSessionId String?
 
   // Timestamps
   createdAt  DateTime  @default(now())
@@ -502,8 +516,8 @@ model Transaction {
   provider PaymentProvider @default(PAYSTACK)
 
   // Provider References
-  providerReference  String?    // Provider transaction/subscription reference
-  providerAccessCode String?    // Provider access/verification code
+  providerReference  String? // Provider transaction/subscription reference
+  providerAccessCode String? // Provider access/verification code
 
   // Credits
   creditsAdded Int @default(0)
@@ -525,20 +539,20 @@ model Transaction {
 // ============================================
 
 model WebhookLog {
-  id      String @id @default(cuid())
-  userId  String?
+  id     String  @id @default(cuid())
+  userId String?
 
   // Session reference
   sessionId   String?
   sessionType String? // deck, script, live, full
 
   // Execution results
-  success                     Boolean   @default(false)
-  crmSynced                   Boolean   @default(false)
-  emailSent                   Boolean   @default(false)
-  entitlementUpdated          Boolean   @default(false)
-  externalWebhooksTriggered  Boolean   @default(false)
-  errors                      String[]
+  success                   Boolean  @default(false)
+  crmSynced                 Boolean  @default(false)
+  emailSent                 Boolean  @default(false)
+  entitlementUpdated        Boolean  @default(false)
+  externalWebhooksTriggered Boolean  @default(false)
+  errors                    String[]
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -656,31 +670,31 @@ enum ChatRole {
 // ============================================
 
 model KalChatSession {
-  id                String @id @default(cuid())
-  userId            String
-  scriptSessionId   String // Links to PitchScript or other module session
-  module            String // e1, e2, e3, e4, e5
+  id              String @id @default(cuid())
+  userId          String
+  scriptSessionId String // Links to PitchScript or other module session
+  module          String // e1, e2, e3, e4, e5
 
   // Session state
-  status            String @default("ACTIVE") // ACTIVE, COMPLETED, EXPIRED
+  status String @default("ACTIVE") // ACTIVE, COMPLETED, EXPIRED
 
   // Chat messages (stored as JSON array of KalChatMessage)
-  messages          Json
+  messages Json
 
   // Original input summary (first 500 chars of the pitch)
-  inputSummary      String?
+  inputSummary String?
 
   // Generated summary after all 10 questions answered
-  summary           String?
-  quickFeedback     String?
-  finalDecision     String? // SUCCESS, FAILURE, PENDING
+  summary       String?
+  quickFeedback String?
+  finalDecision String? // SUCCESS, FAILURE, PENDING
 
   // Timestamps
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  user              User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([scriptSessionId])
@@ -695,14 +709,14 @@ model KalChatSession {
 // and the persistent blocklist of IPs/devices that have been permanently banned.
 model SecurityIncident {
   id        String   @id @default(cuid())
-  email     String?  // Email used in attempt (if known)
-  ip        String   // IP address of attempt
-  deviceId  String   // SHA-256 fingerprint of request headers
-  userAgent String?  // Full User-Agent string (for forensic analysis)
-  reason    String   // BLOCKED_EMAIL | BLOCKED_IP | GEO_BLOCK | SCRAPER | DIRECT_ASSET_ACCESS
-  pathname  String?  // Path that triggered the incident
-  country   String?  // Geo country code (if known via x-vercel-ip-country)
-  metadata  Json?    // Additional context (e.g. which rule matched)
+  email     String? // Email used in attempt (if known)
+  ip        String // IP address of attempt
+  deviceId  String // SHA-256 fingerprint of request headers
+  userAgent String? // Full User-Agent string (for forensic analysis)
+  reason    String // BLOCKED_EMAIL | BLOCKED_IP | GEO_BLOCK | SCRAPER | DIRECT_ASSET_ACCESS
+  pathname  String? // Path that triggered the incident
+  country   String? // Geo country code (if known via x-vercel-ip-country)
+  metadata  Json? // Additional context (e.g. which rule matched)
   blocked   Boolean  @default(false) // Whether this incident resulted in a permanent block
   createdAt DateTime @default(now())
 
@@ -717,9 +731,9 @@ model SecurityIncident {
 model BlockedIp {
   id        String   @id @default(cuid())
   ip        String   @unique // IP address to block
-  deviceId  String?  // Optional: device fingerprint hash
-  email     String?  // Email that triggered the block (if applicable)
-  reason    String   // Why blocked (BLOCKED_EMAIL, SCRAPER, ATTACK, etc.)
+  deviceId  String? // Optional: device fingerprint hash
+  email     String? // Email that triggered the block (if applicable)
+  reason    String // Why blocked (BLOCKED_EMAIL, SCRAPER, ATTACK, etc.)
   attempts  Int      @default(1)
   firstSeen DateTime @default(now())
   lastSeen  DateTime @default(now())

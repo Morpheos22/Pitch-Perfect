@@ -3,10 +3,17 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { isAdminEmail } from "@/lib/dev-auth";
 import { syncUserToCRM } from "@/lib/zoho-crm";
+import { getClientIp, getDeviceFingerprint } from "@/lib/security";
 export const dynamic = 'force-dynamic';
 
 // Sync Clerk user with database
 // SECURITY: Uses auth() to get authenticated user - NEVER trust client input for userId
+//
+// DEVICE CAPTURE: This route is called on every page load (DashboardLayout's
+// usePlan hook) and on every sign-in. We capture the device fingerprint +
+// IP + UA here so the User row always reflects the user's current device.
+// The FIRST call after signup (when signupDeviceId is null) persists the
+// signup device; subsequent calls only update lastSignin*.
 export async function POST(request: NextRequest) {
   try {
     // SECURITY: Get authenticated user from session, not from request body
@@ -43,6 +50,24 @@ export async function POST(request: NextRequest) {
     const lastName = clerkUser.lastName;
     const avatarUrl = clerkUser.imageUrl;
 
+    // ── Capture device fingerprint + IP + UA from the request ────────────
+    // getDeviceFingerprint returns a SHA-256 hash of UA + Client Hints
+    // headers (sec-ch-ua, sec-ch-ua-platform, etc.). See src/lib/security.ts.
+    // Truncate UA to 512 chars so a maliciously long UA can't blow up the
+    // DB column.
+    const deviceId = await getDeviceFingerprint(request);
+    const ip = getClientIp(request);
+    const userAgent = (request.headers.get("user-agent") ?? "").slice(0, 512);
+    const now = new Date();
+
+    // Fetch the existing user to decide whether this is a signup capture
+    // (signupDeviceId is null) or a sign-in refresh (already set).
+    const existingUser = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, signupDeviceId: true },
+    });
+
+    const isSignupCapture = !existingUser?.signupDeviceId;
 
     // Upsert user using trusted clerkId from session
     const user = await prisma.user.upsert({
@@ -52,7 +77,25 @@ export async function POST(request: NextRequest) {
         firstName,
         lastName,
         avatarUrl,
-        lastActiveAt: new Date(),
+        lastActiveAt: now,
+        // Always refresh lastSignin* — this represents "last activity from
+        // this device" which is what we want for security forensics.
+        lastSigninDeviceId: deviceId,
+        lastSigninIp: ip,
+        lastSigninUserAgent: userAgent,
+        lastSigninAt: now,
+        // Only set signup* fields ONCE — on the first authenticated request
+        // after the Clerk user.created webhook fired. This is the closest
+        // we can get to "device at signup" without Clerk sending device
+        // info in the webhook payload itself.
+        ...(isSignupCapture
+          ? {
+              signupDeviceId: deviceId,
+              signupIp: ip,
+              signupUserAgent: userAgent,
+              signupAt: now,
+            }
+          : {}),
       },
       create: {
         clerkId,
@@ -60,7 +103,17 @@ export async function POST(request: NextRequest) {
         firstName,
         lastName,
         avatarUrl,
-        lastActiveAt: new Date(),
+        lastActiveAt: now,
+        // For a brand-new user (created via upsert create branch), this IS
+        // the signup capture — set both signup* and lastSignin*.
+        signupDeviceId: deviceId,
+        signupIp: ip,
+        signupUserAgent: userAgent,
+        signupAt: now,
+        lastSigninDeviceId: deviceId,
+        lastSigninIp: ip,
+        lastSigninUserAgent: userAgent,
+        lastSigninAt: now,
       },
     });
 
@@ -163,6 +216,16 @@ export async function GET() {
         lastName: true,
         avatarUrl: true,
         onboardingCompleted: true,
+        // Device tracking — surfaced so the dashboard can show "last sign-in"
+        // and so security can compare signup device vs current device.
+        signupDeviceId: true,
+        signupIp: true,
+        signupUserAgent: true,
+        signupAt: true,
+        lastSigninDeviceId: true,
+        lastSigninIp: true,
+        lastSigninUserAgent: true,
+        lastSigninAt: true,
         subscription: {
           select: {
             plan: true,

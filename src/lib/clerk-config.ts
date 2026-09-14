@@ -9,6 +9,57 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 // ============================================
+// 0. AUTHENTICATION METHODS (sign-in dashboard)
+// ============================================
+//
+// The sign-in and sign-up pages use Clerk's <SignIn /> and <SignUp />
+// components, which auto-render ALL authentication methods enabled in the
+// Clerk dashboard. To surface any of the options below on the sign-in page,
+// the operator MUST enable them in the dashboard — no code change required.
+//
+// DASHBOARD PATH: User & Authentication → Authentication
+//
+// RECOMMENDED ENABLEMENT (full range of sign-in options):
+//
+//   Email address:
+//     - Email + password:           ON
+//     - Email + verification code:  ON (OTP — user types a 6-digit code)
+//
+//   Phone number:
+//     - Phone number:               ON (SMS OTP)
+//     - Requires a Twilio account linked to Clerk for SMS delivery
+//
+//   Passkey (WebAuthn / device biometric):
+//     - Passkey:                    ON
+//     - This adds a "Sign in with Passkey" button to the sign-in page.
+//     - Users can enroll a passkey from their account page after sign-up
+//       (User & Authentication → Authentication → Passkey → "Allow users to
+//       enroll passkeys" must be ON).
+//     - Passkeys are stored on the user's device (Face ID, Touch ID,
+//       Windows Hello, YubiKey). They cannot be phished — the credential is
+//       scoped to pitchcoachai.tech.
+//
+//   Social connections (OAuth providers):
+//     - Google:                     ON (covers ~80% of social sign-ins)
+//     - GitHub:                     ON (already configured — see section 1)
+//     - LinkedIn:                   ON (already configured — see section 1)
+//     - Apple:                      RECOMMENDED (covers iOS users)
+//     - Microsoft:                  OPTIONAL
+//     - Each provider requires a Client ID + Client Secret from the
+//       provider's developer portal, plus the redirect URL:
+//         https://clerk.pitchcoachai.tech/v1/oauth_callback
+//
+//   SSO (SAML / OIDC for enterprise):
+//     - OFF unless you have a specific enterprise customer requiring it.
+//
+// WHY NO "SIGN IN WITH SUPABASE" BUTTON:
+//   Supabase is the project's database (Postgres), not its auth provider.
+//   Auth is handled by Clerk. The social OAuth buttons above ARE the
+//   "full range of sign-in options" — they render through Clerk, which
+//   links the OAuth account to the user's Clerk identity. There is no
+//   separate "Supabase sign-in" flow to wire up.
+//
+// ============================================
 // 1. SOCIAL SSO — LinkedIn & GitHub
 // ============================================
 //
