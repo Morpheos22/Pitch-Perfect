@@ -1,0 +1,42 @@
+# Supabase Project Configuration
+# ============================================
+# This file links the local repo to the Supabase project.
+# Used by the Supabase CLI and the Supabase GitHub Action for CI/CD.
+#
+# Project ref: iwbshmshegewmctfucaz
+# Region: eu-west-2 (London)
+# Database: PostgreSQL (via Supabase)
+# Auth: Clerk (Supabase Auth NOT used — Clerk is the auth provider)
+# Storage: Cloudflare R2 (Supabase Storage NOT used for files)
+# ============================================
+
+project_id = "pitchcoachai"
+
+[api]
+enabled = false
+# Supabase Data API (REST) is disabled — we use Prisma direct queries.
+# Enable only if you need auto-generated REST endpoints.
+
+[db]
+# Database configuration — migrations are managed by Prisma, not Supabase.
+# This section exists so `supabase db pull` and `supabase migration list`
+# work for inspection purposes.
+shadow_database_name = "pitchcoachai_shadow"
+owner = "postgres"
+
+[auth]
+enabled = false
+# Auth is handled by Clerk, NOT Supabase Auth.
+# Supabase Auth is intentionally disabled to avoid confusion.
+
+[storage]
+enabled = false
+# File storage is handled by Cloudflare R2, NOT Supabase Storage.
+# Supabase Storage is intentionally disabled.
+
+[edge_runtime]
+enabled = false
+# We use Vercel serverless functions, not Supabase Edge Functions.
+
+[analytics]
+enabled = false
