@@ -167,9 +167,6 @@ export default function PricingPage() {
       });
   }, []);
 
-  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setCurrency(e.target.value as keyof typeof CURRENCIES);
-  };
 
   // Disclaimer hover state
   const [showSAFlag, setShowSAFlag] = useState(false);
