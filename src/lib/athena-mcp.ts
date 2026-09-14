@@ -258,23 +258,23 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
 }
 
 /**
- * Convert our Tool[] into the format the Cloudflare Workers AI function-calling
- * API expects. Each tool becomes a function definition.
+ * Convert our Tool[] into Cloudflare Workers AI's function-calling format.
+ *
+ * Cloudflare uses a FLAT format (not OpenAI's nested format):
+ *   { name, description, parameters }
+ * NOT:
+ *   { type: "function", function: { name, description, parameters } }
+ *
+ * Source: https://developers.cloudflare.com/workers-ai/function-calling/
  */
 export function toolsToFunctionSchema(tools: Tool[]): Array<{
-  type: string;
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
 }> {
   return tools.map((t) => ({
-    type: "function",
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.inputSchema,
-    },
+    name: t.name,
+    description: t.description,
+    parameters: t.inputSchema,
   }));
 }

@@ -214,11 +214,8 @@ const MAX_TOOL_ITERATIONS = 5;
 const TOOL_CALL_TIMEOUT_MS = 30_000;
 
 interface CloudflareToolCall {
-  id: string;
-  function: {
-    name: string;
-    arguments: string;
-  };
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
 interface CloudflareAIResponse {
@@ -327,34 +324,29 @@ export async function askAthenaWithTools(
 
       // Process tool calls
       for (const tc of toolCalls) {
+        // Cloudflare format: { name, arguments } — arguments is already an object
+        const toolName = tc.name;
+        const args = tc.arguments || {};
+
         // Add the assistant's tool call to the conversation
         messages.push({
           role: "assistant",
           content: null,
-          tool_calls: [tc],
+          tool_calls: [{ name: toolName, arguments: args }],
         });
 
-        // Parse the arguments
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(tc.function.arguments);
-        } catch {
-          args = {};
-        }
-
         // Call the tool
-        console.log(`[Athena Agent] Calling tool: ${tc.function.name} with args: ${JSON.stringify(args).slice(0, 200)}`);
-        const result = await callTool(tc.function.name, args);
+        console.log(`[Athena Agent] Calling tool: ${toolName} with args: ${JSON.stringify(args).slice(0, 200)}`);
+        const result = await callTool(toolName, args);
 
         // Add the tool result to the conversation
         messages.push({
           role: "tool",
-          tool_call_id: tc.id,
-          name: tc.function.name,
+          name: toolName,
           content: result.content,
         });
 
-        console.log(`[Athena Agent] Tool ${tc.function.name} returned: ${result.content.slice(0, 200)}`);
+        console.log(`[Athena Agent] Tool ${toolName} returned: ${result.content.slice(0, 200)}`);
       }
 
       // Loop continues — the model will see the tool results and either call
