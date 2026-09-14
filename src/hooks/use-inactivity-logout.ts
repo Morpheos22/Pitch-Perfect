@@ -26,7 +26,7 @@ const logger = createLogger("InactivityLogout");
  * cleared when the browser session truly ends (all tabs closed).
  */
 
-const INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes — STANDING INSTRUCTION
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const STORAGE_KEY = "pitchcoach_last_active";
 const WARNING_BEFORE_MS = 60_000; // Show warning 1 minute before logout
 

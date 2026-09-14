@@ -143,9 +143,17 @@ async function callModel(
   }
 
   const result = data.result;
+
+  // Cloudflare format: { result: { response: "..." } }
   if (result?.response) return result.response;
+  // Cloudflare format: { result: { message: { content: "..." } } }
   if (result?.message?.content) return result.message.content;
-  return typeof result === "string" ? result : JSON.stringify(result);
+  // OpenAI-compatible format (GPT-OSS): { result: { choices: [{ message: { content: "..." } }] } }
+  if (result?.choices?.[0]?.message?.content) return result.choices[0].message.content;
+  // Raw string
+  if (typeof result === "string") return result;
+  // Fallback: stringify (shouldn't happen)
+  return JSON.stringify(result);
 }
 
 /**

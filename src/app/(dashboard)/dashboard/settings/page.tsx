@@ -29,6 +29,8 @@ import {
   Briefcase,
   Globe,
   ExternalLink,
+  Fingerprint,
+  Smartphone,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -239,8 +241,12 @@ export default function SettingsPage() {
       });
 
       if (res.ok) {
-        setPwMessage({ type: "success", text: "Password changed successfully." });
+        setPwMessage({ type: "success", text: "Password changed successfully. You will be signed out for security." });
         setPwForm({ current: "", newPassword: "", confirm: "" });
+        // Force reauthentication — sign out after 2 seconds so user can read the message
+        setTimeout(() => {
+          signOut({ redirectUrl: "/sign-in?reason=password_changed" });
+        }, 2000);
       } else {
         const data = await res.json().catch(() => ({}));
         setPwMessage({ type: "error", text: data.error || "Failed to change password. Verify your current password and try again." });
@@ -253,8 +259,9 @@ export default function SettingsPage() {
   };
 
   const email = clerkUser?.primaryEmailAddress?.emailAddress;
-  const plan = userData?.subscription?.plan || "FREE";
-  const planLabel = plan === "FREE" ? "Free" : plan === "STARTER" ? "Starter" : plan === "PROFESSIONAL" ? "Professional" : plan === "ENTERPRISE" ? "Enterprise" : plan;
+  const plan = userData?.subscription?.plan || "JJC";
+  const planLabel = plan === "JJC" ? "JJC" : plan === "INTERN" ? "Intern" : plan === "COFOUNDER" ? "Cofounder" : plan === "FOUNDER" ? "Founder" : plan === "FREE" ? "JJC" : plan === "STARTER" ? "Intern" : plan === "PROFESSIONAL" ? "Cofounder" : plan === "ENTERPRISE" ? "Founder" : plan;
+  const isHighestTier = plan === "FOUNDER" || plan === "ENTERPRISE";
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -359,7 +366,6 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium flex items-center gap-1.5">
                       <AtSign className="w-3.5 h-3.5 text-muted-foreground" />
                       Username
-                      <span className="text-muted-foreground font-normal">(optional)</span>
                     </label>
                     <Input
                       value={username}
@@ -375,7 +381,6 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium flex items-center gap-1.5">
                         <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
                         Organization / Company
-                        <span className="text-muted-foreground font-normal">(optional)</span>
                       </label>
                       <Input
                         value={organization}
@@ -387,7 +392,6 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium flex items-center gap-1.5">
                         <Briefcase className="w-3.5 h-3.5 text-muted-foreground" />
                         Role / Occupation
-                        <span className="text-muted-foreground font-normal">(optional)</span>
                       </label>
                       <Input
                         value={role}
@@ -402,7 +406,6 @@ export default function SettingsPage() {
                     <label className="text-sm font-medium flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5 text-muted-foreground" />
                       Social Media / Portfolio URL
-                      <span className="text-muted-foreground font-normal">(optional)</span>
                     </label>
                     <Input
                       value={socialUrl}
@@ -430,9 +433,8 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <>
-                  {/* Read-only profile details */}
+                  {/* Read-only profile details — always show all fields */}
                   <div className="space-y-3">
-                    {/* Username */}
                     {(() => {
                       const meta = (clerkUser?.unsafeMetadata || {}) as Record<string, string>;
                       const displayUsername = (meta.username as string) || "";
@@ -441,45 +443,49 @@ export default function SettingsPage() {
                       const displaySocial = (meta.socialUrl as string) || "";
                       return (
                         <>
-                          {displayUsername && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <AtSign className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="text-muted-foreground">Username:</span>
-                              <span>@{displayUsername}</span>
-                            </div>
-                          )}
-                          {displayOrg && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="text-muted-foreground">Organization:</span>
-                              <span>{displayOrg}</span>
-                            </div>
-                          )}
-                          {displayRole && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="text-muted-foreground">Role:</span>
-                              <span>{displayRole}</span>
-                            </div>
-                          )}
-                          {displaySocial && (
-                            <div className="flex items-center gap-2 text-sm">
-                              <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="text-muted-foreground">Social:</span>
-                              <a
-                                href={displaySocial}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline flex items-center gap-1"
-                              >
+                          {/* User ID — always visible */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <Fingerprint className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">User ID:</span>
+                            <span className="font-mono text-xs">{clerkUser?.id || "—"}</span>
+                          </div>
+                          {/* Device ID — always visible */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <Smartphone className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Device ID:</span>
+                            <span className="font-mono text-xs">{typeof window !== 'undefined' ? localStorage.getItem('deviceId') || '—' : '—'}</span>
+                          </div>
+                          {/* Username — always show, even if empty */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <AtSign className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Username:</span>
+                            <span>{displayUsername ? `@${displayUsername}` : "—"}</span>
+                          </div>
+                          {/* Organization — always show */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Organization:</span>
+                            <span>{displayOrg || "—"}</span>
+                          </div>
+                          {/* Role — always show */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Role:</span>
+                            <span>{displayRole || "—"}</span>
+                          </div>
+                          {/* Social — always show */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">Social:</span>
+                            {displaySocial ? (
+                              <a href={displaySocial} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
                                 {displaySocial}
                                 <ExternalLink className="w-3 h-3" />
                               </a>
-                            </div>
-                          )}
-                          {!displayUsername && !displayOrg && !displayRole && !displaySocial && (
-                            <p className="text-sm text-muted-foreground italic">No additional profile info added yet.</p>
-                          )}
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </div>
                         </>
                       );
                     })()}
@@ -629,7 +635,7 @@ export default function SettingsPage() {
               <p className="font-medium">
                 Current Plan: <Badge variant="secondary" className="ml-1 bg-accent/10 text-accent">{planLabel}</Badge>
               </p>
-              <p className="text-sm text-muted-foreground">View usage, upgrade, or manage your subscription</p>
+              <p className="text-sm text-muted-foreground">{isHighestTier ? "You are on the highest tier." : "View usage, upgrade, or manage your subscription"}</p>
             </div>
             <Link href="/dashboard/settings/billing">
               <Button variant="outline" className="gap-2">
