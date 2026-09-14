@@ -1,0 +1,207 @@
+# PitchCoach Ai — CI Pipeline
+#
+# Runs on every push to main and every pull request. Gates the deploy:
+# if any step fails, Vercel deploy is blocked (via GitHub required checks).
+#
+# Gates:
+#   1. npm audit — fails on high/critical vulnerabilities
+#   2. Secret scanning — fails if API keys, tokens, or private keys are committed
+#   3. TypeScript — fails on type errors (tsc --noEmit)
+#   4. ESLint — fails on lint errors
+#   5. Tests — fails if any vitest test fails
+#   6. Prisma migration validation — fails if migrations drift from schema
+#
+# Notes:
+#   - Prisma migrate validate requires DATABASE_URL. We use a dummy
+#     postgres connection (postgresql://dummy:dummy@localhost:5432/dummy)
+#     — migrate validate only checks schema/migration consistency, it
+#     does NOT actually connect to the DB. If this changes in future
+#     Prisma versions, swap to `prisma validate` (no DB needed).
+#   - Secret scanning uses gitleaks — a fast, open-source SAST tool.
+#   - npm audit runs with --audit-level=high — moderate/low are noise.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch when a new commit is pushed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # 1. Security: npm audit + secret scanning
+  # ─────────────────────────────────────────────────────────────────────
+  security:
+    name: Security (audit + secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (high + critical)
+        run: npm audit --audit-level=high
+        continue-on-error: false
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: add a Gitleaks license for org-level scans
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 2. Type check + lint
+  # ─────────────────────────────────────────────────────────────────────
+  typecheck-lint:
+    name: TypeScript + ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client (needed for tsc)
+        run: npx prisma generate
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npx eslint . --max-warnings=0
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 3. Tests
+  # ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run tests
+        run: npx vitest run
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 4. Prisma migration validation
+  # ─────────────────────────────────────────────────────────────────────
+  prisma-validate:
+    name: Prisma migration validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Check migration consistency
+        env:
+          # migrate validate checks that the migration files in
+          # prisma/migrations/ are consistent with schema.prisma.
+          # It does NOT connect to a real DB — it only reads files.
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+        run: npx prisma migrate validate
+
+      - name: Format check
+        run: npx prisma format --check
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 5. Build (ensures next build succeeds — catches import errors,
+  #    missing env vars at build time, etc.)
+  # ─────────────────────────────────────────────────────────────────────
+  build:
+    name: Next.js build
+    runs-on: ubuntu-latest
+    needs: [typecheck-lint, test, prisma-validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build
+        env:
+          # Provide dummy values for build-time env vars that Next.js
+          # inlines. These are NOT used at runtime — Vercel provides
+          # the real values.
+          NEXT_PUBLIC_APP_URL: https://pitchcoachai.tech
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
+          NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+          DIRECT_URL: postgresql://dummy:dummy@localhost:5432/dummy
+        run: npx next build
+
+  # ─────────────────────────────────────────────────────────────────────
+  # 6. Summary gate — all jobs must pass
+  # ─────────────────────────────────────────────────────────────────────
+  # This job is a no-op that depends on all other jobs. Configure it as
+  # a required status check in GitHub branch protection so no PR can
+  # merge unless all gates pass.
+  ci-pass:
+    name: CI Pass
+    runs-on: ubuntu-latest
+    needs: [security, typecheck-lint, test, prisma-validate, build]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "Security: ${{ needs.security.result }}"
+          echo "TypeCheck+Lint: ${{ needs.typecheck-lint.result }}"
+          echo "Tests: ${{ needs.test.result }}"
+          echo "Prisma: ${{ needs.prisma-validate.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          if [[ "${{ needs.security.result }}" != "success" || \
+                "${{ needs.typecheck-lint.result }}" != "success" || \
+                "${{ needs.test.result }}" != "success" || \
+                "${{ needs.prisma-validate.result }}" != "success" || \
+                "${{ needs.build.result }}" != "success" ]]; then
+            echo "❌ One or more CI gates failed"
+            exit 1
+          fi
+          echo "✅ All CI gates passed"
