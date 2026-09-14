@@ -167,6 +167,22 @@ export async function GET() {
           select: {
             plan: true,
             status: true,
+            // Full billing details — used by /dashboard/settings/billing to
+            // render payment history + current period.
+            paystackCustomerId: true,
+            paystackSubscriptionId: true,
+            paystackPlanCode: true,
+            stripeCustomerId: true,
+            stripeSubscriptionId: true,
+            stripePaymentMethodId: true,
+            stripeCurrentPeriodEnd: true,
+            currentPeriodStart: true,
+            currentPeriodEnd: true,
+            cancelAtPeriodEnd: true,
+            creditsRemaining: true,
+            creditsUsed: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
         usage: {
@@ -176,6 +192,21 @@ export async function GET() {
             e3LivePitchSessions: true,
             e4FullPitchSessions: true,
             e5FounderSessions: true,
+          },
+        },
+        // Payment history — newest first, capped at 20 rows.
+        transactions: {
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            currency: true,
+            provider: true,
+            providerReference: true,
+            creditsAdded: true,
+            createdAt: true,
           },
         },
       },
@@ -201,12 +232,15 @@ export async function GET() {
           data: { plan: 'ENTERPRISE', status: 'ACTIVE' },
         });
       }
-      // Return ENTERPRISE regardless of DB state (avoids stale cache)
+      // Return ENTERPRISE regardless of DB state (avoids stale cache).
+      // Preserve all other subscription + transaction fields so the billing
+      // page can still render payment history for admin users.
       return NextResponse.json({
         success: true,
         user: {
           ...user,
           subscription: {
+            ...(user.subscription ?? {}),
             plan: 'ENTERPRISE',
             status: 'ACTIVE',
           },

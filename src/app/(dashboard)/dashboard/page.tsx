@@ -20,6 +20,7 @@ import {
   Zap,
   AlertCircle,
   Rocket,
+  CreditCard,
 } from "lucide-react";
 import { PLAN_LIMITS, formatPlanName } from "@/lib/plan-config";
 
@@ -209,6 +210,10 @@ export default function DashboardPage() {
 
   const firstName = clerkUser?.firstName || userData?.firstName || "there";
 
+  // Founder / ENTERPRISE users are top-tier — they never see Upgrade CTAs.
+  // (ENTERPRISE is the legacy alias for Founder.)
+  const isTopTier = plan === "FOUNDER" || plan === "ENTERPRISE";
+
   // ── Module cards config ──
   const modules = [
     {
@@ -290,12 +295,24 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/pricing">
-            <Button variant="outline" className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Upgrade Plan
-            </Button>
-          </Link>
+          {/* "Upgrade Plan" is hidden for Founder-tier users — there's nothing
+              above Founder. They see Billing instead. */}
+          {!isTopTier && (
+            <Link href="/pricing">
+              <Button variant="outline" className="gap-2">
+                <Sparkles className="w-4 h-4" />
+                Upgrade Plan
+              </Button>
+            </Link>
+          )}
+          {isTopTier && (
+            <Link href="/dashboard/settings/billing">
+              <Button variant="outline" className="gap-2">
+                <CreditCard className="w-4 h-4" />
+                Billing
+              </Button>
+            </Link>
+          )}
           <Link href="/pitch-deck-analyser/new">
             <Button className="gap-2 bg-primary hover:bg-primary/90">
               <Zap className="w-4 h-4" />
@@ -394,9 +411,11 @@ export default function DashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Coaching Modules</h2>
-          <Link href="/pricing" className="text-sm text-primary hover:underline">
-            View all plans
-          </Link>
+          {!isTopTier && (
+            <Link href="/pricing" className="text-sm text-primary hover:underline">
+              View all plans
+            </Link>
+          )}
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {modules.map((module) => {

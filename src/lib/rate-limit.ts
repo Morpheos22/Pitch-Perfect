@@ -122,6 +122,12 @@ const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   "/api/auth/": { limit: 10, windowMs: 60_000, identifierType: "ip", name: "auth" },
   "/api/user/change-password": { limit: 5, windowMs: 60_000, identifierType: "user", name: "change-password" },
   "/api/contact": { limit: 5, windowMs: 60_000, identifierType: "ip", name: "contact" },
+
+  // NOTE: /api/athena/chat is intentionally NOT listed here.
+  // It uses its own tiered quota system (see src/lib/athena-quota.ts) that
+  // differentiates anonymous (5 msg / 6h per IP+device) from signed-in
+  // (40 msg / 6h per user) users. Adding it to this middleware rate-limit
+  // would double-count requests and break the tiered cap.
 };
 
 function getConfigForPath(pathname: string): RateLimitConfig {

@@ -16,6 +16,10 @@ import {
   Video,
   TrendingUp,
   Rocket,
+  Banknote,
+  Calendar,
+  CheckCircle2,
+  Receipt,
 } from "lucide-react";
 import Link from "next/link";
 import { PLAN_LIMITS, formatPlanName } from "@/lib/plan-config";
@@ -32,19 +36,117 @@ interface UsageData {
 interface SubscriptionData {
   plan: string;
   status: string;
-  creditsRemaining: number;
-  creditsUsed: number;
-  currentPeriodStart: string | null;
-  currentPeriodEnd: string | null;
+  paystackCustomerId?: string | null;
+  paystackSubscriptionId?: string | null;
+  paystackPlanCode?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePaymentMethodId?: string | null;
+  stripeCurrentPeriodEnd?: string | null;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  creditsRemaining?: number;
+  creditsUsed?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface Transaction {
+  id: string;
+  type: string;       // SUBSCRIPTION | ONE_TIME | CREDIT_PURCHASE | REFUND
+  amount: number;     // smallest currency unit (kobo, cents)
+  currency: string;   // NGN, USD, etc.
+  provider: string;   // PAYSTACK | STRIPE
+  providerReference?: string | null;
+  creditsAdded: number;
+  createdAt: string;
 }
 
 interface UserData {
   subscription: SubscriptionData | null;
   usage: UsageData | null;
+  transactions?: Transaction[];
 }
 
-// PLAN_LIMITS and formatPlanName imported from @/lib/plan-config (single source of truth)
-// Includes E5 (Founder Coaching) limits
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Format amount from smallest currency unit to human-readable.
+// Paystack charges in kobo (NGN × 100). Stripe charges in cents (USD × 100).
+function formatAmount(amount: number, currency: string): string {
+  const major = amount / 100;
+  try {
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+      maximumFractionDigits: 0,
+    }).format(major);
+  } catch {
+    // Fallback if Intl currency database doesn't recognise the code
+    return `${major.toFixed(0)} ${currency.toUpperCase()}`;
+  }
+}
+
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  try {
+    return new Date(dateStr).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatDateTime(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  try {
+    return new Date(dateStr).toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+// Translate provider + reference into a human-readable payment-method label.
+// - Stripe = bank card (debit/credit) authenticated via 3DS
+// - Paystack = could be card OR bank transfer — we surface the raw provider
+//   and let the user infer from their bank statement. We can't tell from the
+//   Transaction row alone which Paystack channel was used; that would require
+//   a Paystack API call per transaction (deferred — see operator runbook).
+function describePaymentMethod(tx: Transaction): { label: string; icon: typeof Banknote } {
+  if (tx.provider === "STRIPE") {
+    return { label: "Bank card (Stripe)", icon: CreditCard };
+  }
+  if (tx.provider === "PAYSTACK") {
+    return { label: "Card or transfer (Paystack)", icon: Banknote };
+  }
+  return { label: tx.provider, icon: Banknote };
+}
+
+function describeTransactionType(type: string): string {
+  switch (type) {
+    case "SUBSCRIPTION":
+      return "Subscription payment";
+    case "ONE_TIME":
+      return "One-time purchase";
+    case "CREDIT_PURCHASE":
+      return "Credit purchase";
+    case "REFUND":
+      return "Refund";
+    default:
+      return type;
+  }
+}
+
+// ── Component ────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -59,6 +161,7 @@ export default function BillingPage() {
         setUserData({
           subscription: json.user.subscription,
           usage: json.user.usage,
+          transactions: json.user.transactions ?? [],
         });
       }
     } catch {
@@ -78,7 +181,12 @@ export default function BillingPage() {
   const usage = userData?.usage;
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
 
-  const totalCredits = (userData?.subscription?.creditsUsed ?? 0) + (userData?.subscription?.creditsRemaining ?? 0);
+  // Founder / ENTERPRISE users are top-tier — no Upgrade CTAs anywhere.
+  const isTopTier = plan === "FOUNDER" || plan === "ENTERPRISE";
+
+  const totalCredits =
+    (userData?.subscription?.creditsUsed ?? 0) +
+    (userData?.subscription?.creditsRemaining ?? 0);
   const creditsUsed = userData?.subscription?.creditsUsed ?? 0;
   const creditsRemaining = userData?.subscription?.creditsRemaining ?? 0;
 
@@ -90,9 +198,21 @@ export default function BillingPage() {
     { key: "e5", label: "E5 — Founder Coaching", icon: Rocket, used: usage?.e5FounderSessions ?? 0, limit: limits.e5 },
   ];
 
-  const periodEnd = userData?.subscription?.currentPeriodEnd
-    ? new Date(userData.subscription.currentPeriodEnd).toLocaleDateString()
+  const periodStart = userData?.subscription?.currentPeriodStart;
+  const periodEnd = userData?.subscription?.currentPeriodEnd;
+  const subscriptionCreated = userData?.subscription?.createdAt;
+
+  // Detect the active payment provider from whichever fields are populated.
+  const activeProvider =
+    userData?.subscription?.stripeSubscriptionId ? "STRIPE"
+    : userData?.subscription?.paystackSubscriptionId ? "PAYSTACK"
     : null;
+  const activeProviderLabel =
+    activeProvider === "STRIPE" ? "Stripe (bank card)"
+    : activeProvider === "PAYSTACK" ? "Paystack (card or transfer)"
+    : "No active subscription";
+
+  const transactions = userData?.transactions ?? [];
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -102,12 +222,22 @@ export default function BillingPage() {
           <h1 className="text-2xl font-bold">Billing</h1>
           <p className="text-muted-foreground">Manage your subscription and usage</p>
         </div>
-        <Link href="/pricing">
-          <Button className="gap-2">
-            <Zap className="w-4 h-4" />
-            Upgrade Plan
-          </Button>
-        </Link>
+        {/* "Upgrade Plan" is hidden for Founder-tier users — there's nothing
+            above Founder. They see their plan badge instead. */}
+        {!isTopTier && (
+          <Link href="/pricing">
+            <Button className="gap-2">
+              <Zap className="w-4 h-4" />
+              Upgrade Plan
+            </Button>
+          </Link>
+        )}
+        {isTopTier && (
+          <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 px-3 py-1.5">
+            <Crown className="w-3 h-3 mr-1" />
+            {planLabel} · Top tier
+          </Badge>
+        )}
       </div>
 
       {/* Current Plan */}
@@ -134,17 +264,141 @@ export default function BillingPage() {
                   {planStatus}
                 </Badge>
               </div>
-              {periodEnd && (
-                <p className="text-sm text-muted-foreground">
-                  Current period ends: {periodEnd}
-                </p>
-              )}
+
+              {/* Subscription timeline */}
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Subscribed since
+                  </span>
+                  <span className="font-medium">{formatDate(subscriptionCreated)}</span>
+                </div>
+                {periodStart && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Current period start</span>
+                    <span className="font-medium">{formatDate(periodStart)}</span>
+                  </div>
+                )}
+                {periodEnd && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Current period end</span>
+                    <span className="font-medium">{formatDate(periodEnd)}</span>
+                  </div>
+                )}
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Payment method
+                  </span>
+                  <span className="font-medium">{activeProviderLabel}</span>
+                </div>
+                {userData?.subscription?.cancelAtPeriodEnd && (
+                  <div className="mt-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                    Subscription is set to cancel at the end of the current period.
+                  </div>
+                )}
+              </div>
+
               {plan === "FREE" && (
                 <p className="text-sm text-muted-foreground">
                   You are on the free plan. Upgrade to unlock more sessions and features.
                 </p>
               )}
+              {isTopTier && (
+                <p className="text-sm text-muted-foreground">
+                  You&apos;re on the highest tier — {planLabel}. All modules are unlocked.
+                </p>
+              )}
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Payment History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Receipt className="w-5 h-5" />
+            Payment History
+          </CardTitle>
+          <CardDescription>
+            Your past purchases and subscription payments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="text-center py-8">
+              <Receipt className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+              <p className="text-sm text-muted-foreground">
+                No payments yet. Your transactions will appear here once you make a purchase.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {transactions.map((tx) => {
+                const method = describePaymentMethod(tx);
+                const isRefund = tx.type === "REFUND";
+                return (
+                  <div
+                    key={tx.id}
+                    className="rounded-lg border p-3 space-y-2 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                          isRefund
+                            ? "bg-amber-500/10 text-amber-600"
+                            : "bg-emerald-500/10 text-emerald-600"
+                        }`}>
+                          {isRefund ? <Banknote className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">
+                            {describeTransactionType(tx.type)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDateTime(tx.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-semibold text-sm ${
+                          isRefund ? "text-amber-600" : "text-foreground"
+                        }`}>
+                          {isRefund ? "−" : ""}{formatAmount(tx.amount, tx.currency)}
+                        </p>
+                        {tx.creditsAdded > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            +{tx.creditsAdded} credits
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1 border-t">
+                      <method.icon className="w-3.5 h-3.5" />
+                      <span>{method.label}</span>
+                      {tx.providerReference && (
+                        <>
+                          <span>·</span>
+                          <span className="font-mono truncate">
+                            Ref: {tx.providerReference.slice(0, 16)}
+                            {tx.providerReference.length > 16 ? "…" : ""}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -226,8 +480,8 @@ export default function BillingPage() {
         </Card>
       )}
 
-      {/* Upgrade CTA */}
-      {plan !== "ENTERPRISE" && (
+      {/* Upgrade CTA — hidden for Founder / ENTERPRISE */}
+      {!isTopTier && plan !== "ENTERPRISE" && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -247,5 +501,22 @@ export default function BillingPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ── Local Crown icon (so we don't have to add another lucide import) ──────
+// Re-using the Crown glyph from lucide-react via a tiny inline wrapper
+// keeps the bundle small and avoids a separate dependency.
+function Crown({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm0 2h14v2H5v-2z" />
+    </svg>
   );
 }

@@ -27,7 +27,7 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-type PlanType = "FREE" | "STARTER" | "PROFESSIONAL" | "ENTERPRISE";
+type PlanType = "FREE" | "STARTER" | "PROFESSIONAL" | "ENTERPRISE" | "FOUNDER" | "JJC" | "INTERN" | "COFOUNDER";
 
 const subModules = [
   {
@@ -107,7 +107,7 @@ export default function FounderPage() {
   const completedCount = completedModules.size;
   const totalModules = subModules.length;
 
-  const hasAccess = userPlan === "ENTERPRISE";
+  const hasAccess = userPlan === "ENTERPRISE" || userPlan === "FOUNDER";
 
   useEffect(() => {
     async function fetchPlan() {
@@ -166,7 +166,7 @@ export default function FounderPage() {
                   : "bg-amber-500/10 text-amber-600"
               }
             >
-              {planLoading ? "…" : hasAccess ? "Access Granted" : "Enterprise"}
+              {planLoading ? "…" : hasAccess ? "Access Granted" : "Founder"}
             </Badge>
           </div>
           <p className="text-muted-foreground">
@@ -185,10 +185,10 @@ export default function FounderPage() {
                   <Lock className="w-6 h-6 text-amber-500" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg">Founder Coaching requires Enterprise</h3>
+                  <h3 className="font-bold text-lg">Founder Coaching requires Founder tier</h3>
                   <p className="text-sm text-muted-foreground max-w-lg">
                     The E5 Founder Coaching module is available on the{" "}
-                    <span className="font-semibold text-foreground">Enterprise plan ($199/mo)</span>.
+                    <span className="font-semibold text-foreground">Founder plan (₦30,000)</span>.
                     It includes all 6 sub-modules: Readiness, Pathway, Research, Cohort, Network, and Narration.
                     Upgrade to unlock your journey into the PitchCoach Ai Network.
                   </p>
@@ -196,7 +196,7 @@ export default function FounderPage() {
               </div>
               <Link href="/pricing" className="shrink-0">
                 <Button className="bg-amber-500 hover:bg-amber-600 text-white" size="lg">
-                  Upgrade to Enterprise
+                  Upgrade to Founder
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
@@ -216,10 +216,10 @@ export default function FounderPage() {
               <div>
                 <h3 className="font-bold text-lg flex items-center gap-2">
                   Access Granted
-                  {userPlan === "ENTERPRISE" && (
+                  {(userPlan === "ENTERPRISE" || userPlan === "FOUNDER") && (
                     <Badge className="bg-amber-500 text-white text-xs">
                       <Crown className="w-3 h-3 mr-1" />
-                      Enterprise
+                      Founder
                     </Badge>
                   )}
                 </h3>
@@ -351,7 +351,7 @@ export default function FounderPage() {
         </div>
         {!hasAccess && (
           <p className="text-xs text-muted-foreground mt-3 text-center">
-            Module links redirect to the pricing page. Upgrade to Enterprise for full access.
+            Module links redirect to the pricing page. Upgrade to Founder for full access.
           </p>
         )}
       </div>

@@ -487,6 +487,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
+  // Athena chat + quota endpoints are public so anonymous visitors can
+  // interact with the widget up to the strict per-IP cap enforced inside
+  // the route (src/lib/athena-quota.ts). Signed-in users get a higher cap.
+  "/api/athena/chat",
+  "/api/athena/quota",
   // NOTE: /api/user/onboarding and /api/user/sync removed from public routes.
   // These routes have their own auth() checks internally, but the middleware
   // should still enforce auth.protect() to ensure consistent security posture
@@ -718,6 +723,11 @@ export default clerkMiddleware(async (auth, request) => {
     '/api/coach/founder',
     '/api/coach/diagnostic',
     '/api/kal/',
+    // Athena runs its own tiered quota (anon vs auth) in src/lib/athena-quota.ts.
+    // The middleware's generic per-IP /api/ limit would double-count and would
+    // not differentiate anon from auth — skip it here so the route owns the cap.
+    '/api/athena/chat',
+    '/api/athena/quota',
   ];
   const hasOwnRateLimit = routesWithOwnRateLimit.some(r => pathname === r || pathname.startsWith(r + '/'));
 

@@ -46,9 +46,8 @@ interface PlanBadgeProps {
 let _planCache: { plan: string; ts: number } | null = null;
 const PLAN_CACHE_TTL = 30_000; // 30 seconds
 
-function PlanBadge({ className }: PlanBadgeProps) {
+function usePlan() {
   const [plan, setPlan] = useState<string | null>(() => {
-    // Initialize from cache if available and fresh
     if (_planCache && Date.now() - _planCache.ts < PLAN_CACHE_TTL) {
       return _planCache.plan;
     }
@@ -57,11 +56,9 @@ function PlanBadge({ className }: PlanBadgeProps) {
 
   useEffect(() => {
     async function fetchPlan() {
-      // Skip fetch if we already have a fresh cached plan
       if (_planCache && Date.now() - _planCache.ts < PLAN_CACHE_TTL) {
-        return; // plan already set via useState initializer
+        return;
       }
-
       try {
         const res = await fetch("/api/user/sync");
         if (res.ok) {
@@ -81,6 +78,12 @@ function PlanBadge({ className }: PlanBadgeProps) {
     }
     fetchPlan();
   }, []);
+
+  return plan;
+}
+
+function PlanBadge({ className }: PlanBadgeProps) {
+  const plan = usePlan();
 
   if (!plan) return null;
 
@@ -104,9 +107,15 @@ const navigation = [
 interface SidebarContentProps {
   onNavigate?: () => void;
   pathname: string;
+  isTopTier?: boolean;
 }
 
-function SidebarContent({ onNavigate, pathname }: SidebarContentProps) {
+// Plans that should NOT see the "Upgrade Plan" link anywhere in the dashboard.
+// Founder is the top of the ladder — there's nowhere to upgrade to.
+// (ENTERPRISE is the legacy alias for Founder and is treated the same.)
+const TOP_TIER_PLANS = new Set(["FOUNDER", "ENTERPRISE"]);
+
+function SidebarContent({ onNavigate, pathname, isTopTier }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center gap-2 border-b px-4">
@@ -133,14 +142,28 @@ function SidebarContent({ onNavigate, pathname }: SidebarContentProps) {
         })}
       </nav>
       <div className="border-t p-4 space-y-1">
-        <Link
-          href="/pricing"
-          onClick={onNavigate}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        >
-          <CreditCard className="h-4 w-4" />
-          Upgrade Plan
-        </Link>
+        {/* "Upgrade Plan" is hidden for Founder-tier users — there's nothing
+            above Founder. They see Billing instead. */}
+        {!isTopTier && (
+          <Link
+            href="/pricing"
+            onClick={onNavigate}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <CreditCard className="h-4 w-4" />
+            Upgrade Plan
+          </Link>
+        )}
+        {isTopTier && (
+          <Link
+            href="/dashboard/settings/billing"
+            onClick={onNavigate}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <CreditCard className="h-4 w-4" />
+            Billing
+          </Link>
+        )}
         <Link
           href="/dashboard/settings"
           onClick={onNavigate}
@@ -173,19 +196,22 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useUser();
   const { signOut } = useClerk();
+  const plan = usePlan();
+  // Founder / ENTERPRISE users are top-tier — they never see Upgrade CTAs.
+  const isTopTier = plan === "Founder" || plan === "Enterprise";
 
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Mobile Sidebar */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent side="left" className="w-64 p-0">
-          <SidebarContent pathname={pathname} onNavigate={() => setSidebarOpen(false)} />
+          <SidebarContent pathname={pathname} onNavigate={() => setSidebarOpen(false)} isTopTier={isTopTier} />
         </SheetContent>
       </Sheet>
 
       {/* Desktop Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 border-r bg-background lg:block">
-        <SidebarContent pathname={pathname} />
+        <SidebarContent pathname={pathname} isTopTier={isTopTier} />
       </aside>
 
       {/* Main Content */}
