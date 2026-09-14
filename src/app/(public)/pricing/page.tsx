@@ -352,7 +352,7 @@ export default function PricingPage() {
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   We are based in Nigeria and price primarily in Naira. International users can
-                  view prices in their local currency using the selector above. Payment is processed
+                  view prices in their local currency automatically. Payment is processed
                 </p>
               </CardContent>
             </Card>
