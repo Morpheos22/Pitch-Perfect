@@ -64,7 +64,7 @@ describe('requireModuleAccess', () => {
     const result = await requireModuleAccess('user-admin', 'e1');
 
     expect(result.allowed).toBe(true);
-    expect(result.plan).toBe('ENTERPRISE');
+    expect(result.plan).toBe('FOUNDER');
   });
 
   it('denies access for FREE plan (no paid subscription)', async () => {

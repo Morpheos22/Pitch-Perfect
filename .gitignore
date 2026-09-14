@@ -71,3 +71,6 @@ server.log
 /db/*.db
 ngrok
 .env*.local
+agent/
+skills-lock.json
+.agents/
