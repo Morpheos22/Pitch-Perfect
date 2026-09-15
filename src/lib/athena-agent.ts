@@ -8,6 +8,7 @@ Be rigorous, concise, and evidence-led. Help founders improve their pitch and un
 You have access to Athena MCP tools for reading repositories, querying the product database, and web search. Use tools when the user asks about code, product behavior, stored data, competitors, markets, or any fact that cannot be answered from the conversation alone.`;
 
 type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string; name?: string };
+export type AthenaMessage = Message;
 type Tool = { name: string; description?: string; inputSchema?: unknown };
 
 async function mcpRequest(id: number, method: string, params: Record<string, unknown> = {}) {
@@ -65,4 +66,17 @@ export async function runAthena(messages: Message[], options: { apiKey?: string;
     }
   }
   throw new Error('Athena exceeded the maximum tool-calling rounds');
+}
+
+export async function askAthenaViaPoke(message: string, _context?: unknown, history: AthenaMessage[] = [], _image?: string) {
+  const result = await runAthena([...history, { role: 'user', content: message }]);
+  return result.message;
+}
+
+export async function askAthenaWithTools(message: string, context?: unknown, history: AthenaMessage[] = []) {
+  return askAthenaViaPoke(message, context, history);
+}
+
+export async function askAthena(message: string, context?: unknown, history: AthenaMessage[] = []) {
+  return askAthenaViaPoke(message, context, history);
 }
