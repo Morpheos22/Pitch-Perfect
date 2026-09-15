@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { askAthena, askAthenaWithTools, AthenaMessage } from "@/lib/athena-agent";
+import { askAthena, askAthenaWithTools, askAthenaVision, AthenaMessage } from "@/lib/athena-agent";
 import { prisma } from "@/lib/db";
 import {
   checkAthenaQuota,
@@ -57,10 +57,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { message, history, context } = (body ?? {}) as {
+  const { message, history, context, image } = (body ?? {}) as {
     message?: unknown;
     history?: unknown;
     context?: unknown;
+    image?: string; // base64-encoded image for vision analysis
   };
 
   if (!message || typeof message !== "string") {
@@ -125,7 +126,29 @@ export async function POST(request: NextRequest) {
   if (isAnon) reserveAnonSlot();
 
   try {
-    // Look up the user's internal DB ID so tools can query their data
+    // ── Image / scan mode ────────────────────────────────────────────────
+    // If the user sent an image (base64), use the vision model to analyze it.
+    if (image && typeof image === "string" && image.length > 100) {
+      const visionResponse = await askAthenaVision(
+        message,
+        image,
+        userId ? {
+          userId,
+          firstName: (context as { firstName?: string } | null)?.firstName,
+          plan: (context as { plan?: string } | null)?.plan,
+        } : undefined,
+      );
+      return NextResponse.json({
+        response: visionResponse,
+        timestamp: new Date().toISOString(),
+        tier,
+        remaining: quota.remaining,
+        resetAt: quota.resetAt,
+        mode: "vision",
+      }, { status: 200, headers: quotaHeaders({ tier, remaining: quota.remaining, resetAt: quota.resetAt }) });
+    }
+
+    // ── Look up internal user ID ─────────────────────────────────────────
     let internalUserId: string | undefined;
     if (userId) {
       const dbUser = await prisma.user.findUnique({

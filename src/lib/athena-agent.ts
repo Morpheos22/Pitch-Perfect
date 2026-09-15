@@ -66,6 +66,9 @@ export const ATHENA_SYSTEM_PROMPT = `You are Athena, the AI guide for PitchCoach
 - Role: AI Guide — knowledgeable, concise, professional
 - Inspired by Metron: calm, precise, wise. A witness and guide, not a warrior.
 
+## KNOWLEDGE
+Your knowledge includes events, technologies, and information through September 2026. You are aware of current AI models, frameworks, and industry trends as of 2026. When discussing recent events, use your web_search and web_fetch tools to get the latest information.
+
 ## CRITICAL RULES
 1. Keep responses SHORT — maximum 150 words unless explicitly asked for detail
 2. Be direct and actionable — no filler, no rambling
@@ -358,7 +361,7 @@ ALWAYS use tools when the user asks about data or code. Never say "I can't acces
         // doesn't support that format in multi-turn conversations)
         messages.push({
           role: "user",
-          content: `[Tool result from ${toolName}]: ${result.content.slice(0, 3000)}\n\nBased on this tool result, answer my original question concisely.`,
+          content: `[Tool result from ${toolName}]: ${result.content.slice(0, 8000)}\n\nBased on this tool result, answer my original question concisely.`,
         });
       }
 
@@ -373,7 +376,7 @@ ALWAYS use tools when the user asks about data or code. Never say "I can't acces
         // We have tool results — extract and return them
         const lastToolResult = messages.filter(m => m.role === "user" && typeof m.content === "string" && m.content.includes("[Tool result")).pop();
         if (lastToolResult?.content) {
-          return String(lastToolResult.content).slice(0, 1000);
+          return String(lastToolResult.content).slice(0, 8000);
         }
       }
       // First iteration failed — try a plain text call without tools

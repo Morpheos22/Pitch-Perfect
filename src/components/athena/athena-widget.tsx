@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, X, Send, Sparkles, Lock } from "lucide-react";
+import { Bot, X, Send, Sparkles, Lock, ImagePlus } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 
@@ -31,6 +31,8 @@ export function AthenaWidget() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 image data
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [quota, setQuota] = useState<QuotaState | null>(null);
   const [showSignInCta, setShowSignInCta] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -71,13 +73,33 @@ export function AthenaWidget() {
     quota.remaining > 0 &&
     quota.remaining <= 2;
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    if (showSignInCta) return; // locked — must sign in
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Image too large (max 10MB)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      const base64Data = base64.split(",")[1]; // strip data:image/...;base64,
+      setPendingImage(base64Data);
+      setInput(prev => prev || "Analyze this image");
+    };
+    reader.readAsDataURL(file);
+  };
 
-    const userMessage = input.trim();
+  const sendMessage = async () => {
+    if ((!input.trim() && !pendingImage) || loading) return;
+    if (showSignInCta) return;
+
+    const userMessage = input.trim() || "Analyze this image";
+    const imageData = pendingImage;
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setPendingImage(null);
+    const displayMessage = imageData ? `${userMessage} [image attached]` : userMessage;
+    setMessages((prev) => [...prev, { role: "user", content: displayMessage }]);
     setLoading(true);
 
     try {
@@ -87,6 +109,7 @@ export function AthenaWidget() {
         body: JSON.stringify({
           message: userMessage,
           history: messages.map((m) => ({ role: m.role, content: m.content })),
+          ...(imageData ? { image: imageData } : {}),
         }),
       });
 
@@ -315,7 +338,30 @@ export function AthenaWidget() {
 
       {/* Input */}
       <div className="p-3 border-t border-border">
+        {pendingImage && (
+          <div className="mb-2 flex items-center gap-2 text-xs text-primary bg-primary/10 rounded-md px-2 py-1">
+            <ImagePlus className="w-3 h-3" />
+            Image attached — click send to analyze
+            <button onClick={() => setPendingImage(null)} className="text-muted-foreground hover:text-foreground ml-auto">✕</button>
+          </div>
+        )}
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="hidden"
+        />
         <div className="flex gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || showSignInCta}
+            className="border border-input rounded-lg px-2 py-2 hover:bg-muted transition-colors disabled:opacity-50"
+            aria-label="Upload image for analysis"
+            title="Upload image to scan and analyze"
+          >
+            <ImagePlus className="w-4 h-4" />
+          </button>
           <input
             type="text"
             value={input}
@@ -324,14 +370,16 @@ export function AthenaWidget() {
             placeholder={
               showSignInCta
                 ? "Sign in to continue chatting…"
-                : "Ask Athena anything..."
+                : pendingImage
+                  ? "Describe what you want to know about the image..."
+                  : "Ask Athena anything..."
             }
             className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60"
             disabled={loading || showSignInCta}
           />
           <button
             onClick={sendMessage}
-            disabled={loading || !input.trim() || showSignInCta}
+            disabled={loading || (!input.trim() && !pendingImage) || showSignInCta}
             className="bg-primary text-primary-foreground rounded-lg px-3 py-2 hover:bg-primary/90 transition-colors disabled:opacity-50"
             aria-label="Send message"
           >

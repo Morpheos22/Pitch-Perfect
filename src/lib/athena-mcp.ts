@@ -513,7 +513,7 @@ async function callGithubTool(toolName: string, args: Record<string, unknown>): 
       const data = await res.json();
       // GitHub returns file content as base64
       const content = Buffer.from(data.content, "base64").toString("utf-8");
-      return { content: content.slice(0, 4000) }; // Truncate to fit in context
+      return { content: content.slice(0, 8000) }; // Truncate to fit in context
     }
 
     if (toolName === "github_list_issues") {
@@ -556,7 +556,7 @@ async function callBrowserTool(toolName: string, args: Record<string, unknown>):
       const url = args.url as string;
       if (!url) return { content: "URL is required", isError: true };
       const output = execSync(`agent-browser open "${url}" --timeout 15000`, { encoding: "utf-8", timeout: 20000 });
-      return { content: output.slice(0, 2000) };
+      return { content: output.slice(0, 8000) };
     }
 
     if (toolName === "browser_screenshot") {
@@ -569,7 +569,7 @@ async function callBrowserTool(toolName: string, args: Record<string, unknown>):
     if (toolName === "browser_get_text") {
       const selector = args.selector as string | undefined;
       const output = execSync(`agent-browser get text ${selector ? `--selector "${selector}"` : ""}`, { encoding: "utf-8", timeout: 15000 });
-      return { content: output.slice(0, 3000) };
+      return { content: output.slice(0, 8000) };
     }
 
     return { content: `Unknown browser tool: ${toolName}`, isError: true };
@@ -626,7 +626,7 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
       const html = await res.text();
       // Strip HTML tags for clean text
       const text = html.replace(/<script[^>]*>.*?<\/script>/gs, "").replace(/<style[^>]*>.*?<\/style>/gs, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return { content: text.slice(0, 3000) };
+      return { content: text.slice(0, 8000) };
     } catch (err) {
       return { content: `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`, isError: true };
     }
