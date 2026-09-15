@@ -475,6 +475,21 @@ const githubTools: Tool[] = [
   },
 ];
 
+// ── Web search tool (direct ZAI API call — no MCP needed) ─────────────────
+const webSearchTool: Tool = {
+  name: "web_search",
+  description: "Search the web for current information. Returns titles, snippets, and URLs. Use this for anything the user asks about that requires real-time or recent data.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Search query" },
+      num: { type: "number", description: "Number of results (default 5, max 10)" },
+    },
+    required: ["query"],
+  },
+  backend: "github-api" as any,
+};
+
 // ── Web fetch tool (works on Vercel — no headless browser needed) ──────────
 const webFetchTool: Tool = {
   name: "web_fetch",
@@ -592,7 +607,19 @@ export async function getAvailableTools(): Promise<Tool[]> {
     getAthenaTools(),
     Promise.resolve(githubTools),
   ]);
-  return [...athenaTools, ...ghTools, webFetchTool];
+  // Always include our direct tools (these work without MCP)
+  const directTools = [webSearchTool, webFetchTool, {
+    name: "db_get_user_summary",
+    description: "Get a summary of a user's data — subscription plan, usage stats, recent deck scores. Pass the user's internal database ID.",
+    inputSchema: { type: "object", properties: { userId: { type: "string", description: "Internal user ID (provided in context)" } }, required: ["userId"] },
+    backend: "github-api" as any,
+  }, {
+    name: "db_query",
+    description: "Query a Supabase table. Returns rows as JSON. Tables: pitch_decks, pitch_scripts, usage, subscriptions, users, transactions.",
+    inputSchema: { type: "object", properties: { table: { type: "string" }, select: { type: "string" }, limit: { type: "number" }, filter: { type: "string" } }, required: ["table"] },
+    backend: "github-api" as any,
+  }];
+  return [...athenaTools, ...ghTools, ...directTools];
 }
 
 /**
@@ -613,6 +640,76 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
   // Fallback: direct GitHub API wrapper (same tool names, different backend)
   if (toolName.startsWith("github_")) {
     return callGithubTool(toolName, args);
+  }
+
+  if (toolName === "web_search") {
+    const query = args.query as string;
+    const num = Math.min((args.num as number) || 5, 10);
+    const ZAI_API_KEY = process.env.ZAI_API_KEY || process.env.ZAI_TOKEN || "";
+    try {
+      const res = await fetch("https://api.z.ai/api/paas/v4/tools/web_search", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ZAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query, num }),
+      });
+      if (!res.ok) return { content: `Web search failed: ${res.status}`, isError: true };
+      const results: any[] = await res.json();
+      const formatted = results.map((r, i) => `${i + 1}. ${r.name}\n   ${r.snippet?.slice(0, 200) || ""}\n   ${r.url}`).join("\n\n");
+      return { content: formatted || "No results found." };
+    } catch (err) {
+      return { content: `Web search failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+    }
+  }
+
+  if (toolName === "db_get_user_summary" || toolName === "db_query") {
+    // Direct Prisma DB queries — no MCP needed
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+    if (toolName === "db_get_user_summary") {
+      const userId = args.userId as string;
+      try {
+        const subRes = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?user_id=eq.${userId}&select=plan,status,credits_remaining,credits_used`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const sub = subRes.ok ? (await subRes.json())[0] : null;
+        const usageRes = await fetch(`${SUPABASE_URL}/rest/v1/usage?user_id=eq.${userId}&select=*`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const usage = usageRes.ok ? (await usageRes.json())[0] : null;
+        const decksRes = await fetch(`${SUPABASE_URL}/rest/v1/pitch_decks?user_id=eq.${userId}&select=file_name,overall_score,status,created_at&order=created_at.desc&limit=5`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const decks = decksRes.ok ? await decksRes.json() : [];
+        let summary = "User Summary:\n";
+        if (sub) summary += `Plan: ${sub.plan}, Status: ${sub.status}, Credits: ${sub.credits_remaining} remaining\n`;
+        if (usage) summary += `Usage: Decks=${usage.e1_deck_analyses}, Scripts=${usage.e2_script_coach_sessions}, Live=${usage.e3_live_pitch_sessions}\n`;
+        if (decks.length > 0) {
+          summary += "Recent decks:\n";
+          decks.forEach((d: any) => { summary += `  ${d.file_name}: score=${d.overall_score ?? "pending"}, ${new Date(d.created_at).toLocaleDateString()}\n`; });
+        }
+        return { content: summary };
+      } catch (err) {
+        return { content: `DB query failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+      }
+    }
+
+    if (toolName === "db_query") {
+      const table = args.table as string;
+      const select = (args.select as string) || "*";
+      const limit = Math.min((args.limit as number) || 10, 50);
+      const filter = args.filter as string | undefined;
+      try {
+        let url = `${SUPABASE_URL}/rest/v1/${table}?select=${select}&limit=${limit}`;
+        if (filter) url += `&${filter}`;
+        const res = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+        if (!res.ok) return { content: `DB error: ${res.status}`, isError: true };
+        const data = await res.json();
+        return { content: JSON.stringify(data, null, 2).slice(0, 8000) };
+      } catch (err) {
+        return { content: `DB query failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+      }
+    }
   }
 
   if (toolName === "web_fetch") {
