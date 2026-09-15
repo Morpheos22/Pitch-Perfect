@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function AthenaWidget() {
+export function AthenaWidget() {
   const [message, setMessage] = useState('');
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,3 +18,5 @@ export default function AthenaWidget() {
   };
   return <section aria-label="Athena agent"><form onSubmit={submit}><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask Athena about your pitch, product, repo, or market..." /><button type="submit" disabled={loading}>{loading ? 'Thinking…' : 'Ask Athena'}</button></form>{answer && <p>{answer}</p>}</section>;
 }
+
+export default AthenaWidget;
