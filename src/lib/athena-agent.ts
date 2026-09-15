@@ -39,7 +39,8 @@ async function cloudflareChat(messages: Message[], tools: unknown[] = []) {
 }
 
 async function adaptiveChat(messages: Message[]) {
-  const response = await fetchWithTimeout(ADAPTIVE_RPC_URL, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "chat.completions", params: { messages } }) });
+  const apiKey = process.env.ADAPTIVE_API_KEY || process.env.KAL_API_KEY;
+  const response = await fetchWithTimeout(ADAPTIVE_RPC_URL, { method: "POST", headers: { "content-type": "application/json", accept: "application/json", ...(apiKey ? { "x-kal-api-key": apiKey } : {}) }, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "chat.completions", params: { messages } }) });
   if (!response.ok) throw new Error(`Adaptive RPC returned ${response.status}`);
   const payload = await response.json();
   const text = payload.result?.choices?.[0]?.message?.content || payload.result?.response || payload.response;
