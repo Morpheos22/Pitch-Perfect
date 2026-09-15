@@ -227,11 +227,209 @@ async function callCloudflareMcpTool(prefixedName: string, args: Record<string, 
   }
 }
 
+// ── Athena's own MCP server (Cloudflare Worker) ──────────────────────────
+// This is our OWN MCP server deployed at:
+//   https://athena-mcp-server.morphylee22.workers.dev/mcp
+// It exposes tools: github_read_file, github_get_repo_info, github_list_issues,
+// db_query, db_get_user_summary, web_search
+//
+// No OAuth needed — we control the server. The tools call GitHub API and
+// Supabase REST API directly using env vars set on the Worker.
+
+const ATHENA_MCP_URL = "https://athena-mcp-server.morphylee22.workers.dev/mcp";
+let athenaMcpClient: Client | null = null;
+let athenaToolsCache: Tool[] | null = null;
+let athenaToolsCachedAt = 0;
+
+async function getAthenaMcpClient(): Promise<Client | null> {
+  if (athenaMcpClient) return athenaMcpClient;
+
+  try {
+    const transport = new StreamableHTTPClientTransport(new URL(ATHENA_MCP_URL));
+    const client = new Client(
+      { name: "athena-agent", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(transport);
+    athenaMcpClient = client;
+    console.log("[athena-mcp] Connected to Athena MCP server (our own Worker)");
+    return client;
+  } catch (err) {
+    console.error("[athena-mcp] Failed to connect to Athena MCP server:", err);
+    return null;
+  }
+}
+
+async function getAthenaTools(): Promise<Tool[]> {
+  if (athenaToolsCache && Date.now() - athenaToolsCachedAt < CACHE_TTL_MS) {
+    return athenaToolsCache;
+  }
+
+  const client = await getAthenaMcpClient();
+  if (!client) return [];
+
+  try {
+    const toolsResponse = await client.listTools();
+    const tools: Tool[] = (toolsResponse.tools || []).map((t: any) => ({
+      name: t.name, // No prefix — these are OUR tools, no collision risk
+      description: t.description || t.name,
+      inputSchema: t.inputSchema || {},
+      backend: "cloudflare-mcp" as const,
+    }));
+
+    athenaToolsCache = tools;
+    athenaToolsCachedAt = Date.now();
+    console.log(`[athena-mcp] Discovered ${tools.length} tools from Athena MCP server`);
+    return tools;
+  } catch (err) {
+    console.error("[athena-mcp] Failed to list Athena MCP tools:", err);
+    return [];
+  }
+}
+
+async function callAthenaMcpTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+  const client = await getAthenaMcpClient();
+  if (!client) {
+    return { content: "Athena MCP server not connected", isError: true };
+  }
+
+  try {
+    const result = await client.callTool({ name: toolName, arguments: args });
+    const contentArray = Array.isArray(result.content) ? result.content : [];
+    const textContent = contentArray
+      .filter((c: any) => c.type === "text")
+      .map((c: any) => c.text)
+      .join("\n");
+    return { content: textContent || "No output from tool." };
+  } catch (err) {
+    return {
+      content: `Athena MCP tool '${toolName}' failed: ${err instanceof Error ? err.message : String(err)}`,
+      isError: true,
+    };
+  }
+}
+
 // ── GitHub direct API wrapper ──────────────────────────────────────────────
 // We use the GitHub REST API directly instead of the GitHub MCP server because
 // the remote MCP server requires OAuth 2.1 + PKCE (interactive browser flow).
 
 const GITHUB_API = "https://api.github.com";
+
+// ── Supabase direct query tools (via Prisma — no MCP, no OAuth) ────────────
+// These tools query the Supabase database directly using Prisma, which is
+// already configured with DATABASE_URL. No MCP protocol needed — just
+// direct database queries wrapped as function-calling tools.
+
+import { prisma } from "@/lib/db";
+
+const supabaseDirectTools: Tool[] = [
+  {
+    name: "db_get_user_decks",
+    description: "Get the current user's pitch deck analysis sessions — scores, file names, dates. Use this when the user asks about their deck scores or analysis history.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "Internal user ID (from the user sync API)" },
+        limit: { type: "number", description: "Max results (default 5, max 20)" },
+      },
+      required: ["userId"],
+    },
+    backend: "supabase-direct" as any,
+  },
+  {
+    name: "db_get_user_scripts",
+    description: "Get the user's script check sessions — scores, file names, dates. Use when the user asks about their elevator pitch scripts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "Internal user ID" },
+        limit: { type: "number", description: "Max results (default 5, max 20)" },
+      },
+      required: ["userId"],
+    },
+    backend: "supabase-direct" as any,
+  },
+  {
+    name: "db_get_user_usage",
+    description: "Get the user's current usage — how many deck analyses, script sessions, live sessions they've used and their limits. Use when the user asks about their remaining sessions or plan limits.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "Internal user ID" },
+      },
+      required: ["userId"],
+    },
+    backend: "supabase-direct" as any,
+  },
+  {
+    name: "db_get_user_subscription",
+    description: "Get the user's subscription details — plan, status, credits, billing period. Use when the user asks about their plan, billing, or subscription status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        userId: { type: "string", description: "Internal user ID" },
+      },
+      required: ["userId"],
+    },
+    backend: "supabase-direct" as any,
+  },
+];
+
+async function callSupabaseDirectTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+  try {
+    if (toolName === "db_get_user_decks") {
+      const userId = args.userId as string;
+      const limit = Math.min((args.limit as number) || 5, 20);
+      const decks = await prisma.pitchDeck.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: { id: true, fileName: true, overallScore: true, status: true, createdAt: true },
+      });
+      if (decks.length === 0) return { content: "No pitch deck analyses found." };
+      const formatted = decks.map(d => `${d.fileName}: score=${d.overallScore ?? "pending"}, status=${d.status}, date=${new Date(d.createdAt).toLocaleDateString()}`).join("\n");
+      return { content: `Found ${decks.length} deck(s):\n${formatted}` };
+    }
+
+    if (toolName === "db_get_user_scripts") {
+      const userId = args.userId as string;
+      const limit = Math.min((args.limit as number) || 5, 20);
+      const scripts = await prisma.pitchScript.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: { id: true, fileName: true, overallScore: true, status: true, createdAt: true },
+      });
+      if (scripts.length === 0) return { content: "No script check sessions found." };
+      const formatted = scripts.map(s => `${s.fileName}: score=${s.overallScore ?? "pending"}, status=${s.status}, date=${new Date(s.createdAt).toLocaleDateString()}`).join("\n");
+      return { content: `Found ${scripts.length} script(s):\n${formatted}` };
+    }
+
+    if (toolName === "db_get_user_usage") {
+      const userId = args.userId as string;
+      const usage = await prisma.usage.findUnique({
+        where: { userId },
+        select: { e1DeckAnalyses: true, e2ScriptCoachSessions: true, e3LivePitchSessions: true, e4FullPitchSessions: true, e5FounderSessions: true },
+      });
+      if (!usage) return { content: "No usage data found." };
+      return { content: `Usage: Deck analyses=${usage.e1DeckAnalyses}, Script sessions=${usage.e2ScriptCoachSessions}, Live sessions=${usage.e3LivePitchSessions}, Full sessions=${usage.e4FullPitchSessions}, Founder sessions=${usage.e5FounderSessions}` };
+    }
+
+    if (toolName === "db_get_user_subscription") {
+      const userId = args.userId as string;
+      const sub = await prisma.subscription.findUnique({
+        where: { userId },
+        select: { plan: true, status: true, creditsRemaining: true, creditsUsed: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
+      });
+      if (!sub) return { content: "No subscription found." };
+      return { content: `Plan: ${sub.plan}, Status: ${sub.status}, Credits: ${sub.creditsRemaining} remaining / ${sub.creditsUsed} used, Period ends: ${sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : "N/A"}, Cancel at period end: ${sub.cancelAtPeriodEnd}` };
+    }
+
+    return { content: `Unknown DB tool: ${toolName}`, isError: true };
+  } catch (err) {
+    return { content: `DB tool '${toolName}' failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+  }
+}
 
 const githubTools: Tool[] = [
   {
@@ -415,23 +613,31 @@ async function callBrowserTool(toolName: string, args: Record<string, unknown>):
  * Used by the function-calling loop to pass tool definitions to the model.
  */
 export async function getAvailableTools(): Promise<Tool[]> {
-  const [supabaseTools, ghTools, cfTools] = await Promise.all([
-    getSupabaseTools(),
+  const [athenaTools, ghTools] = await Promise.all([
+    getAthenaTools(),
     Promise.resolve(githubTools),
-    getCloudflareTools(),
   ]);
-  return [...supabaseTools, ...ghTools, ...browserTools, ...cfTools];
+  // If our MCP server has tools, use those (they include GitHub + DB + web search).
+  // Also include the direct GitHub wrapper as fallback.
+  return [...athenaTools, ...ghTools, ...browserTools];
 }
 
 /**
  * Route a tool call to the right backend (Supabase MCP, GitHub API, or Browser).
  */
 export async function callTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
-  if (toolName.startsWith("supabase_")) {
-    const originalName = toolName.replace(/^supabase_/, "");
-    return callSupabaseTool(originalName, args);
+  // First try our own MCP server (it has github_read_file, db_query, etc.)
+  // The Athena MCP server tools don't have a prefix — they're just "github_read_file", "db_query", etc.
+  // We need to route these to our MCP server, not the direct GitHub wrapper.
+
+  // Check if this tool name matches one from our Athena MCP server
+  const athenaTools = await getAthenaTools();
+  const isAthenaTool = athenaTools.some(t => t.name === toolName);
+  if (isAthenaTool) {
+    return callAthenaMcpTool(toolName, args);
   }
 
+  // Fallback: direct GitHub API wrapper (same tool names, different backend)
   if (toolName.startsWith("github_")) {
     return callGithubTool(toolName, args);
   }
