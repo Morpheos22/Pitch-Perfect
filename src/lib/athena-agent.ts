@@ -417,3 +417,99 @@ ALWAYS use tools when the user asks about data or code. Never say "I can't acces
   console.warn("[Athena Agent] Hit max tool iterations — returning fallback");
   return askAthena(userMessage, context, conversationHistory);
 }
+
+// ── Athena via Poke (primary model — OpenAI-compatible completions) ────────
+// Poke handles reasoning, web search, and vision natively. No function-calling
+// loop needed — Poke's agent harness does it all.
+//
+// Endpoint: https://poke.com/api/v1/chat/completions
+// Auth: Bearer POKE_API_KEY
+// Format: Standard OpenAI-compatible chat completions with multimodal support.
+
+const POKE_API_KEY = process.env.POKE_API_KEY || "";
+const POKE_ENDPOINT = "https://poke.com/api/v1/chat/completions";
+
+export async function askAthenaViaPoke(
+  userMessage: string,
+  context: AthenaContext | undefined,
+  conversationHistory: AthenaMessage[],
+  imageBase64?: string,
+): Promise<string> {
+  if (!POKE_API_KEY) {
+    throw new Error("POKE_API_KEY not configured");
+  }
+
+  const sanitized = sanitizeUserInput(userMessage);
+
+  // Profanity check
+  if (context?.userId) {
+    const profanityResult = checkProfanity(context.userId, userMessage);
+    if (profanityResult.blocked) return profanityResult.message || "Session terminated.";
+    if (profanityResult.warning > 0 && profanityResult.message) return profanityResult.message;
+  }
+
+  // Build system prompt with user context
+  let systemPrompt = ATHENA_SYSTEM_PROMPT;
+  if (context?.firstName) systemPrompt += `\n\nUser's name: ${context.firstName}`;
+  if (context?.internalUserId) systemPrompt += `\nUser's internal database ID: ${context.internalUserId}`;
+  if (context?.plan) systemPrompt += `\nPlan: ${context.plan}`;
+  if (context?.currentPage) systemPrompt += `\nOn page: ${context.currentPage}`;
+
+  // Build messages array (OpenAI-compatible format)
+  const messages: any[] = [
+    { role: "system", content: systemPrompt },
+    ...(conversationHistory || []).map(m => ({
+      role: m.role,
+      content: sanitizeUserInput(m.content),
+    })),
+  ];
+
+  // User message — with image if provided (multimodal)
+  if (imageBase64) {
+    messages.push({
+      role: "user",
+      content: [
+        { type: "text", text: sanitized },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+      ],
+    });
+  } else {
+    messages.push({ role: "user", content: sanitized });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  try {
+    const res = await fetch(POKE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${POKE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages,
+        max_completion_tokens: 8192,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Poke API error ${res.status}: ${errText.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const response = data.choices?.[0]?.message?.content || data.response || "";
+    return sanitizeAIResponse(response) || "I'm not sure how to respond to that.";
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Poke API timed out after 60s");
+    }
+    throw err;
+  }
+}

@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { askAthena, askAthenaWithTools, askAthenaVision, AthenaMessage } from "@/lib/athena-agent";
+import { askAthena, askAthenaWithTools, askAthenaViaPoke, AthenaMessage } from "@/lib/athena-agent";
 import { prisma } from "@/lib/db";
 import {
   checkAthenaQuota,
@@ -126,28 +126,6 @@ export async function POST(request: NextRequest) {
   if (isAnon) reserveAnonSlot();
 
   try {
-    // ── Image / scan mode ────────────────────────────────────────────────
-    // If the user sent an image (base64), use the vision model to analyze it.
-    if (image && typeof image === "string" && image.length > 100) {
-      const visionResponse = await askAthenaVision(
-        message,
-        image,
-        userId ? {
-          userId,
-          firstName: (context as { firstName?: string } | null)?.firstName,
-          plan: (context as { plan?: string } | null)?.plan,
-        } : undefined,
-      );
-      return NextResponse.json({
-        response: visionResponse,
-        timestamp: new Date().toISOString(),
-        tier,
-        remaining: quota.remaining,
-        resetAt: quota.resetAt,
-        mode: "vision",
-      }, { status: 200, headers: quotaHeaders({ tier, remaining: quota.remaining, resetAt: quota.resetAt }) });
-    }
-
     // ── Look up internal user ID ─────────────────────────────────────────
     let internalUserId: string | undefined;
     if (userId) {
@@ -158,26 +136,33 @@ export async function POST(request: NextRequest) {
       internalUserId = dbUser?.id;
     }
 
-    // Use askAthenaWithTools (agent mode with MCP tools) for signed-in users.
-    // For anon users, fall back to askAthena (no tools — can't trust identity).
-    const response = userId
-      ? await askAthenaWithTools(
-          message,
-          {
-            userId,
-            internalUserId,
-            firstName: (context as { firstName?: string } | null)?.firstName,
-            currentModule: (context as { currentModule?: string } | null)?.currentModule,
-            currentPage: (context as { currentPage?: string } | null)?.currentPage,
-            plan: (context as { plan?: string } | null)?.plan,
-          },
-          (history as AthenaMessage[]) ?? [],
-        )
-      : await askAthena(
-          message,
-          undefined,
-          (history as AthenaMessage[]) ?? [],
-        );
+    // Build context
+    const ctx = userId ? {
+      userId,
+      internalUserId,
+      firstName: (context as { firstName?: string } | null)?.firstName,
+      currentModule: (context as { currentModule?: string } | null)?.currentModule,
+      currentPage: (context as { currentPage?: string } | null)?.currentPage,
+      plan: (context as { plan?: string } | null)?.plan,
+    } : undefined;
+
+    const historyArr = (history as AthenaMessage[]) ?? [];
+
+    // ── Primary: Poke API (handles vision, web search, reasoning natively) ──
+    // ── Fallback: askAthenaWithTools (Cloudflare AI + function calling) ──
+    // ── Last resort: askAthena (plain chatbot) ────────────────────────────
+    let response: string;
+    try {
+      response = await askAthenaViaPoke(message, ctx, historyArr, image);
+    } catch (pokeErr) {
+      console.warn("[Athena Chat] Poke failed, falling back to CF AI:", pokeErr instanceof Error ? pokeErr.message : String(pokeErr));
+      // Fallback: Cloudflare AI with tools (for signed-in users) or plain chatbot
+      if (userId) {
+        response = await askAthenaWithTools(message, ctx, historyArr);
+      } else {
+        response = await askAthena(message, undefined, historyArr);
+      }
+    }
 
     return NextResponse.json(
       {
