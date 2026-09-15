@@ -1,3 +1,7 @@
+title = "Pitch-Perfect Gitleaks configuration"
+
 [allowlist]
-# Historical finding retained in repository history; this commit is intentionally ignored.
+# The historical commit contains a credential rotation note in its commit
+# message. No credential value is allowlisted; the historical commit itself
+# is excluded so current-tree scanning remains strict.
 commits = ["e3b6efb3e986e5d7e26fba738839377c9932ec8a"]
