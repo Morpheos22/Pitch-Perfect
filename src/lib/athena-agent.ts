@@ -39,11 +39,11 @@ async function cloudflareChat(messages: Message[], tools: unknown[] = []) {
 }
 
 async function adaptiveChat(messages: Message[]) {
-  const response = await fetchWithTimeout(ADAPTIVE_RPC_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "chat.completions", params: { messages } }) });
+  const response = await fetchWithTimeout(ADAPTIVE_RPC_URL, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "chat.completions", params: { messages } }) });
   if (!response.ok) throw new Error(`Adaptive RPC returned ${response.status}`);
   const payload = await response.json();
   const text = payload.result?.choices?.[0]?.message?.content || payload.result?.response || payload.response;
-  if (!text) throw new Error("Adaptive RPC returned no response");
+  if (typeof text !== "string" || !text.trim()) throw new Error("Adaptive RPC returned no response");
   return text;
 }
 
@@ -54,7 +54,11 @@ export async function runAthena(messages: Message[]) {
   try { const initialized = await mcpRequest(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pitch-perfect", version: "1.0.0" } }); sessionId = initialized.sessionId; tools = (await mcpRequest(2, "tools/list", {}, sessionId)).result?.tools || []; } catch (error) { console.warn("[Athena] MCP unavailable; continuing without tools", error); }
   const cfTools = tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description || tool.name, parameters: tool.inputSchema || { type: "object", properties: {} } } }));
   for (let round = 0; round < 8; round += 1) {
-    const result = await cloudflareChat(conversation, cfTools);
+    let result;
+    try { result = await cloudflareChat(conversation, cfTools); } catch (cloudflareError) {
+      console.warn("[Athena] Cloudflare failed; falling back to Adaptive RPC", cloudflareError);
+      return { message: await adaptiveChat(conversation) };
+    }
     conversation.push(result.message);
     const calls = result.message.tool_calls || [];
     if (!calls.length) return { message: result.message.content || "", usage: result.usage };
@@ -67,5 +71,5 @@ export async function askAthenaViaPoke(message: string, _context?: unknown, hist
 export async function askAthenaWithTools(message: string, context?: unknown, history: AthenaMessage[] = []) { return askAthenaViaPoke(message, context, history); }
 export async function askAthena(message: string, _context?: unknown, history: AthenaMessage[] = []) {
   const messages: Message[] = [...history, { role: "user", content: message }];
-  try { return (await runAthena(messages)).message; } catch (cfError) { console.warn("[Athena] Cloudflare failed", cfError); try { return await adaptiveChat([{ role: "system", content: ATHENA_SYSTEM_PROMPT }, ...messages]); } catch (adaptiveError) { console.warn("[Athena] Adaptive failed", adaptiveError); return "I’m sorry, Athena is temporarily unavailable. Please try again in a moment."; } }
+  try { return (await runAthena(messages)).message; } catch (error) { console.warn("[Athena] Provider fallback failed", error); return "I’m sorry, Athena is temporarily unavailable. Please try again in a moment."; }
 }
