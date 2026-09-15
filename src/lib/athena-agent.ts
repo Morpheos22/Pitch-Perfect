@@ -1,8 +1,8 @@
-const POKE_COMPLETIONS_URL = "https://poke.com/api/v1/chat/completions";
 const ATHENA_MCP_URL = "https://athena-mcp-server.morphylee22.workers.dev/mcp";
 const ADAPTIVE_RPC_URL = "https://kal-agent-morpheos255918280.adaptive.ai/api/rpc";
+const CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct";
 export const ATHENA_SYSTEM_PROMPT = `You are Athena, an investor-grade AI diligence and product strategy agent for Pitch Perfect. Be rigorous, concise, and evidence-led. Separate facts from assumptions, never invent facts, and say when information is missing. Use tools when available, but remain helpful without them.`;
-type Message = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments?: string } }> };
+type Message = { role: "system" | "user" | "assistant" | "tool"; content: string | null; tool_call_id?: string; name?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments?: string } }> };
 export type AthenaMessage = Message;
 type Tool = { name: string; description?: string; inputSchema?: unknown };
 
@@ -22,37 +22,20 @@ async function mcpRequest(id: number, method: string, params: Record<string, unk
   return { result: payload.result, sessionId: response.headers.get("mcp-session-id") || sessionId };
 }
 
-async function getMcpTools(): Promise<Tool[]> {
-  const initialized = await mcpRequest(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pitch-perfect", version: "1.0.0" } });
-  const listed = await mcpRequest(2, "tools/list", {}, initialized.sessionId);
-  return listed.result?.tools || [];
-}
-
 async function callMcpTool(id: number, name: string, args: unknown, sessionId?: string) {
-  const result = await mcpRequest(id, "tools/call", { name, arguments: args || {} }, sessionId);
-  return result.result;
+  return (await mcpRequest(id, "tools/call", { name, arguments: args || {} }, sessionId)).result;
 }
 
-async function pokeChat(messages: Message[], tools: unknown[] = [], apiKey?: string, model = "gpt-4o-mini") {
-  if (!apiKey) throw new Error("POKE_API_KEY is not configured");
-  const response = await fetchWithTimeout(POKE_COMPLETIONS_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, messages, ...(tools.length ? { tools, tool_choice: "auto" } : {}) }) });
-  if (!response.ok) throw new Error(`Poke completions returned ${response.status}`);
-  const payload = await response.json();
-  const message = payload.choices?.[0]?.message;
-  if (!message) throw new Error("Poke completions returned no message");
-  return { message, usage: payload.usage };
-}
-
-async function cloudflareChat(messages: Message[]) {
+async function cloudflareChat(messages: Message[], tools: unknown[] = []) {
   const account = process.env.CF_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID;
   const token = process.env.CF_API_TOKEN || process.env.CLOUDFLARE_AI_TOKEN || process.env.CLOUDFLARE_API_TOKEN;
   if (!account || !token) throw new Error("Cloudflare AI credentials are not configured");
-  const response = await fetchWithTimeout(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run/@cf/meta/llama-3.1-8b-instruct`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ messages }) });
+  const response = await fetchWithTimeout(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/v1/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ model: CLOUDFLARE_MODEL, messages, ...(tools.length ? { tools, tool_choice: "auto" } : {}) }) });
   if (!response.ok) throw new Error(`Cloudflare AI returned ${response.status}`);
   const payload = await response.json();
-  const text = payload.result?.response;
-  if (!text) throw new Error("Cloudflare AI returned no response");
-  return text;
+  const message = payload.choices?.[0]?.message;
+  if (!message) throw new Error("Cloudflare AI returned no message");
+  return { message, usage: payload.usage };
 }
 
 async function adaptiveChat(messages: Message[]) {
@@ -64,19 +47,17 @@ async function adaptiveChat(messages: Message[]) {
   return text;
 }
 
-export async function runAthena(messages: Message[], options: { apiKey?: string; model?: string } = {}) {
+export async function runAthena(messages: Message[]) {
   const conversation: Message[] = [{ role: "system", content: ATHENA_SYSTEM_PROMPT }, ...messages];
-  const apiKey = options.apiKey || process.env.POKE_API_KEY || process.env.POKE_API_TOKEN;
   let tools: Tool[] = [];
   let sessionId: string | undefined;
-  try { const initialized = await mcpRequest(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pitch-perfect", version: "1.0.0" } }); sessionId = initialized.sessionId; const listed = await mcpRequest(2, "tools/list", {}, sessionId); tools = listed.result?.tools || []; } catch (error) { console.warn("[Athena] MCP unavailable; continuing without tools", error); }
-  const pokeTools = tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description || tool.name, parameters: tool.inputSchema || { type: "object", properties: {} } } }));
-  if (!apiKey) return { message: await cloudflareChat(conversation) };
+  try { const initialized = await mcpRequest(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pitch-perfect", version: "1.0.0" } }); sessionId = initialized.sessionId; tools = (await mcpRequest(2, "tools/list", {}, sessionId)).result?.tools || []; } catch (error) { console.warn("[Athena] MCP unavailable; continuing without tools", error); }
+  const cfTools = tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description || tool.name, parameters: tool.inputSchema || { type: "object", properties: {} } } }));
   for (let round = 0; round < 8; round += 1) {
-    const result = await pokeChat(conversation, pokeTools, apiKey, options.model);
+    const result = await cloudflareChat(conversation, cfTools);
     conversation.push(result.message);
     const calls = result.message.tool_calls || [];
-    if (!calls.length) return { message: result.message.content || "" , usage: result.usage };
+    if (!calls.length) return { message: result.message.content || "", usage: result.usage };
     for (const call of calls) { let args: unknown = {}; try { args = JSON.parse(call.function.arguments || "{}"); } catch {} try { conversation.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: JSON.stringify(await callMcpTool(round + 3, call.function.name, args, sessionId)) }); } catch (error) { conversation.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }); } }
   }
   throw new Error("Athena exceeded the maximum tool-calling rounds");
@@ -86,5 +67,5 @@ export async function askAthenaViaPoke(message: string, _context?: unknown, hist
 export async function askAthenaWithTools(message: string, context?: unknown, history: AthenaMessage[] = []) { return askAthenaViaPoke(message, context, history); }
 export async function askAthena(message: string, _context?: unknown, history: AthenaMessage[] = []) {
   const messages: Message[] = [...history, { role: "user", content: message }];
-  try { return (await runAthena(messages)).message; } catch (pokeError) { console.warn("[Athena] Poke failed", pokeError); try { return await cloudflareChat([{ role: "system", content: ATHENA_SYSTEM_PROMPT }, ...messages]); } catch (cfError) { console.warn("[Athena] Cloudflare failed", cfError); try { return await adaptiveChat([{ role: "system", content: ATHENA_SYSTEM_PROMPT }, ...messages]); } catch (adaptiveError) { console.warn("[Athena] Adaptive failed", adaptiveError); return "I’m sorry, Athena is temporarily unavailable. Please try again in a moment."; } } }
+  try { return (await runAthena(messages)).message; } catch (cfError) { console.warn("[Athena] Cloudflare failed", cfError); try { return await adaptiveChat([{ role: "system", content: ATHENA_SYSTEM_PROMPT }, ...messages]); } catch (adaptiveError) { console.warn("[Athena] Adaptive failed", adaptiveError); return "I’m sorry, Athena is temporarily unavailable. Please try again in a moment."; } }
 }
