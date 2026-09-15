@@ -17,7 +17,7 @@
       "maxDuration": 30
     },
     "src/app/api/athena/**": {
-      "maxDuration": 30
+      "maxDuration": 24
     }
   }
 }

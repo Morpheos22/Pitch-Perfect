@@ -1,88 +1,46 @@
-# Supabase + Prisma Migration CI/CD
-#
-# This workflow handles database migrations on every push to main.
-# It runs `prisma migrate deploy` against the production Supabase database
-# using secrets stored in GitHub repository settings.
-#
-# REQUIRED GITHUB SECRETS (Settings → Secrets and variables → Actions):
-#   - DATABASE_URL:    Pooled connection (port 6543, pgbouncer=true)
-#   - DIRECT_URL:      Direct connection (port 5432) for migrations
-#
-# Both are the Supabase connection strings from:
-#   Supabase Dashboard → Project Settings → Database → Connection string
-
 name: Supabase Migrations
-
 on:
   push:
     branches: [main]
-    paths:
-      - 'prisma/migrations/**'
-      - 'prisma/schema.prisma'
-      - '.github/workflows/supabase-migrations.yml'
+    paths: ['prisma/migrations/**', 'prisma/schema.prisma', '.github/workflows/supabase-migrations.yml']
   workflow_dispatch:
     inputs:
       confirm:
         description: 'Type "deploy" to confirm production migration'
         required: true
         default: ''
-
-# Prevent concurrent migrations — only one at a time, queue the rest.
 concurrency:
   group: supabase-migration
   cancel-in-progress: false
-
 jobs:
   migrate:
     name: Deploy Prisma migrations to Supabase
     runs-on: ubuntu-latest
-    # Only run on main branch pushes, or manual dispatch with confirmation
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'deploy')
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
+        run: npm ci --no-audit --no-fund
       - name: Generate Prisma client
         run: npx prisma generate
-
-      - name: Check migration status (dry run)
+      - name: Check migration status
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
-        run: |
-          echo "📋 Checking pending migrations..."
-          npx prisma migrate status || true
-
+        run: npx prisma migrate status
       - name: Deploy migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
-        run: |
-          echo "📦 Deploying migrations to Supabase..."
-          npx prisma migrate deploy
-
+        run: npx prisma migrate deploy
       - name: Verify migration
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
-        run: |
-          echo "✅ Verifying migration status..."
-          npx prisma migrate status
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "❌ Migration failed! Check the logs above."
-          echo "The production database was NOT modified if this step failed."
-          echo "Manual intervention required."
-          exit 1
+        run: npx prisma migrate status

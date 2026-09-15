@@ -2,18 +2,12 @@
   "name": "athena-mcp-server",
   "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
-  },
+  "packageManager": "npm@10.8.2",
+  "scripts": { "build": "tsc --noEmit", "deploy": "wrangler deploy", "dev": "wrangler dev" },
   "dependencies": {
-    "agents": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "agents": "^0.23.0",
     "zod": "^3.24.0"
   },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "wrangler": "^4.0.0",
-    "typescript": "^5.0.0"
-  }
+  "devDependencies": { "@cloudflare/workers-types": "^4.0.0", "typescript": "^5.0.0", "wrangler": "^4.0.0" }
 }

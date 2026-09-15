@@ -1,328 +1,159 @@
-# PitchCoach AI (PitchCoach Ai)
+# PitchCoachAI / Pitch-Perfect
 
-AI-powered pitch coaching platform for founders and entrepreneurs — built by Athena Agentic.
+Pitch-Perfect is an AI-powered pitch coaching platform for founders and entrepreneurs. It helps users turn pitch materials and founder context into clearer, more persuasive investor communication through structured analysis, coaching, iteration, and readiness workflows.
 
----
+The application is built around PitchCoachAI: a modular coaching surface backed by a Next.js application layer, Supabase persistence, and Athena Runtime v2 for bounded, tool-augmented AI orchestration.
 
-## Current Status (Last Updated: Session 7 — Security Hardening + Bug Fixes + E2E Verified)
+## Overview
 
-**Deployment: LIVE** at [pitchcoachai.tech](https://pitchcoachai.tech)
-**Health Check:** `{"status":"ok"}` at `/api/health`
-**TypeScript:** Zero errors (strict mode)
-**Completion:** ~97%
-**Last E2E Test:** Full browser test passed (DOCX + TXT upload, text input, AI analysis, iterate, version navigation)
+PitchCoachAI supports the core coaching journey:
 
-### What's Working
-- Full Next.js 16 deployment on Vercel (App Router + React 19)
-- Supabase PostgreSQL connected (eu-west-2 region, migration baselined)
-- Clerk authentication (production live key, sign-in/sign-up pages working)
-- Z.ai AI Gateway (SDK + HTTP fallback, TTS + Web Search)
-- Kal Protocol 2.0 — fully implemented (10 contextual questions, 2 fallbacks, 8-step critical thinking)
-- Kal Adaptive Middleware client (RPC to `kal-middleware-morpheos255918280.adaptive.ai`)
-- Kal Chat Widget (interactive component with stabilized polling)
-- Vercel Blob storage (client-side direct upload with progress tracking)
-- 5 coaching modules: E1 Deck Analyser, E2 Script Coach, E3 Live Pitch, E4 Full Pitch, E5 Founder
-- Dual billing: Stripe (international) + Paystack (African markets)
-- Zoho CRM integration
-- 17 Prisma models, 9 enums, single baseline migration
-- Error boundaries (root + dashboard)
-- Structured logging (dev-only debug/info, production warn/error)
-- Rate limiting with Redis circuit breaker (auto-retry after outages)
-- Cancelled subscription grace period (access until period ends)
-- Stripe billing period fetched from API (not hardcoded)
+- Pitch-deck and pitch-material analysis
+- Elevator-script coaching and iteration
+- Live and full-pitch coaching workflows
+- Founder readiness and pathway guidance
+- Persistent sessions, scores, versions, and coaching history
 
-### What's NOT Working Yet
-- `CLERK_WEBHOOK_SECRET` missing — new user sign-ups won't auto-create DB records (user must create webhook in Clerk Dashboard)
-- Jest test suite has pre-existing Babel config issue (TypeScript syntax not parsed correctly)
+The platform separates product concerns from runtime concerns:
 
-### Known Issues (Low Priority)
-- Z.ai model names: only `glm-4-plus` works; `glm-4-flash` and `glm-4` return errors. Mitigated by deduplication in `executeWithFallback()`.
-- Clerk deprecation warning: `afterSignUpUrl` prop should be replaced with `fallbackRedirectUrl`/`forceRedirectUrl`
-- `/api/billing/portal` has no UI trigger (feature addition, out of scope for current pass)
+1. Next.js renders the App Router experience and exposes authenticated API boundaries.
+2. Prisma models application state against Supabase PostgreSQL.
+3. Athena Runtime v2 coordinates model reasoning and MCP tools through Cloudflare Workers AI.
+4. Runtime outputs are validated, bounded, and returned to the coaching routes for persistence and presentation.
+5. Vercel provides the production deployment surface; Cloudflare Workers hosts the runtime edge components.
 
----
+## Core Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                     Next.js App Router                       │
+│  Coaching UI · auth boundaries · API routes · error handling  │
+└───────────────────────────────┬──────────────────────────────┘
+                                │ validated request
+                                v
+┌──────────────────────────────────────────────────────────────┐
+│                     Athena Runtime v2                        │
+│ Cloudflare Workers AI · MCP orchestration · bounded context  │
+│ adaptive fallback · loop and payload guards                  │
+└───────────────┬──────────────────────────┬───────────────────┘
+                │                          │
+                v                          v
+       ┌────────────────┐         ┌────────────────────────────┐
+       │ MCP tool layer │         │ Supabase PostgreSQL         │
+       │ typed tools    │         │ Prisma ORM · RLS policies   │
+       └────────────────┘         └────────────────────────────┘
+```
+
+The runtime is intentionally bounded. User and tool context is trimmed before orchestration, each tool call is constrained by payload limits, and the loop terminates deterministically rather than relying on an unbounded agent cycle.
+
+## Athena Runtime v2
+
+Athena Runtime v2 provides the AI execution layer for PitchCoachAI:
+
+- Cloudflare Workers AI supplies the edge runtime and model execution boundary.
+- MCP tool orchestration gives the runtime a structured way to discover and call approved tools.
+- Adaptive fallback selects a safe alternate execution path when a model, tool, or upstream dependency is unavailable. Fallbacks preserve the same validation and safety boundaries as the primary path.
+- Runtime results are normalized before they cross back into application routes.
+
+### Runtime limits
+
+| Guard | Limit | Purpose |
+|-------|------:|---------|
+| Conversation context | 15 messages | Keeps prompt context bounded and relevant |
+| Conversation context | 15,000 characters | Prevents oversized prompt accumulation |
+| Agent loop | 8 rounds | Guarantees deterministic termination |
+| Tool/request payload | 8 KB | Limits individual orchestration payloads |
+
+These limits are part of the runtime contract, not suggestions. Truncation, rejection, and fallback behavior should remain observable through the application’s structured logging without exposing sensitive input or provider details.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui |
-| Backend | Next.js API Routes, Prisma ORM 6 |
-| Database | PostgreSQL (Supabase — `iwbshmshegewmctfucaz` on eu-west-2) |
-| Storage | Vercel Blob (client-side direct upload) |
-| AI | Z.ai Gateway (GLM-4-Plus), Kal Protocol 2.0, Adaptive Middleware |
-| Auth | Clerk (pk_live_ production key) |
-| Billing | Stripe + Paystack |
-| CRM | Zoho |
-| Email | Zoho CRM (SendMail API) |
-| Cache | Upstash Redis (rate limiting) |
-| Logging | Structured logger (`src/lib/logger.ts`) — debug/info gated behind NODE_ENV |
-| Hosting | Vercel (project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`) |
+|-------|------------|
+| Web application | Next.js with App Router, TypeScript, and standalone output |
+| UI | React, Tailwind CSS, and shared UI components |
+| Data | Supabase PostgreSQL with Row Level Security (RLS) |
+| ORM | Prisma |
+| AI runtime | Cloudflare Workers AI with Athena Runtime v2 |
+| Tool protocol | MCP (Model Context Protocol) orchestration |
+| Hosting | Vercel deployment for the Next.js application; Cloudflare Workers for edge runtime components |
 
----
+## Repository Layout
 
-## Project Structure
-
-```
+```text
 src/
-├── app/
-│   ├── (auth)/                  # Sign-in, sign-up
-│   ├── (public)/                # About, pricing, blog, contact, legal
-│   ├── (onboarding)/            # User onboarding flow
-│   ├── (dashboard)/
-│   │   ├── dashboard/           # Main dashboard + settings
-│   │   ├── pitch-deck-analyser/ # E1: Deck analysis
-│   │   ├── elevator-script/     # E2: Script coaching + Kal chat
-│   │   ├── elevator-pitch-live/ # E3: Live pitch recording + analysis
-│   │   ├── coach/full/          # E4: 30-min full pitch session
-│   │   └── founder/             # E5: Founder readiness, pathway, research, narration
-│   ├── error.tsx                # Root error boundary
-│   └── api/
-│       ├── kal/chat/            # Kal Protocol 2.0 contextual chat
-│       ├── kal/prewarm/         # Z.ai gateway pre-warm
-│       ├── coach/deck/          # E1 AI analysis
-│       ├── coach/script/        # E2 AI analysis
-│       ├── coach/live/          # E3 AI analysis
-│       ├── coach/full/          # E4 AI analysis
-│       ├── coach/founder/       # E5 AI analysis
-│       ├── billing/webhooks/    # Stripe + Zoho webhooks
-│       ├── blob/upload/         # Vercel Blob upload route (handleUpload + DELETE)
-│       ├── webhooks/clerk/      # Clerk user sync webhook
-│       └── user/                # Sync, onboarding, change-password
-├── components/
-│   ├── ui/                      # 15 shadcn/ui components
-│   ├── layout/                  # Navbar, footer, theme toggle
-│   ├── kal/                     # Kal chat widget
-│   └── founder/                 # Module card, layout, progress tracker
-└── lib/
-    ├── ai-service.ts            # Core AI service — Z.ai SDK init + HTTP fallback
-    ├── zai-capabilities.ts      # Z.ai TTS + Web Search
-    ├── kal-protocol.ts          # Kal Protocol 1.0 (background retry)
-    ├── kal-protocol-v2.ts       # Kal Protocol 2.0 (contextual chat, 702 lines)
-    ├── kal-middleware-client.ts # Adaptive middleware RPC client (297 lines)
-    ├── clerk-config.ts          # Clerk auth configuration
-    ├── payment-service.ts       # Payment processing
-    ├── entitlement.ts           # Feature access / subscription logic (with grace period)
-    ├── rate-limit.ts            # Upstash Redis rate limiting (with circuit breaker)
-    ├── logger.ts                # Structured logging utility
-    ├── plan-config.ts           # Shared plan limits, score colors, format helpers
-    ├── use-unsaved-changes-warning.ts  # Shared beforeunload hook
-    ├── with-auth.ts             # Auth middleware helper
-    ├── db.ts                    # Prisma client (lazy singleton)
-    ├── storage.ts               # Multi-backend file storage (SSRF-protected)
-    ├── blob-upload.ts           # Vercel Blob client-side upload (with progress)
-    ├── blob-signature.ts        # Blob URL signing
-    ├── file-parser.ts           # PDF/PPTX/DOCX parsing
-    ├── vertex-ai.ts             # Google Vertex AI (secondary)
-    ├── zoho-crm.ts              # Zoho CRM integration
-    ├── email.ts                 # Zoho CRM email (SendMail API)
-    └── validation/schemas.ts    # Zod validation schemas
+├── app/                 # App Router pages, layouts, API routes, and boundaries
+├── components/          # Product UI and coaching components
+└── lib/                 # AI/runtime clients, auth, persistence, validation, and services
 prisma/
-├── schema.prisma                # 17 models, 9 enums
-└── migrations/
-    └── 0_init/migration.sql     # Single consolidated baseline migration
+├── schema.prisma        # Application data model
+└── migrations/          # Versioned database migrations
 scripts/
-└── vercel-build.sh              # Build pipeline: prisma generate → migrate deploy → next build
+└── vercel-build.sh      # Deterministic Prisma + Next.js production build
+.env.example             # Environment variable contract
 ```
 
----
+The exact implementation layout may evolve; route handlers and runtime adapters should remain thin, validated boundaries around domain logic.
 
-## Database Schema (17 Models)
+## Security and Hardening Posture
 
-| Domain | Model | Table |
-|--------|-------|-------|
-| Auth | `User` | `users` |
-| Billing | `Subscription` | `subscriptions` |
-| Billing | `Usage` | `usage` |
-| Billing | `Transaction` | `transactions` |
-| Billing | `ModuleAccess` | `module_access` |
-| E1 | `PitchDeck` | `pitch_decks` |
-| E2 | `PitchScript` | `pitch_scripts` |
-| E3 | `PitchVideo` | `pitch_videos` |
-| E4 | `FullPitchSession` | `full_pitch_sessions` |
-| E5 | `FounderSession` | `founder_sessions` |
-| Chat | `ChatMessage` | `chat_messages` |
-| Chat | `KalChatSession` | `kal_chat_sessions` |
-| Integration | `WebhookLog` | `webhook_logs` |
-| Integration | `ZohoSyncLog` | `zoho_sync_logs` |
+The repository follows a forensic, fail-closed documentation and deployment standard:
 
-**Enums:** `PlanType`, `SubscriptionStatus`, `ScriptInputType`, `AnalysisStatus` (includes KAL_PENDING/KAL_FAILED), `InvestorReadinessLevel`, `FounderModuleType`, `TransactionType`, `PaymentProvider`, `ChatRole`
+- Dev-auth founder tier is isolated for development workflows and must not be treated as production authentication.
+- Error boundaries sanitize user-facing failures; provider errors, stack traces, credentials, and internal implementation details are not returned to clients.
+- Security headers are strict and include `Cache-Control: no-store` for sensitive responses and `X-Content-Type-Options: nosniff` to prevent MIME sniffing.
+- AI input and tool payloads are validated and bounded before execution.
+- Supabase RLS is the database-level isolation boundary; server-side access must still enforce authenticated ownership and authorization.
+- Secrets belong in environment configuration, never in source control, logs, README examples, or committed build artifacts.
+- CI and production builds use `npm ci` for deterministic dependency installation from the lockfile.
+- Structured logs should support diagnosis while redacting credentials, tokens, raw prompts, and sensitive user data.
 
----
+## Environment Setup
+
+Use the checked-in template as the source of truth for local configuration:
+
+```bash
+cp .env.example .env.local
+```
+
+Then fill in the required values for the local Supabase database, Prisma, authentication, AI/runtime providers, MCP endpoints, and deployment integrations. Do not copy production secrets into the repository or commit `.env.local`.
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- PostgreSQL database (Supabase account)
-- Clerk account for authentication
-- Z.ai API key
 
-### Installation
+- Node.js and npm versions supported by the repository’s package configuration
+- A Supabase project with PostgreSQL and the required RLS policies
+- Access to the configured authentication and AI/runtime providers
 
-```bash
-git clone https://github.com/Morpheos22/PitchCoach Ai.git
-cd PitchCoach Ai
-npm install
-```
-
-### Environment Setup
+### Install and run
 
 ```bash
-# Copy the template and fill in your values
-# See .env.example for all required variables
+npm ci
+npm run dev
 ```
 
-### Database
+### Build and verification
 
 ```bash
-# Generate Prisma Client
-npm run db:generate
-
-# Push schema to database (dev)
-npm run db:push
-
-# Check migration status
-npm run db:status
-
-# Deploy migrations (production)
-npm run db:deploy
+npm run build
+npm run test
 ```
 
-### Development
+The production build uses the repository build pipeline and standalone Next.js output. CI should prefer `npm ci` over `npm install` so dependency resolution remains reproducible.
 
-```bash
-npm run dev        # Start dev server on port 3000
-npm run build      # Production build
-npm run test       # Run tests
-```
+### Database commands
 
----
+Use the package scripts provided by the repository for Prisma generation, local schema work, migration status, and production migration deployment. Database changes must be reviewed alongside their RLS implications before being applied.
 
-## Security Features
+## Operational Notes
 
-- **SSRF Protection**: Host allowlist enforcement on all file URL inputs, private IP blocking (IPv4 + IPv6-mapped)
-- **Error Boundaries**: Root and dashboard-level error.tsx for graceful crash recovery
-- **Rate Limiting**: Tiered rate limiting with Upstash Redis (AI routes: 5/min, payment: 10/min, auth: 5/min)
-- **Redis Circuit Breaker**: Auto-retry after outages with 30s cooldown; fail-open policy
-- **Structured Logging**: Debug/info logs are no-ops in production; warn/error always emitted
-- **Subscription Grace Period**: Cancelled subscriptions retain access until billing period ends
-- **Blob Upload Auth**: Clerk-authenticated upload route with category-based file validation
-
----
-
-## Key Credentials Reference
-
-> **NOTE:** These are stored in `.env.local` (gitignored) and Vercel env vars. Never commit to git.
-
-| Service | Env Var | Status |
-|---------|---------|--------|
-| Supabase DB | `DATABASE_URL` | Set (eu-west-2 pooler) |
-| Supabase DB Direct | `DIRECT_URL` | Set (eu-west-2 direct) |
-| Clerk Publishable | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Set (pk_live_) |
-| Clerk Secret | `CLERK_SECRET_KEY` | Set (sk_live_ production key) |
-| Clerk Webhook | `CLERK_WEBHOOK_SECRET` | MISSING — needs Clerk Dashboard webhook setup |
-| Z.ai API | `ZAI_API_KEY` | Set |
-| Z.ai Base | `ZAI_BASE_URL` | Set |
-| Vercel Blob | `BLOB_READ_WRITE_TOKEN` | Set |
-| Kal Middleware | `KAL_MIDDLEWARE_URL` | Set |
-| Stripe Secret | `STRIPE_SECRET_KEY` | Set |
-| Stripe Webhook | `STRIPE_WEBHOOK_SECRET` | Set |
-
----
-
-## Critical Gotchas
-
-1. **Supabase region is `aws-1-eu-west-2`, NOT `aws-0-af-south-1`** — the af-south-1 hostname does NOT resolve in DNS. Always use eu-west-2.
-2. **Direct DB hostname** (`db.iwbshmshegewmctfucaz.supabase.co`) resolves to IPv6 only — won't work from IPv4-only environments.
-3. **CLERK_WEBHOOK_SECRET** must be set for new user sign-ups to auto-create DB records. Create a webhook in Clerk Dashboard pointing to `/api/webhooks/clerk` with `user.created` and `user.updated` events.
-4. **Stripe `cancel_at_period_end`** is the authoritative field for cancellation status — do NOT check `status === 'canceled'` (status remains 'active' until the period ends).
-
----
-
-## Codebase Audit Summary (Sessions 3-4)
-
-### Batch 1 — Critical Infrastructure (COMPLETED)
-- Created missing `/api/blob/upload/route.ts` (handleUpload + DELETE handler)
-- Deleted `analyze_screenshots.mjs` (hardcoded JWT)
-- Enforced host allowlist in storage.ts (SSRF protection)
-- Added IPv6-mapped IPv4 bypass to private IP block list
-
-### Batch 2 — Security Hardening (COMPLETED)
-- Removed 5 unused Supabase vars from .env.local
-- Fixed stale Stripe vars in .env.example
-- Created root and dashboard error boundaries
-- Added rate limiting to change-password (5 req/15min)
-- Removed /api/user/sync from rate-limit skip list
-
-### Batch 3 — Script Check E2E (COMPLETED)
-- Added text input tab + user-selectable audience/duration
-- Added Kal Protocol activation on iterate failure
-- Added upload progress callback + progress bar
-- E2E smoke test verification
-
-### Batch 4 — Dead Code Cleanup (COMPLETED)
-- Deleted dead compare route, unused dialog.tsx, @radix-ui/react-dialog
-- Extracted plan-config.ts and useUnsavedChangesWarning() hook
-- Removed dead onComplete no-op callback
-
-### Batch 5 — Anti-Pattern Remediation (COMPLETED)
-- Fixed useEffect dependency arrays (2 stale closures + kal-chat-widget polling)
-- Created structured logger utility (`src/lib/logger.ts`)
-- Applied logger to E1/E2 coach routes (~40 console calls → gated logging)
-- Fixed `any` types in Stripe webhook handler
-- Added cancelled subscription grace period
-- Fixed `cancelAtPeriodEnd` bug (was using status check instead of Stripe's field)
-- Fixed `stripeSubscriptionId` bug (was storing payment_intent ID)
-- Implemented Stripe billing period from API (not hardcoded)
-- Added Redis circuit breaker with retry cooldown
-
-### Batch 6 — Documentation & Deployment (COMPLETED)
-- Updated worklog.md and README.md
-- Verified: tsc --noEmit zero errors, tsc --noEmit --strict zero errors
-
-### Batch 7 — Security Hardening, Bug Fixes, Code Quality (COMMITTED)
-Three batches committed and pushed to origin/main:
-
-**Batch A — Security Hardening** (commit `f9b0a39`, 9 files)
-- A1: Prompt injection defense — wrapped user content in `<user_content>` XML tags across 3 AI service files
-- A2: Verified blob DELETE ownership check already in place
-- A3: Verified polyfills import already in file-parser.ts
-- A4: Removed /api/user/onboarding and /api/user/sync from middleware public routes
-- A5: Sanitized .env.example — replaced real emails/URLs with placeholders
-- A6: Removed hardcoded dev email fallbacks from dev-auth.ts, zoho-auth.ts, resend-email.ts
-- A7: Hard-blocked /api/dev/* routes in production (403 before handler runs)
-- A8: Created "dev" rate limit tier (5/min), reduced "unrestricted" from 1000/min to 100/min
-
-**Batch B — Bug Fixes** (commit `5a30ab1`, 9 files, net -603 lines)
-- B1: Fixed Type/Paste tab switch — removed `w-fit` from TabsList base styles
-- B2: Fixed pitchDuration key mismatch — standardized field name + z.coerce.number() defense
-- B3: Verified onboarding metadata key consistent (no actual mismatch)
-- B4: Fixed Kal Agent health endpoint — content-type check before .json() parse
-- B5: Deleted dead routes: /api/chat, /api/video, /lib/chatbot-config.ts (-603 lines)
-- B6: Updated health check — replaced Google AI test with static object
-
-**Batch C — Code Quality** (commit `0115c47`, 14 files, net -50 lines)
-- C1: Removed hardcoded adaptive.ai fallback URL (infrastructure leak)
-- C2: Replaced diagnostic Google AI test with Kal Agent test; deprecated vertex-ai.ts
-- C3: Removed stale /api/video references from vercel.json and rate-limit.ts
-- C4: Fixed stale comments across health, iterate, script routes
-- C5: Unexported 3 internal-only storage.ts functions
-- C6: Verified /api/contact is valid (contact form → Zoho CRM)
-- C7: Standardized pitchDuration field name across client FormData + server
-- C8: Removed stale references from README.md
-
-**E2E Verification** (browser-based, production at pitchcoachai.tech)
-- DOCX upload: file → blob → text extraction → AI analysis → results page ✅
-- TXT upload: same pipeline ✅
-- Text input (via API): analysis + iterate ✅
-- Iterate & Improve: DOCX 75→83, Text 58→74 ✅
-- Version navigation (v1 ↔ v2) ✅
-- History page with scores ✅
-- AI model: glm-4-plus (direct), ~10-12s response time ✅
-
----
+- Keep the Athena Runtime v2 limits aligned across the Worker, MCP adapters, and application-side validation.
+- Treat adaptive fallback as a controlled degradation path, not a way to bypass validation or authorization.
+- Keep error responses sanitized and use structured logs for investigation.
+- Verify production behavior through the health endpoint and deployment logs rather than relying on local assumptions.
+- Any change to authentication, RLS, runtime limits, headers, or fallback behavior should include a focused regression check.
 
 ## License
 
-MIT License — see LICENSE file for details.
+MIT License — see `LICENSE` for details.
