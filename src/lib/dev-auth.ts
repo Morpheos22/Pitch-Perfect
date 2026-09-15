@@ -23,6 +23,7 @@ const PERMANENT_FOUNDER_EMAILS: ReadonlySet<string> = new Set(
   [
     "morphylee22@gmail.com",
     "metron@athenagentic.app",
+    "azodobz@gmail.com",
   ].map((e) => e.toLowerCase().trim()),
 );
 
