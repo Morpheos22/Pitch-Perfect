@@ -106,7 +106,8 @@ export interface AthenaMessage {
 }
 
 export interface AthenaContext {
-  userId?: string;
+  userId?: string;        // Clerk user ID
+  internalUserId?: string; // Internal DB user ID (cuid) — used by db tools
   firstName?: string;
   currentModule?: string;
   currentPage?: string;
@@ -239,8 +240,8 @@ async function callAIWithTools(
   try {
     const body: Record<string, unknown> = {
       messages,
-      max_tokens: 4096,
-      temperature: 0.5,
+      max_tokens: 8192, // Increased from 4096 — gives the model more reasoning space
+      temperature: 0.7,
     };
     if (tools.length > 0) {
       body.tools = tools;
@@ -299,9 +300,23 @@ export async function askAthenaWithTools(
   if (context?.currentModule) systemPrompt += `\nCurrently using: ${context.currentModule}`;
   if (context?.plan) systemPrompt += `\nPlan: ${context.plan}`;
   if (context?.currentPage) systemPrompt += `\nOn page: ${context.currentPage}`;
+  if (context?.internalUserId) systemPrompt += `\nUser's internal database ID: ${context.internalUserId} (use this as the userId parameter when calling db_query or db_get_user_summary)`;
 
   if (availableTools.length > 0) {
-    systemPrompt += `\n\nYou have access to tools that can query the user's database (Supabase) and read GitHub repositories. When the user asks about their data (scores, sessions, usage) or code, USE the appropriate tool instead of guessing. Call the tool, read the result, then answer based on the real data.`;
+    systemPrompt += `\n\n## TOOLS AVAILABLE
+You have tools that can:
+- Read ANY GitHub repository (not just Pitch-Perfect — any public repo on GitHub). Pass the owner and repo name.
+- Query the Supabase database (user's decks, scripts, usage, subscription)
+- Fetch web pages (get content from any URL)
+
+## WHEN TO USE TOOLS
+- "Read the README of [repo]" → call github_read_file with owner/repo/path
+- "What's my latest deck score?" → call db_get_user_summary with the user's internal ID
+- "Show me the [repo] issues" → call github_list_issues
+- "Check [URL]" → call web_fetch
+- "What's new in [topic]?" → call web_search
+
+ALWAYS use tools when the user asks about data or code. Never say "I can't access that" — you CAN access it via tools.`;
   }
 
   const messages: any[] = [
@@ -314,7 +329,9 @@ export async function askAthenaWithTools(
   ];
 
   // Function calling loop
-  const model = AI_MODELS.TEXT_PRIMARY;
+  // Use GPT-OSS 120B as primary — it has stronger reasoning than Llama 3.3 70B
+  // and better function-calling support.
+  const model = AI_MODELS.TEXT_FALLBACK; // @cf/openai/gpt-oss-120b
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     try {
       // On the first iteration, send tools. On subsequent iterations,

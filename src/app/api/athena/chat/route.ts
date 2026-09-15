@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { askAthena, askAthenaWithTools, AthenaMessage } from "@/lib/athena-agent";
+import { prisma } from "@/lib/db";
 import {
   checkAthenaQuota,
   reserveAnonSlot,
@@ -124,14 +125,24 @@ export async function POST(request: NextRequest) {
   if (isAnon) reserveAnonSlot();
 
   try {
+    // Look up the user's internal DB ID so tools can query their data
+    let internalUserId: string | undefined;
+    if (userId) {
+      const dbUser = await prisma.user.findUnique({
+        where: { clerkId: userId },
+        select: { id: true },
+      });
+      internalUserId = dbUser?.id;
+    }
+
     // Use askAthenaWithTools (agent mode with MCP tools) for signed-in users.
     // For anon users, fall back to askAthena (no tools — can't trust identity).
-    // If askAthenaWithTools fails, it internally falls back to askAthena.
     const response = userId
       ? await askAthenaWithTools(
           message,
           {
             userId,
+            internalUserId,
             firstName: (context as { firstName?: string } | null)?.firstName,
             currentModule: (context as { currentModule?: string } | null)?.currentModule,
             currentPage: (context as { currentPage?: string } | null)?.currentPage,

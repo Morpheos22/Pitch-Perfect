@@ -475,47 +475,22 @@ const githubTools: Tool[] = [
   },
 ];
 
-// ── Agent Browser tool (via CLI) ──────────────────────────────────────────
-// Athena can control a headless browser using the agent-browser CLI.
-// This lets her navigate websites, take screenshots, fill forms, and
-// extract data from web pages.
+// ── Web fetch tool (works on Vercel — no headless browser needed) ──────────
+const webFetchTool: Tool = {
+  name: "web_fetch",
+  description: "Fetch the text content of a web page. Use this when the user asks to check a website, read a page, or get content from a URL.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "The URL to fetch (e.g., 'https://example.com')" },
+    },
+    required: ["url"],
+  },
+  backend: "github-api" as any, // reuse the "direct" backend type
+};
 
-const browserTools: Tool[] = [
-  {
-    name: "browser_navigate",
-    description: "Navigate to a URL in a headless browser. Returns the page title and a snapshot of interactive elements. Use this when the user asks to open a website, check a page, or interact with web content.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "The URL to navigate to (e.g., 'https://pitchcoachai.tech')" },
-      },
-      required: ["url"],
-    },
-    backend: "agent-browser",
-  },
-  {
-    name: "browser_screenshot",
-    description: "Take a screenshot of the current page in the browser. Returns the file path of the saved screenshot.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        full: { type: "boolean", description: "If true, capture the full page (not just the viewport)" },
-      },
-    },
-    backend: "agent-browser",
-  },
-  {
-    name: "browser_get_text",
-    description: "Extract text content from the current page. Useful for reading article content, checking if a page loaded correctly, or scraping data.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        selector: { type: "string", description: "CSS selector to extract text from (optional — defaults to full page)" },
-      },
-    },
-    backend: "agent-browser",
-  },
-];
+// Removed browser tools (agent-browser CLI) — they don't work on Vercel
+// serverless functions. Replaced with web_fetch which uses fetch().
 
 async function callGithubTool(toolName: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   if (!GITHUB_TOKEN) {
@@ -617,9 +592,7 @@ export async function getAvailableTools(): Promise<Tool[]> {
     getAthenaTools(),
     Promise.resolve(githubTools),
   ]);
-  // If our MCP server has tools, use those (they include GitHub + DB + web search).
-  // Also include the direct GitHub wrapper as fallback.
-  return [...athenaTools, ...ghTools, ...browserTools];
+  return [...athenaTools, ...ghTools, webFetchTool];
 }
 
 /**
@@ -642,8 +615,25 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
     return callGithubTool(toolName, args);
   }
 
+  if (toolName === "web_fetch") {
+    const url = args.url as string;
+    if (!url) return { content: "URL is required", isError: true };
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(15000),
+      });
+      const html = await res.text();
+      // Strip HTML tags for clean text
+      const text = html.replace(/<script[^>]*>.*?<\/script>/gs, "").replace(/<style[^>]*>.*?<\/style>/gs, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return { content: text.slice(0, 3000) };
+    } catch (err) {
+      return { content: `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+    }
+  }
+
   if (toolName.startsWith("browser_")) {
-    return callBrowserTool(toolName, args);
+    return { content: "Browser tools are not available on Vercel. Use web_fetch instead.", isError: true };
   }
 
   if (toolName.startsWith("cf_")) {
