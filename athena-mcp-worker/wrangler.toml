@@ -2,6 +2,12 @@ name = "athena-mcp-server"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
-# Env vars — set these in the Cloudflare dashboard or via wrangler secret
-# GITHUB_TOKEN, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ZAI_API_KEY
+[[durable_objects.bindings]]
+name = "ATHENA_MCP"
+class_name = "AthenaMCP"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AthenaMCP"]

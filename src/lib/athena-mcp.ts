@@ -645,17 +645,25 @@ export async function callTool(toolName: string, args: Record<string, unknown>):
   if (toolName === "web_search") {
     const query = args.query as string;
     const num = Math.min((args.num as number) || 5, 10);
-    const ZAI_API_KEY = process.env.ZAI_API_KEY || process.env.ZAI_TOKEN || "";
     try {
-      const res = await fetch("https://api.z.ai/api/paas/v4/tools/web_search", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${ZAI_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query, num }),
+      // Use DuckDuckGo HTML search (no API key needed — just parse the HTML)
+      const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(15000),
       });
-      if (!res.ok) return { content: `Web search failed: ${res.status}`, isError: true };
-      const results: any[] = await res.json();
-      const formatted = results.map((r, i) => `${i + 1}. ${r.name}\n   ${r.snippet?.slice(0, 200) || ""}\n   ${r.url}`).join("\n\n");
-      return { content: formatted || "No results found." };
+      const html = await res.text();
+      // Parse DuckDuckGo HTML results
+      const results: string[] = [];
+      const matches = html.matchAll(/<a rel="nofollow" class="result__a" href="[^"]*">(.*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g);
+      let count = 0;
+      for (const m of matches) {
+        if (count >= num) break;
+        const title = m[1].replace(/<[^>]+>/g, "").trim();
+        const snippet = m[2].replace(/<[^>]+>/g, "").trim();
+        results.push(`${count + 1}. ${title}\n   ${snippet.slice(0, 200)}`);
+        count++;
+      }
+      return { content: results.join("\n\n") || `No results for "${query}"` };
     } catch (err) {
       return { content: `Web search failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
     }
