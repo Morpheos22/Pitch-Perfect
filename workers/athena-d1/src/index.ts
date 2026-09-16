@@ -41,7 +41,12 @@ const AXES = ["problem", "market", "solution", "traction", "business_model", "go
 
 // Default vision model — Llava 1.5 7B is well-supported on Cloudflare Workers AI.
 // Override with VISION_MODEL env var if a different model is preferred.
-const VISION_MODEL_DEFAULT = "@cf/llava-hf/llava-1.5-7b-hf";
+// Default vision model — Llama 3.2 11B Vision supports the OpenAI-compatible
+// messages format with content blocks (text + image_url). Llava 1.5 7B
+// requires a different format ({ image: bytes, prompt: string }) that has
+// known serialization issues in the Workers runtime. Llama 3.2 Vision is
+// the safer default.
+const VISION_MODEL_DEFAULT = "@cf/meta/llama-3.2-11b-vision-instruct";
 
 // ── Behavior detection: prompt injection, profanity, deceit signals ───────
 // Deterministic TS-side guards. Run BEFORE the model is invoked.
@@ -540,16 +545,22 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
 
       if (base64Data && !result?.error) {
         try {
-          // Decode base64 to raw bytes — Llava expects a Uint8Array, not a data URL.
-          const binaryString = atob(base64Data);
-          const imageBytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) imageBytes[i] = binaryString.charCodeAt(i);
-
+          // Use OpenAI-compatible messages format with content blocks.
+          // This works with Llama 3.2 Vision (@cf/meta/llama-3.2-11b-vision-instruct)
+          // and other models that support the standard chat completions format.
+          // The image is passed as a data URL inside the image_url content block.
+          const dataUrl = `data:${mimeType};base64,${base64Data}`;
           const visionRes: any = await env.AI.run(model, {
-            image: imageBytes,
-            prompt: question,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: question },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            }],
+            max_tokens: 1024,
           });
-          const description = visionRes?.response || visionRes?.description || visionRes?.result?.response || "";
+          const description = visionRes?.response || visionRes?.choices?.[0]?.message?.content || visionRes?.result?.response || "";
           result = {
             model,
             question,
