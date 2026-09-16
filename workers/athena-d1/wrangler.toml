@@ -1,0 +1,11 @@
+name = "athena-d1"
+main = "src/index.ts"
+compatibility_date = "2026-09-16"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pitchcoach-athena-d1"
+database_id = "athena-d1-prod"
