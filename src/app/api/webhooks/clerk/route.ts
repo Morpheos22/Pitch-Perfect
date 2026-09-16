@@ -13,6 +13,21 @@ export const dynamic = 'force-dynamic';
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
+const ATHENA_WARMUP_TTL_MS = 60_000;
+const athenaWarmups = new Map<string, number>();
+
+function shouldWarmup(clerkUserId: string): boolean {
+  if (!clerkUserId) return false;
+  const now = Date.now();
+  for (const [id, timestamp] of athenaWarmups) {
+    if (now - timestamp >= ATHENA_WARMUP_TTL_MS) athenaWarmups.delete(id);
+  }
+  const previous = athenaWarmups.get(clerkUserId);
+  if (previous !== undefined && now - previous < ATHENA_WARMUP_TTL_MS) return false;
+  athenaWarmups.set(clerkUserId, now);
+  return true;
+}
+
 
 interface ClerkWebhookEvent {
   type: string;
@@ -26,6 +41,7 @@ interface ClerkWebhookEvent {
       };
     }>;
     primary_email_address_id?: string;
+    user_id?: string;
     first_name?: string;
     last_name?: string;
     image_url?: string;
@@ -86,7 +102,6 @@ export async function POST(req: NextRequest) {
     switch (type) {
       case "user.created":
         await handleUserCreated(data);
-        await fireAthenaWarmup(data.id, data.email_addresses?.[0]?.email_address || "");
         break;
 
       case "user.updated":
@@ -94,11 +109,14 @@ export async function POST(req: NextRequest) {
         break;
 
       case "session.created":
-        await fireAthenaWarmup(data.id || data.user_id || "", data.email_addresses?.[0]?.email_address || "");
+        const clerkUserId = data.user_id || data.id;
+        if (shouldWarmup(clerkUserId)) {
+          await fireAthenaWarmup(clerkUserId, data.email_addresses?.[0]?.email_address || "");
+        }
         break;
 
       default:
-        // Unhandled event — silently ignore
+        // Unhandled event â silently ignore
     }
 
 
@@ -119,9 +137,9 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   )?.email_address || data.email_addresses[0]?.email_address || '';
   if (!email) return;
 
-  // ── Subdomain/Disposable email check ──
+  // ââ Subdomain/Disposable email check ââ
   // BUG FIX: Previously, isBlockedEmail() returned early WITHOUT creating any DB record.
-  // This left a "zombie user" — the user exists in Clerk but has no DB row, causing
+  // This left a "zombie user" â the user exists in Clerk but has no DB row, causing
   // errors on all authenticated pages (middleware finds no subscription/usage).
   // Fix: Instead of silently returning, we still create the user + subscription + usage,
   // but mark the account as blocked via onboardingCompleted=false and skip CRM sync.
@@ -129,10 +147,10 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   const blocked = isBlockedEmail(email);
   if (blocked) {
     console.warn(`[Clerk Webhook] Blocked user with subdomain/disposable email: ${email}`);
-    // Don't return — continue to create DB record so the user isn't a zombie.
+    // Don't return â continue to create DB record so the user isn't a zombie.
   }
 
-  // ── Idempotency: check by clerkId FIRST, then by email ──
+  // ââ Idempotency: check by clerkId FIRST, then by email ââ
   // BUG FIX: Previously only checked clerkId. If a user was deleted from the DB
   // (e.g., manual cleanup) but re-signed-up with the same email, the clerkId would
   // be different but the email unique constraint would cause a Prisma error.
@@ -141,14 +159,14 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     where: { clerkId: data.id },
   });
 
-  if (existingByClerkId) return; // Already exists — idempotent
+  if (existingByClerkId) return; // Already exists â idempotent
 
   const existingByEmail = await prisma.user.findUnique({
     where: { email },
   });
 
   if (existingByEmail) {
-    // User re-signed-up with same email but new clerkId — update the clerkId
+    // User re-signed-up with same email but new clerkId â update the clerkId
     console.log(`[Clerk Webhook] Re-signup detected: updating clerkId for ${email}`);
     await prisma.user.update({
       where: { email },
@@ -179,11 +197,11 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   );
   const emailVerified = primaryEmail?.verification?.status === 'verified';
 
-  // ── Create user + subscription + usage in a single transaction ──
+  // ââ Create user + subscription + usage in a single transaction ââ
   // BUG FIX: Previously, subscription.create() was a separate call after user.create().
   // If the onboarding API ran concurrently (race condition), both would try to create
   // a subscription for the same userId, hitting the unique constraint and crashing one.
-  // Fix: Use a $transaction with upsert for subscription and usage — safe to run in parallel.
+  // Fix: Use a $transaction with upsert for subscription and usage â safe to run in parallel.
   const user = await prisma.user.create({
     data: {
       clerkId: data.id,
@@ -200,8 +218,8 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
       where: { userId: user.id },
       create: {
         userId: user.id,
-        // PERMANENT_FOUNDER_EMAILS + DEVELOPER_EMAILS → FOUNDER tier.
-        // This fires on user.created — morphylee22@gmail.com gets
+        // PERMANENT_FOUNDER_EMAILS + DEVELOPER_EMAILS â FOUNDER tier.
+        // This fires on user.created â morphylee22@gmail.com gets
         // FOUNDER at signup, before the first page load.
         plan: isDeveloper ? 'FOUNDER' : 'FREE',
         status: 'ACTIVE',
@@ -215,8 +233,8 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     }),
   ]);
 
-  // Sync to CRM — bare lead (no country/useCase yet)
-  // Skip CRM sync for blocked emails — no point creating a lead for a spammer.
+  // Sync to CRM â bare lead (no country/useCase yet)
+  // Skip CRM sync for blocked emails â no point creating a lead for a spammer.
   if (!blocked) {
     syncUserToCRM({
       email,
@@ -229,9 +247,9 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
     });
   }
 
-  // ── Send welcome email via Supabase SMTP ──
+  // ââ Send welcome email via Supabase SMTP ââ
   // Primary: Nodemailer SMTP (Supabase SMTP, from hello@pitchcoachai.tech)
-  // Fallback: Cloudflare Email Routing (hello@pitchcoachai.tech → Metron@Athenagentic.app)
+  // Fallback: Cloudflare Email Routing (hello@pitchcoachai.tech â Metron@Athenagentic.app)
   // If SMTP fails, Cloudflare Email Routing ensures the user can still reach us.
   if (!blocked) {
     import("@/lib/email")
@@ -288,8 +306,8 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   });
 
 
-  // ── Email verification trigger ──────────────────────────────────────────
-  // When the user's email transitions from unverified → verified, send a
+  // ââ Email verification trigger ââââââââââââââââââââââââââââââââââââââââââ
+  // When the user's email transitions from unverified â verified, send a
   // confirmation email. This is separate from the welcome email (which
   // fires on user.created) and the onboarding email (which fires when
   // onboarding completes).
@@ -311,11 +329,11 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   }
 
 
-  // ── CRM onboarding completion + welcome email ──
+  // ââ CRM onboarding completion + welcome email ââ
   // When onboarding data (country, primaryUseCase) appears in public_metadata,
   // update the CRM lead with the complete profile AND send the welcome email
   // via Zoho CRM's SendMail API. This handles the case where the onboarding
-  // API's fire-and-forget CRM call fails — the Clerk metadata update triggers
+  // API's fire-and-forget CRM call fails â the Clerk metadata update triggers
   // this user.updated webhook as a reliable retry.
   const onboardingJustCompleted = data.public_metadata?.onboardingCompleted === true
     && existingUser && !existingUser.onboardingCompleted;
@@ -325,7 +343,7 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
     const primaryUseCase = data.public_metadata?.primaryUseCase as string || undefined;
     const firstName = data.first_name || undefined;
 
-    // ── Send onboarding welcome email via Supabase SMTP ──
+    // ââ Send onboarding welcome email via Supabase SMTP ââ
     // Primary: Nodemailer SMTP (Supabase SMTP)
     // Fallback: Cloudflare Email Routing (hello@pitchcoachai.tech forwards to Metron@Athenagentic.app)
     import("@/lib/email")
@@ -337,7 +355,7 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
       })
       .catch((emailErr) => {
         console.warn(`[Clerk Webhook] Email send failed for ${email}:`, emailErr instanceof Error ? emailErr.message : emailErr);
-        // Fallback: Cloudflare Email Routing is always active —
+        // Fallback: Cloudflare Email Routing is always active â
         // if SMTP fails, the user can still email hello@pitchcoachai.tech
         // and it will forward to Metron@Athenagentic.app via Cloudflare
       });
@@ -355,10 +373,10 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
   }
 }
 
-// ── Athena warm-up ping ─────────────────────────────────────────────────────
+// ââ Athena warm-up ping âââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Fires the moment Clerk registers auth (user.created or session.created).
 // Syncs Supabase + pokes Poke API + pre-warms MCP DurableObject.
-// Fire-and-forget — max 3s, never blocks the webhook response.
+// Fire-and-forget â max 3s, never blocks the webhook response.
 async function fireAthenaWarmup(clerkId: string, email: string) {
   const tasks: Promise<void>[] = [];
 
@@ -366,11 +384,11 @@ async function fireAthenaWarmup(clerkId: string, email: string) {
   tasks.push(
     fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://pitchcoachai.tech"}/api/athena/preload`, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.ATHENA_SECRET_KEY || "poke-internal-trigger"}` },
+      headers: { "Authorization": `Bearer ${process.env.ATHENA_SECRET_KEY || ""}` },
     }).then(() => {}).catch(() => {}),
   );
 
-  // 2. Ping Poke API — warm up agent context with user info
+  // 2. Ping Poke API â warm up agent context with user info
   const POKE_API_KEY = process.env.POKE_API_KEY;
   if (POKE_API_KEY && email) {
     tasks.push(
