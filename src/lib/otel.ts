@@ -21,8 +21,7 @@ export async function registerOTEL(opts?: { serviceName?: string }): Promise<voi
   // @typescript-eslint/no-require-imports rule.
   const moduleName = "@vercel/otel";
   try {
-    // @ts-expect-error — dynamic import of a possibly-uninstalled package
-    const mod: any = await import(/* @vite-ignore */ moduleName).catch(() => null);
+    const mod: any = await import(moduleName).catch(() => null);
     if (mod && typeof mod.registerOTEL === "function") {
       mod.registerOTEL(opts);
       console.log(`[otel] registered serviceName=${opts?.serviceName || "next-app"}`);
