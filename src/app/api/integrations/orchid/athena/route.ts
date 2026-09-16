@@ -27,9 +27,17 @@ export async function POST(request: NextRequest) {
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "JSON object required" }, { status: 400 });
-  const input = body as Record<string, unknown>; const reasoning = input.reasoning === true; const messages = normalizeMessages(input);
+  const input = body as Record<string, unknown>;
+  const requestedOrchid6 = typeof input.tier === "string" && input.tier.trim().toLowerCase() === "orchid6";
+  const reasoning = input.reasoning === true || requestedOrchid6;
+  const messages = normalizeMessages(input);
   if (!messages) return NextResponse.json({ error: "prompt or messages is required" }, { status: 400 });
-  const maxTokens = clampTokens(input.maxTokens, reasoning); const tier = typeof input.tier === "string" && input.tier.trim() ? input.tier.trim().slice(0, 64) : "founder"; const sessionId = typeof input.sessionId === "string" ? input.sessionId.slice(0, 128) : undefined;
-  try { const result = await runAthena(messages, { reasoning, tier: reasoning ? "deep" : "conversational" } as never); return NextResponse.json({ response: result.message?.content || "", model: result.model, reasoning, tokensUsed: result.usage?.total_tokens ?? result.usage, metadata: { usage: result.usage, maxTokens, tier, ...(sessionId ? { sessionId } : {}) } }); }
-  catch (error) { console.error("[Orchid Athena] request failed", error); return NextResponse.json({ error: "Athena request failed", requestId: randomUUID() }, { status: 502 }); }
+  const maxTokens = requestedOrchid6 ? MAX_TOKENS : clampTokens(input.maxTokens, reasoning);
+  const tier = typeof input.tier === "string" && input.tier.trim() ? input.tier.trim().slice(0, 64) : "founder";
+  const sessionId = typeof input.sessionId === "string" ? input.sessionId.slice(0, 128) : undefined;
+  try {
+    const result = await runAthena(messages, { reasoning, tier: reasoning ? "deep" : "conversational", maxTokens } as never);
+    const response = typeof result.message === "string" ? result.message : result.message?.content || "";
+    return NextResponse.json({ response, model: result.model, reasoning, tokensUsed: result.usage?.total_tokens ?? result.usage, metadata: { usage: result.usage, maxTokens, tier, ...(sessionId ? { sessionId } : {}) } });
+  } catch (error) { console.error("[Orchid Athena] request failed", error); return NextResponse.json({ error: "Athena request failed", requestId: randomUUID() }, { status: 502 }); }
 }
