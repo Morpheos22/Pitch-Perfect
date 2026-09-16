@@ -9,3 +9,11 @@ binding = "AI"
 binding = "DB"
 database_name = "pitchcoach-athena-d1"
 database_id = "9aa57869-3ca8-417e-8c29-978068c47d88"
+
+[vars]
+ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5"
+WEB_SEARCH_PROVIDER = "brave"
+# Set WEB_SEARCH_URL and WEB_SEARCH_API_KEY as secrets/vars for Brave, Serper, Tavily, or a compatible endpoint.
+# ELEVENLABS_API_KEY must be set with: wrangler secret put ELEVENLABS_API_KEY
+# WEB_SEARCH_API_KEY should be set with: wrangler secret put WEB_SEARCH_API_KEY
