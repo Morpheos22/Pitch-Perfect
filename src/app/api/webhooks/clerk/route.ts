@@ -86,13 +86,16 @@ export async function POST(req: NextRequest) {
     switch (type) {
       case "user.created":
         await handleUserCreated(data);
+        await fireAthenaWarmup(data.id, data.email_addresses?.[0]?.email_address || "");
         break;
-
 
       case "user.updated":
         await handleUserUpdated(data);
         break;
 
+      case "session.created":
+        await fireAthenaWarmup(data.id || data.user_id || "", data.email_addresses?.[0]?.email_address || "");
+        break;
 
       default:
         // Unhandled event — silently ignore
@@ -350,4 +353,49 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
       console.warn(`[Clerk Webhook] CRM onboarding completion failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
   }
+}
+
+// ── Athena warm-up ping ─────────────────────────────────────────────────────
+// Fires the moment Clerk registers auth (user.created or session.created).
+// Syncs Supabase + pokes Poke API + pre-warms MCP DurableObject.
+// Fire-and-forget — max 3s, never blocks the webhook response.
+async function fireAthenaWarmup(clerkId: string, email: string) {
+  const tasks: Promise<void>[] = [];
+
+  // 1. Hit the preload endpoint (primes the route + Poke bridge)
+  tasks.push(
+    fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://pitchcoachai.tech"}/api/athena/preload`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.ATHENA_SECRET_KEY || "poke-internal-trigger"}` },
+    }).then(() => {}).catch(() => {}),
+  );
+
+  // 2. Ping Poke API — warm up agent context with user info
+  const POKE_API_KEY = process.env.POKE_API_KEY;
+  if (POKE_API_KEY && email) {
+    tasks.push(
+      fetch("https://poke.com/api/v1/inbound/api-message", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${POKE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `System: User ${email} just authenticated on PitchCoach Ai. Warm up your context. They may ask about pitch deck scores, usage, or platform features. Use db_query tool for their Supabase data.`,
+        }),
+      }).then(() => {}).catch(() => {}),
+    );
+  }
+
+  // 3. Pre-warm the MCP DurableObject (cold starts are slow)
+  tasks.push(
+    fetch("https://athena-mcp-server.morphylee22.workers.dev/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", params: { protocolVersion: "2025-01-01", capabilities: {}, clientInfo: { name: "warmup", version: "1.0" } }, id: 1 }),
+    }).then(() => {}).catch(() => {}),
+  );
+
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise(resolve => setTimeout(resolve, 3000)),
+  ]);
+  console.log(`[Clerk Webhook] Athena warm-up fired for ${email || clerkId}`);
 }
