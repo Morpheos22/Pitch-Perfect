@@ -172,6 +172,94 @@ export async function POST(request: NextRequest) {
     }
 
 
+    // ── Authenticate AI service layer + fire model warm-up ──────────────
+    // On every dashboard sync (POST /api/user/sync), check if Athena's
+    // AI service is warm for this user. If cold or stale (>30min),
+    // fire the warm-up trigger to pre-initialize the model powering Athena.
+    try {
+        const warmth = await prisma.$queryRaw`
+            SELECT status, "warmedAt", "isStale"
+            FROM public.check_athena_warmth(${user.id})
+        ` as any[];
+        const warm = warmth[0];
+        const isCold = !warm || warm.status === 'cold' || warm.isstale;
+
+        if (isCold) {
+            // Fire warm-up in background (don't block the sync response)
+            const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://pitchcoachai.tech";
+            const ATHENA_SECRET = process.env.ATHENA_SECRET_KEY || "";
+            const POKE_KEY = process.env.POKE_API_KEY || "";
+
+            // Mark as 'warming' in DB
+            await prisma.$executeRaw`
+                INSERT INTO public.ai_service_health ("userId", "clerkId", status, "warmedAt", "lastPingAt")
+                VALUES (${user.id}, ${clerkId}, 'warming', now(), now())
+                ON CONFLICT ("userId") DO UPDATE
+                SET status = 'warming', "warmedAt" = now(), "lastPingAt" = now(), "updatedAt" = now()
+            `;
+
+            // Fire three warm-up pings in parallel (fire-and-forget, max 5s)
+            const warmupTasks: Promise<void>[] = [];
+
+            // 1. Preload endpoint — authenticates the AI service layer
+            warmupTasks.push(
+                fetch(`${APP_URL}/api/athena/preload`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${ATHENA_SECRET}` },
+                }).then(() => {}).catch(() => {}),
+            );
+
+            // 2. Poke API — warm the agent's context
+            if (POKE_KEY) {
+                warmupTasks.push(
+                    fetch("https://poke.com/api/v1/inbound/api-message", {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${POKE_KEY}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            message: `System: User ${email} loaded the dashboard. Warm up your context. They may ask about pitch scores, usage, or platform features.`,
+                        }),
+                    }).then(() => {}).catch(() => {}),
+                );
+            }
+
+            // 3. MCP server — initialize DurableObject (eliminates cold start)
+            let mcpSession: string | null = null;
+            warmupTasks.push(
+                fetch("https://athena-mcp-server.morphylee22.workers.dev/mcp", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0", method: "initialize",
+                        params: { protocolVersion: "2025-01-01", capabilities: {}, clientInfo: { name: "dashboard-warmup", version: "1.0" } },
+                        id: 1,
+                    }),
+                }).then(async (res) => {
+                    mcpSession = res.headers.get("mcp-session-id");
+                    // Mark as warm after MCP initializes
+                    await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSession}, ${!!POKE_KEY})`;
+                }).catch(() => {}),
+            );
+
+            // Race: max 5s, then mark warm regardless (partial warmth > cold)
+            await Promise.race([
+                Promise.allSettled(warmupTasks),
+                new Promise(resolve => setTimeout(resolve, 5000)),
+            ]).then(async () => {
+                // Ensure we mark warm even if some tasks timed out
+                try {
+                    await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSession}, true)`;
+                } catch {}
+            });
+
+            console.log(`[User Sync] Athena warm-up fired for ${email}`);
+        } else {
+            console.log(`[User Sync] Athena already warm for ${email} (status=${warm.status})`);
+        }
+    } catch (warmupErr) {
+        // Non-fatal — don't block the sync response
+        console.warn(`[User Sync] Athena warm-up failed:`, warmupErr instanceof Error ? warmupErr.message : warmupErr);
+    }
+
     // SECURITY: Return only safe fields — never expose internal IDs
     // (zohoContactId, zohoAccountId, clerkId) to the client
     return NextResponse.json({
