@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   if (!body) return NextResponse.json({ error: "Request body is required" }, { status: 400 });
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-  const input = parsed as { message?: unknown; tier?: unknown; stream?: unknown; session_id?: unknown; turns?: unknown };
+  const input = parsed as { message?: unknown; tier?: unknown; stream?: unknown; session_id?: unknown; turns?: unknown; user_name?: unknown };
   if (typeof input.message !== "string" || !input.message.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
   // Identify the founder (Clerk userId + firstName) so Athena can address
