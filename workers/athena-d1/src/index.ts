@@ -560,62 +560,53 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
           const accountId = env.CLOUDFLARE_ACCOUNT_ID;
           const apiToken = env.CLOUDFLARE_API_TOKEN;
 
-          if (accountId && apiToken) {
-            // REST API approach — reliable
-            const restUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
-            const restRes = await fetch(restUrl, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${apiToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                image: base64Data,  // base64 string — REST API accepts this
-                prompt: question,
-              }),
-              signal: AbortSignal.timeout(30_000),
-            });
-            if (!restRes.ok) {
-              const errBody = await restRes.text();
-              result = { error: `Vision REST API failed: ${restRes.status} — ${errBody.slice(0, 300)}` };
-            } else {
-              const restJson: any = await restRes.json();
-              if (!restJson.success) {
-                result = { error: `Vision REST API error: ${JSON.stringify(restJson.errors || restJson)}` };
-              } else {
-                const description = restJson.result?.response || restJson.result?.choices?.[0]?.message?.content || "";
-                result = {
-                  model,
-                  question,
-                  description: typeof description === "string" ? description : JSON.stringify(description),
-                  mime_type: mimeType,
-                  provenance: { source: "cloudflare_rest_api_vision", model, timestamp: new Date().toISOString() },
-                };
-              }
-            }
-          } else {
-            // Fallback: try env.AI.run with the OpenAI-compatible format
-            // (may fail with 5006 error if the binding has the serialization issue)
-            const dataUrl = `data:${mimeType};base64,${base64Data}`;
+          // Use the AI binding with base64 string input.
+          // The REST API requires a token with AI permissions (not available here).
+          // The AI binding with Uint8Array has serialization issues in the current
+          // runtime. Passing the base64 string directly in the `image` field is
+          // the most compatible format across model versions.
+          try {
             const visionRes: any = await env.AI.run(model, {
-              messages: [{
-                role: "user",
-                content: [
-                  { type: "text", text: question },
-                  { type: "image_url", image_url: { url: dataUrl } },
-                ],
-              }],
+              image: base64Data,  // base64 string (not Uint8Array)
+              prompt: question,
               max_tokens: 1024,
             });
-            const description = visionRes?.response || visionRes?.choices?.[0]?.message?.content || visionRes?.result?.response || "";
+            const description = visionRes?.response || visionRes?.description || visionRes?.result?.response || visionRes?.choices?.[0]?.message?.content || "";
             result = {
               model,
               question,
               description: typeof description === "string" ? description : JSON.stringify(description),
               mime_type: mimeType,
-              provenance: { source: "cloudflare_workers_ai_binding_vision", model, timestamp: new Date().toISOString() },
-              warning: "Used AI binding fallback — set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN secrets for reliable REST API vision.",
+              provenance: { source: "cloudflare_workers_ai_vision", model, timestamp: new Date().toISOString() },
             };
+          } catch (bindingErr) {
+            // If the AI binding fails, try the REST API as fallback
+            if (accountId && apiToken) {
+              try {
+                const restUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+                const restRes = await fetch(restUrl, {
+                  method: "POST",
+                  headers: { "Authorization": `Bearer ${apiToken}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ image: base64Data, prompt: question }),
+                  signal: AbortSignal.timeout(30_000),
+                });
+                if (restRes.ok) {
+                  const restJson: any = await restRes.json();
+                  if (restJson.success) {
+                    const description = restJson.result?.response || "";
+                    result = { model, question, description: typeof description === "string" ? description : JSON.stringify(description), mime_type: mimeType, provenance: { source: "cloudflare_rest_api_vision", model, timestamp: new Date().toISOString() } };
+                  } else {
+                    result = { error: `Both AI binding and REST API failed. Binding: ${bindingErr instanceof Error ? bindingErr.message : String(bindingErr)}. REST: ${JSON.stringify(restJson.errors || restJson)}` };
+                  }
+                } else {
+                  result = { error: `Both AI binding and REST API failed. Binding: ${bindingErr instanceof Error ? bindingErr.message : String(bindingErr)}. REST HTTP ${restRes.status}` };
+                }
+              } catch (restErr) {
+                result = { error: `Both AI binding and REST API failed. Binding: ${bindingErr instanceof Error ? bindingErr.message : String(bindingErr)}. REST: ${restErr instanceof Error ? restErr.message : String(restErr)}` };
+              }
+            } else {
+              result = { error: `Vision model failed: ${bindingErr instanceof Error ? bindingErr.message : String(bindingErr)}. Set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN secrets for REST API fallback.` };
+            }
           }
         } catch (e) {
           result = { error: `Vision model failed: ${e instanceof Error ? e.message : String(e)}` };
