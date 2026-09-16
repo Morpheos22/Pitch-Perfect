@@ -98,6 +98,26 @@ CREATE TABLE IF NOT EXISTS prompt_logs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Session behavior tracking — warnings + state for prompt injection,
+-- profanity, and deceit signal guards. Per the Athena behavior spec:
+-- 1st violation = warning, 2nd = final warning, 3rd = session closed.
+CREATE TABLE IF NOT EXISTS session_warnings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  kind TEXT NOT NULL,  -- 'prompt_injection' | 'profanity' | 'deceit_signal'
+  detail TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS session_state (
+  session_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'closed'
+  warning_count INTEGER NOT NULL DEFAULT 0,
+  closed_reason TEXT,
+  closed_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_facts_session ON memory_facts(session_id);
 CREATE INDEX IF NOT EXISTS idx_turns_session ON drill_turns(session_id);
@@ -105,3 +125,5 @@ CREATE INDEX IF NOT EXISTS idx_discrepancies_session ON discrepancies(session_id
 CREATE INDEX IF NOT EXISTS idx_readiness_session ON readiness_scores(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_exec_session ON tool_executions(session_id);
 CREATE INDEX IF NOT EXISTS idx_prompt_logs_session ON prompt_logs(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_session_warnings_session ON session_warnings(session_id);
