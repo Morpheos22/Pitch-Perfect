@@ -540,16 +540,16 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
 
       if (base64Data && !result?.error) {
         try {
+          // Decode base64 to raw bytes — Llava expects a Uint8Array, not a data URL.
+          const binaryString = atob(base64Data);
+          const imageBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) imageBytes[i] = binaryString.charCodeAt(i);
+
           const visionRes: any = await env.AI.run(model, {
-            messages: [{
-              role: "user",
-              content: [
-                { type: "text", text: question },
-                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } },
-              ],
-            }],
+            image: imageBytes,
+            prompt: question,
           });
-          const description = visionRes?.response || visionRes?.choices?.[0]?.message?.content || visionRes?.result?.response || "";
+          const description = visionRes?.response || visionRes?.description || visionRes?.result?.response || "";
           result = {
             model,
             question,
