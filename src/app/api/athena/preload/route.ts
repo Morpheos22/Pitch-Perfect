@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 async function preload(request: Request) {
   const { userId } = await auth();
-  const secret = process.env.ATHENA_SECRET_KEY || "poke-internal-trigger";
+  const secret = process.env.ATHENA_SECRET_KEY;
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!userId && bearer !== secret) {
+  if (!userId && (!secret || bearer !== secret)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +18,7 @@ async function preload(request: Request) {
     status: "primed",
     knowledge: true,
     voice: true,
-    salutation: "Welcome back — Athena is ready to help sharpen your pitch.",
+    salutation: "Welcome back â Athena is ready to help sharpen your pitch.",
   }, { status: 200, headers: { "Cache-Control": "no-store" } });
 }
 
