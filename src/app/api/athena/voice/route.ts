@@ -5,8 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const VOICE_ENDPOINT = process.env.ATHENA_ENGINE_URL?.replace("/v1/athena", "") + "/v1/athena/voice"
-  || "https://athena-d1.morphylee22.workers.dev/v1/athena/voice";
+// Build the voice endpoint URL safely. The previous expression evaluated to
+// "undefined/v1/athena/voice" when ATHENA_ENGINE_URL was unset, because string
+// concatenation with undefined produces a truthy string that defeated the || fallback.
+const ATHENA_ENGINE_BASE = process.env.ATHENA_ENGINE_URL?.replace("/v1/athena", "") || "https://athena-d1.morphylee22.workers.dev";
+const VOICE_ENDPOINT = ATHENA_ENGINE_BASE + "/v1/athena/voice";
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
