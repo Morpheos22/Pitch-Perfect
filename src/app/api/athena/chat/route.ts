@@ -15,13 +15,21 @@ export async function POST(request: NextRequest) {
   const input = parsed as { message?: unknown; tier?: unknown; stream?: unknown; session_id?: unknown; turns?: unknown };
   if (typeof input.message !== "string" || !input.message.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
-  // Identify the founder (Clerk userId) so Athena can fetch their deck from Supabase.
-  // If unauthenticated, founder_id is omitted — Athena still drills, just without context.
+  // Identify the founder (Clerk userId + firstName) so Athena can address
+  // them by name and fetch their deck from Supabase.
   let founderId: string | undefined;
+  let founderName: string | undefined;
   try {
-    const { userId } = await auth();
-    if (userId) founderId = userId;
+    const { userId, sessionClaims } = await auth();
+    if (userId) {
+      founderId = userId;
+      // Pull firstName from Clerk JWT claims if available
+      const meta = sessionClaims as any;
+      founderName = meta?.firstName || meta?.u?.first_name || undefined;
+    }
   } catch { /* anonymous visitor — allow through */ }
+  // Allow client-side override (e.g., from onboarding form) but prefer server-side
+  const userName = (typeof input.user_name === "string" ? input.user_name : undefined) || founderName;
 
   const upstreamPayload = {
     message: input.message,
@@ -30,6 +38,7 @@ export async function POST(request: NextRequest) {
     session_id: typeof input.session_id === "string" ? input.session_id : undefined,
     turns: Array.isArray(input.turns) ? input.turns : undefined,
     founder_id: founderId,
+    user_name: userName,
   };
 
   // SSE streaming: if the client wants streaming, pass through the worker's

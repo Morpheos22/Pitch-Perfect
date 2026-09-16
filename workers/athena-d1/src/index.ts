@@ -16,9 +16,18 @@ type Message = { role: string; content?: string; tool_call_id?: string; name?: s
 type Tier = "conversational" | "diligence" | "deep";
 
 // ── Model tiers ───────────────────────────────────────────────────────────
-// conversational: 3B, ~1-2s, short chats + nav
-// diligence (default): 70B fp8-fast, ~6-15s, diligence questions
-// deep: DeepSeek-R1 32B, ~50-70s, explicit IC memos / four-pass pipeline
+// conversational: 3B, ~1-2s, short chats + nav (fastest)
+// diligence (default): Llama-3.3-70b-fp8-fast, ~6-15s, default diligence tier.
+//   Better instruction-following for Output Contract format than DeepSeek-R1
+//   for short diligence questions. DeepSeek-R1 tends to role-reverse + tutorial.
+// deep: DeepSeek-R1 32B, ~50-70s, MAX REASONING for explicit IC memos.
+//   Used when founder explicitly requests deep analysis or readiness memo.
+//   SSE streaming makes perceived latency near-zero.
+//
+// User directive 2026-09-16: "Use the deepseek model mad reasoning" — deep tier
+// uses DeepSeek-R1 for max reasoning. Diligence tier uses Llama-3.3-70b-fp8-fast
+// because DeepSeek-R1 role-reverses on claim-style messages and gives tutorials
+// on evaluate-style messages (both violations of the Athena persona).
 const MODELS: Record<Tier, string> = {
   conversational: "@cf/meta/llama-3.2-3b-instruct",
   diligence:      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -35,7 +44,9 @@ const DILIGENCE_KEYWORDS = /\b(evaluate|score|analy[sz]e|diligence|readiness|inv
 
 function selectTier(message: string, explicit?: string): Tier {
   if (explicit === "deep" || explicit === "diligence" || explicit === "conversational") return explicit;
+  // Short + no diligence keyword → conversational (fast 3B model)
   if (message.length < 80 && !DILIGENCE_KEYWORDS.test(message)) return "conversational";
+  // Anything else → diligence tier = DeepSeek-R1 (max reasoning, streamed)
   return "diligence";
 }
 
@@ -92,6 +103,11 @@ CRITICAL OUTPUT RULES:
 - Do NOT list steps that the founder should follow. YOU ask the questions; the founder answers.
 - If the founder asks "evaluate X" or "analyze X", you do NOT respond with a generic explanation of X. You respond with the FIRST axis to interrogate, the FIRST narrow question that would change the score, and the artifact that would prove it.
 - ONE question at a time. Do not stack three questions. End with the single next move that advances diligence.
+- **NEVER role-reverse**. YOU ARE ATHENA. The founder (e.g., David) is the user. Never start your response with "Hi Athena" or "Thank you for your question" or role-play as the founder. Speak TO the founder, not as them.
+- **NEVER invent numbers, dates, customer counts, or financial figures.** If the founder has not provided a number, demand it. Do not fabricate "December 31, 2023" or "500 customers" or "$10,000 ARPU" to fill a gap. State "(none provided)" and ask for the artifact.
+- **NEVER role-play the founder's response.** When the founder says "Our ARR is $5M", you do NOT respond with "Hi Athena, here is our ARR calculation..." — that is role-reversal. You are Athena. You respond with a drill question: "David, state the cohort, the denominator, and the date range for that $5M ARR."
+- If the founder's message is a greeting ("Hi", "Hello", "Hey"), respond with: "Hi {name}, I'm Athena. To begin: what problem does your company solve, for whom, and how often?" — fire the FIRST diagnostic question.
+- NEVER fire evasion_freeze on a greeting. Evasion freeze only fires AFTER you have asked a question and the founder has dodged it. A greeting is not an evasion.
 
 BEHAVIORAL TRIGGERS (deterministic — fire on pattern):
 
@@ -264,6 +280,39 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
       ).bind(text(args.session_id || sessionId), "evasion_freeze", text(args.question || ""), text(args.founder_response || ""), text(`EVASION FREEZE: ${text(args.question)}`), "deep").run(), "evasion_freeze");
       result = { frozen: true, question: args.question, pattern: "You did not answer the question. The unanswered question is: [question]. Give the number, the denominator, the date range, and the source." };
     }
+    else if (name === "query_knowledge") {
+      // Athena's memory layer — query the knowledge_entries table in D1.
+      // Per spec §8: long-form knowledge records (articles, definitions,
+      // prior diligence findings, market research). Returns provenance.
+      const category = text(args.category || "");
+      const query = text(args.query || "");
+      let sql = "SELECT id, category, title, content, source, author, tags, confidence, verified, created_at, updated_at FROM knowledge_entries";
+      const binds: any[] = [];
+      const where: string[] = [];
+      if (category) { where.push("category = ?"); binds.push(category); }
+      if (query) {
+        where.push("(title LIKE ? OR content LIKE ? OR tags LIKE ?)");
+        const q = `%${query}%`;
+        binds.push(q, q, q);
+      }
+      if (where.length) sql += " WHERE " + where.join(" AND ");
+      sql += " ORDER BY updated_at DESC LIMIT 20";
+      const r = await safeD1(env.DB.prepare(sql).bind(...binds).all(), "query_knowledge");
+      const rows = r.ok && r.result?.results ? r.result.results : [];
+      result = {
+        count: rows.length,
+        entries: rows,
+        provenance: { source: "athena_d1_knowledge_base", query: { category, query }, timestamp: new Date().toISOString() },
+      };
+    }
+    else if (name === "add_knowledge") {
+      // Add a knowledge entry to the memory layer. Used by Athena when she
+      // discovers a reusable insight, or by the founder to seed the KB.
+      const r = await safeD1(env.DB.prepare(
+        "INSERT INTO knowledge_entries (category, title, content, source, author, tags, confidence, verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+      ).bind(text(args.category || "general"), text(args.title || "untitled"), text(args.content || ""), text(args.source || "athena_synthesis"), text(args.author || "athena"), text(args.tags || ""), text(args.confidence || "medium"), args.verified ? 1 : 0).run(), "add_knowledge");
+      result = r.ok ? { added: true, id: r.result?.meta?.last_row_id } : { added: false, error: r.error };
+    }
     else {
       result = await handleSupabaseTool(env, name, args);
     }
@@ -284,6 +333,8 @@ const toolDefinitions = [
   { name: "drill_questions", description: "Returns the 15 Athena diagnostic drill questions. Use one at a time to advance the diligence loop.", parameters: { type: "object", properties: {} } },
   { name: "buzzword_halt", description: "Formally record a buzzword halt event. Fire when founder uses vague language (optimize, streamline, leverage, transformational, frictionless, scalable, best-in-class, AI-powered, network effects) without quantified content.", parameters: { type: "object", properties: { session_id: { type: "string" }, term: { type: "string" }, context: { type: "string" } }, required: ["term"] } },
   { name: "evasion_freeze", description: "Formally record an evasion event. Fire when founder avoids a direct question. Restate the question and prevent pivot.", parameters: { type: "object", properties: { session_id: { type: "string" }, question: { type: "string" }, founder_response: { type: "string" }, severity: { type: "string" } }, required: ["question"] } },
+  { name: "query_knowledge", description: "Query Athena's long-term knowledge base (memory layer). Search by category or full-text query across title, content, tags. Returns entries with provenance (source label, timestamp, author, verified flag). Use for prior diligence findings, market research, definitions, and reusable insights.", parameters: { type: "object", properties: { category: { type: "string" }, query: { type: "string" } } } },
+  { name: "add_knowledge", description: "Persist a new entry to Athena's knowledge base. Use when you discover a reusable insight, pattern, or diligence finding that future drills should reference. Include category, title, content, source, author, tags, confidence.", parameters: { type: "object", properties: { category: { type: "string" }, title: { type: "string" }, content: { type: "string" }, source: { type: "string" }, author: { type: "string" }, tags: { type: "string" }, confidence: { type: "string", enum: ["low", "medium", "high"] }, verified: { type: "boolean" } }, required: ["title", "content"] } },
   ...supabaseToolDefinitions
 ];
 
@@ -329,7 +380,7 @@ async function autoExtractMemoryFacts(env: Env, sessionId: string, message: stri
 // model to persist intermediate artifacts.
 async function complete(env: Env, tier: Tier, messages: Message[], stream = false, sessionId = "system") {
   let current = [...messages];
-  const useTools = tier === "deep";
+  const useTools = tier !== "conversational";
   const runOpts: any = { messages: current, stream, max_tokens: MAX_TOKENS[tier] };
   if (useTools) runOpts.tools = toolDefinitions;
 
@@ -423,7 +474,7 @@ async function streamSSE(env: Env, tier: Tier, messages: Message[], sessionId: s
 // Cancellation-safe: client disconnect propagates to upstream.
 async function voiceStream(env: Env, text: string, sessionId: string): Promise<Response> {
   if (!env.ELEVENLABS_API_KEY) return json({ error: "ELEVENLABS_API_KEY is not configured" }, 503);
-  const voiceId = env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+  const voiceId = env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah — Mature, Reassuring, Confident
   const modelId = env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5";
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`;
   const upstream = await fetch(url, {
@@ -543,7 +594,7 @@ export default {
         const turns = Array.isArray(input.turns) ? input.turns : [];
         const founderId = text(input.founder_id || input.user_id || "");
         const messages: Message[] = [
-          { role: "system", content: `${ATHENA_SYSTEM_PROMPT}\n\nSESSION ID: ${session}\nFOUNDER ID: ${founderId || "(anonymous)"}\nTIER: ${tier}\nMODEL: ${MODELS[tier]}\n\nMEMORY FACTS (previously verified):\n${context || "(none yet — this is a fresh drill)"}${extracted.length ? `\n\nAUTO-EXTRACTED THIS TURN (unverified — confirm before crediting):\n${extracted.map(f => `${f.fact}: ${f.value} [reported, confidence:medium]`).join("\n")}` : ""}` },
+          { role: "system", content: `${ATHENA_SYSTEM_PROMPT}\n\nSESSION ID: ${session}\nFOUNDER ID: ${founderId || "(anonymous)"}\nFOUNDER NAME: ${input.user_name || input.founder_name || "(unknown — address as 'founder')"}\nTIER: ${tier}\nMODEL: ${MODELS[tier]}\n\nSALUTATION RULE (critical): Address the founder by their first name at the start of every response. If FOUNDER NAME above is a real name (not "unknown"), use it. Examples:\n- "Hi David, I'm Athena. Let's begin with..."\n- "David, you did not answer the question. The unanswered question is:..."\n- "David, my verdict is CONDITIONAL DILIGENCE..."\nNever open a response without the founder's name. If unknown, use "founder" (lowercase).\n\nMEMORY FACTS (previously verified):\n${context || "(none yet — this is a fresh drill)"}${extracted.length ? `\n\nAUTO-EXTRACTED THIS TURN (unverified — confirm before crediting):\n${extracted.map(f => `${f.fact}: ${f.value} [reported, confidence:medium]`).join("\n")}` : ""}` },
           ...turns,
           { role: "user", content: userMessage },
         ];

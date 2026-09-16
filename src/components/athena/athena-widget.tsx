@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2 } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -45,9 +45,10 @@ function parseOutputContract(raw: string): { sections: Array<{ label: string; bo
   return { sections, raw };
 }
 
-function AthenaMessage({ message }: { message: Message }) {
+function AthenaMessage({ message, onSpeak, speaking }: { message: Message; onSpeak?: (text: string, idx: number) => void; speaking?: number | null }) {
   const isUser = message.role === "user";
   const [expanded, setExpanded] = useState(false);
+  const [localIdx] = useState(() => Math.random().toString(36).slice(2));
   const parsed = !isUser ? parseOutputContract(message.content) : null;
 
   if (isUser) {
@@ -55,13 +56,25 @@ function AthenaMessage({ message }: { message: Message }) {
   }
 
   const tier = message.tier ? TIER_LABELS[message.tier] || message.tier : null;
+  const canSpeak = !message.streaming && message.content && message.content.length > 0 && onSpeak;
   return (
     <div className="mr-8 rounded-lg bg-muted px-3 py-2 text-sm">
-      {/* Header — tier + model + streaming indicator */}
+      {/* Header — tier + model + streaming indicator + voice button */}
       <div className="mb-1 flex items-center gap-2 border-b border-border/50 pb-1 text-[10px] text-muted-foreground">
         {tier && <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">{tier}</span>}
         {message.extractedFacts ? <span className="text-amber-600">+{message.extractedFacts} fact{message.extractedFacts > 1 ? "s" : ""}</span> : null}
         {message.streaming && <span className="flex items-center gap-1 text-blue-600"><Loader2 className="h-3 w-3 animate-spin" />streaming</span>}
+        {canSpeak && (
+          <button
+            onClick={() => onSpeak && onSpeak(message.content, parseInt(localIdx, 36) || 0)}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-primary hover:bg-primary/10"
+            aria-label="Play Athena voice"
+            title="Hear Athena speak"
+          >
+            {speaking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Volume2 className="h-3 w-3" />}
+            <span>{speaking ? "Speaking" : "Voice"}</span>
+          </button>
+        )}
       </div>
 
       {/* Body — parsed Output Contract sections OR raw text */}
@@ -92,12 +105,50 @@ export function AthenaWidget() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const [speaking, setSpeaking] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hi, I'm Athena. Ask me anything about your pitch." }]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, loading]);
+  }, [messages, loading, speaking]);
+
+  // Voice playback — calls /api/athena/chat/voice which proxies to the
+  // worker's POST /v1/athena/voice endpoint (ElevenLabs streaming MP3).
+  // Falls back gracefully if the voice API is unavailable.
+  const speak = useCallback(async (text: string, idx: number) => {
+    // Toggle off if already speaking this message
+    if (speaking === idx) {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      setSpeaking(null);
+      return;
+    }
+    // Stop any current playback
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    setSpeaking(idx);
+    try {
+      const res = await fetch("/api/athena/voice", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: text.slice(0, 5000), session_id: sessionId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.detail || `Voice API returned ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { setSpeaking(null); URL.revokeObjectURL(url); audioRef.current = null; };
+      audio.onerror = () => { setSpeaking(null); URL.revokeObjectURL(url); audioRef.current = null; };
+      await audio.play();
+    } catch (e) {
+      console.error("[Athena] voice playback failed:", e);
+      setSpeaking(null);
+    }
+  }, [speaking, sessionId]);
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -212,7 +263,7 @@ export function AthenaWidget() {
         <button onClick={() => setOpen(false)} aria-label="Close Athena" className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
       </div>
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((m, i) => <AthenaMessage key={i} message={m} />)}
+        {messages.map((m, i) => <AthenaMessage key={i} message={m} onSpeak={speak} speaking={speaking === i ? i : null} />)}
         {loading && messages[messages.length - 1]?.content === "" && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Connecting to the intelligence engine…</div>}
         {error && <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
       </div>
