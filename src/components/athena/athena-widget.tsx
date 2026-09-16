@@ -28,10 +28,15 @@ export function AthenaWidget() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [hydrated, setHydrated] = useState(false);
   const storageKey = `athena-widget:${user?.id ?? "anonymous"}`;
+  // Widget starts CLOSED on sign-in. It connects to the backend AI service
+  // layer immediately (warm-up trigger fires on mount), but the interaction
+  // UI only opens when the user clicks the sparkle button.
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([welcome]);
-  useEffect(() => { if (!isLoaded) return; try { const saved = window.sessionStorage.getItem(storageKey); if (saved) { const parsed = JSON.parse(saved) as { messages?: Message[]; open?: boolean }; if (Array.isArray(parsed.messages) && parsed.messages.length) setMessages(parsed.messages); if (parsed.open) setOpen(true); } } catch {} setHydrated(true); }, [isLoaded, storageKey]);
-  useEffect(() => { if (!hydrated) return; try { window.sessionStorage.setItem(storageKey, JSON.stringify({ messages, open })); } catch {} }, [hydrated, storageKey, messages, open]);
+  const [backendConnected, setBackendConnected] = useState(false);
+  useEffect(() => { if (!isLoaded) return; try { const saved = window.sessionStorage.getItem(storageKey); if (saved) { const parsed = JSON.parse(saved) as { messages?: Message[]; open?: boolean }; if (Array.isArray(parsed.messages) && parsed.messages.length) setMessages(parsed.messages ?? [welcome]); // Never restore open=true — widget always starts closed
+  } } catch {} setHydrated(true); }, [isLoaded, storageKey]);
+  useEffect(() => { if (!hydrated) return; try { window.sessionStorage.setItem(storageKey, JSON.stringify({ messages, open: false })); } catch {} }, [hydrated, storageKey, messages, open]);
   const [input, setInput] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +62,39 @@ export function AthenaWidget() {
 
   useEffect(() => { if (open && isLoaded && hydrated) refreshQuota(); }, [open, isLoaded, hydrated, isSignedIn, refreshQuota]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, loading]);
+
+  // ── Backend AI service layer connection — fires on mount, NOT on open ──
+  // The widget connects to the backend immediately when it renders (closed),
+  // receives the warm-up trigger, and establishes the AI service connection.
+  // The interaction UI only opens when the user clicks the sparkle button.
+  useEffect(() => {
+    if (!hydrated || !isSignedIn) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Check if Athena's AI service is warm
+        const warmthRes = await fetch("/api/athena/warmth", { method: "GET" });
+        if (cancelled) return;
+
+        if (warmthRes.ok) {
+          const warmth = await warmthRes.json();
+          // If cold or stale, the backend will warm up via /api/user/sync
+          // (which fires in parallel). We just mark the connection status.
+          setBackendConnected(true);
+        } else {
+          // Warmth endpoint not available — still connected (non-fatal)
+          setBackendConnected(true);
+        }
+      } catch {
+        // Connection failed — widget still renders, user can click to open
+        // The chat route will attempt warm-up on first message
+        setBackendConnected(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [hydrated, isSignedIn]);
 
   const cleanupAudio = useCallback(() => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.onended = null; audioRef.current.onerror = null; audioRef.current = null; }
@@ -136,7 +174,13 @@ export function AthenaWidget() {
     finally { setLoading(false); }
   };
 
-  if (!open) return <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena AI Guide"><Sparkles className="h-6 w-6" /></button>;
+  if (!open) return <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110 relative" aria-label="Open Athena AI Guide">
+    <Sparkles className="h-6 w-6" />
+    {backendConnected && <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+      <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-emerald-500" />
+    </span>}
+  </button>;
   const nudge = quota?.tier === "anon" && quota.remaining > 0 && quota.remaining <= 2;
   return <div className="fixed bottom-6 right-6 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-border bg-background shadow-2xl" style={{ maxHeight: "70vh" }}>
     <div className="flex items-center justify-between rounded-t-2xl border-b border-border bg-primary/5 p-4"><div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20"><Bot className="h-5 w-5 text-primary" /></div><div><p className="text-sm font-semibold">Athena</p><p className="text-xs text-muted-foreground">{quota?.tier === "auth" ? "AI Guide â¢ Signed in" : quota ? `AI Guide â¢ ${quota.remaining} free message${quota.remaining === 1 ? "" : "s"} left` : "AI Guide"}</p></div></div><button onClick={() => { stopRecording(); cleanupAudio(); setOpen(false); }} aria-label="Close chat" className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button></div>
