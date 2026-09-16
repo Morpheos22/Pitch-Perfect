@@ -14,8 +14,7 @@ export interface SupabaseEnv {
 }
 
 // Tables that actually exist on the PitchCoach Supabase instance.
-// Discovered via REST probe on 2026-09-16. Include this in the tool description
-// so the model doesn't query non-existent tables and trigger 404 errors.
+// Discovered via REST probe on 2026-09-16.
 export const KNOWN_SUPABASE_TABLES = [
   "pitch_decks",
   "users",
@@ -24,7 +23,7 @@ export const KNOWN_SUPABASE_TABLES = [
 export const supabaseToolDefinitions = [
   {
     name: "query_supabase",
-    description: `Query PitchCoach records in Supabase PostgREST. AVAILABLE TABLES (use ONLY these — others will 404): ${KNOWN_SUPABASE_TABLES.join(", ")}. Use for pitch decks, uploaded artifacts, and user records. Use narrow queries — specify match + limit. Never treat an empty result as proof of absence; report it as "unverified".`,
+    description: `Query PitchCoach records in Supabase PostgREST. AVAILABLE TABLES (use ONLY these — others will 404): ${KNOWN_SUPABASE_TABLES.join(", ")}. Returns data + provenance metadata (timestamp, source label, table, query params) so every claim can be traced back to its source. Use narrow queries. Never treat an empty result as proof of absence; report as "unverified".`,
     parameters: {
       type: "object",
       properties: {
@@ -39,7 +38,7 @@ export const supabaseToolDefinitions = [
   },
   {
     name: "fetch_founder_deck",
-    description: "Fetch a founder's uploaded pitch deck + user record from Supabase. Returns pitch_decks (latest) + users record. Other tables (slide_extracts, financial_tables, diligence_reports) do not exist yet — returns null for those.",
+    description: "Fetch a founder's uploaded pitch deck + user record from Supabase. Returns pitch_decks (latest) + users record. Provenance metadata is attached to every result. Other tables (slide_extracts, financial_tables, diligence_reports) do not exist yet.",
     parameters: { type: "object", properties: { founder_id: { type: "string" }, user_id: { type: "string" } } }
   }
 ];
@@ -49,6 +48,34 @@ function configured(env: SupabaseEnv) {
   const key = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY is not configured");
   return { url: env.SUPABASE_URL.replace(/\/$/, ""), key };
+}
+
+// Provenance metadata — per spec §2.3 Supabase integration:
+// "must preserve row or document provenance, timestamps, source labels,
+//  and the exact data version used for a conclusion."
+type Provenance = {
+  source: "supabase_postgrest";
+  table: string;
+  query_params: Record<string, any>;
+  timestamp: string;
+  data_version: "live";
+  row_count?: number;
+};
+
+function buildProvenance(table: string, args: SupabaseQueryArgs, rowCount?: number): Provenance {
+  return {
+    source: "supabase_postgrest",
+    table,
+    query_params: {
+      select: args.select || "*",
+      match: args.match || {},
+      order: args.order || null,
+      limit: args.limit ?? 10,
+    },
+    timestamp: new Date().toISOString(),
+    data_version: "live",
+    row_count: rowCount,
+  };
 }
 
 export async function querySupabase(env: SupabaseEnv, args: SupabaseQueryArgs) {
@@ -61,19 +88,22 @@ export async function querySupabase(env: SupabaseEnv, args: SupabaseQueryArgs) {
     const response = await fetch(`${url}/rest/v1/${encodeURIComponent(args.table)}?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
     if (!response.ok) {
       const body = await response.text();
-      // Return the error as a structured result so the model can self-correct
-      // instead of crashing the whole tool-calling loop.
-      return { error: `Supabase ${response.status}`, detail: body.slice(0, 500), table: args.table, hint: "Verify column names against the actual schema. Use select=* and narrow match keys." };
+      return {
+        error: `Supabase ${response.status}`,
+        detail: body.slice(0, 500),
+        table: args.table,
+        hint: "Verify column names against the actual schema. Use select=* and narrow match keys.",
+        provenance: buildProvenance(args.table, args, 0),
+      };
     }
-    return response.json();
+    const data = await response.json();
+    const rowCount = Array.isArray(data) ? data.length : 0;
+    return { results: data, provenance: buildProvenance(args.table, args, rowCount) };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e), table: args.table };
+    return { error: e instanceof Error ? e.message : String(e), table: args.table, provenance: buildProvenance(args.table, args, 0) };
   }
 }
 
-// Best-effort deck fetch. Each query is isolated so a missing table doesn't
-// break the whole call. Returns the latest deck + user record (other tables
-// that don't exist yet return null instead of throwing).
 async function safeQuery(env: SupabaseEnv, args: SupabaseQueryArgs, label: string) {
   try { return { ok: true as const, result: await querySupabase(env, args) }; }
   catch (e) { console.error(`[athena-d1] ${label} failed:`, e); return { ok: false as const, error: e instanceof Error ? e.message : String(e) }; }
@@ -93,6 +123,7 @@ export async function fetchFounderDeck(env: SupabaseEnv, founderId: string) {
     financials: null,
     diligence: null,
     unavailable_tables: ["slide_extracts", "financial_tables", "diligence_reports"],
+    fetch_timestamp: new Date().toISOString(),
   };
 }
 
