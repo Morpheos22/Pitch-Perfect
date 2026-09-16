@@ -493,6 +493,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/athena/chat",
   "/api/athena/quota",
   "/api/athena/debug",
+  // greet + speak + warmth require auth() — they're not public
+  // but we skip rate limiting on them
   // NOTE: /api/user/onboarding and /api/user/sync removed from public routes.
   // These routes have their own auth() checks internally, but the middleware
   // should still enforce auth.protect() to ensure consistent security posture
@@ -730,6 +732,9 @@ export default clerkMiddleware(async (auth, request) => {
     '/api/athena/chat',
     '/api/athena/quota',
     '/api/athena/debug',
+    '/api/athena/greet',
+    '/api/athena/speak',
+    '/api/athena/warmth',
   ];
   const hasOwnRateLimit = routesWithOwnRateLimit.some(r => pathname === r || pathname.startsWith(r + '/'));
 

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/layout/logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { AthenaWidget } from "@/components/athena/athena-widget";
+import { Sparkles, Volume2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -197,8 +198,51 @@ export default function DashboardLayout({
   const { user } = useUser();
   const { signOut } = useClerk();
   const plan = usePlan();
-  // Founder / ENTERPRISE users are top-tier — they never see Upgrade CTAs.
   const isTopTier = plan === "Founder" || plan === "Enterprise";
+  const [greetingReady, setGreetingReady] = useState(false);
+  const [greetingAudio, setGreetingAudio] = useState<string | null>(null);
+  const [showGreetingBanner, setShowGreetingBanner] = useState(false);
+
+  // Fire voice greeting on dashboard mount (once per browser session)
+  useEffect(() => {
+    // Only on /dashboard root, not sub-pages
+    if (pathname !== "/dashboard") return;
+    // Only once per browser session
+    if (sessionStorage.getItem("athena-greeting-played") === "true") return;
+    // Only for signed-in users
+    if (!user) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/athena/greet", { method: "GET" });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setGreetingAudio(url);
+        setShowGreetingBanner(true);
+        setGreetingReady(true);
+      } catch {
+        // Non-fatal — greeting is a nice-to-have
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [pathname, user]);
+
+  const playGreeting = () => {
+    if (!greetingAudio) return;
+    const audio = new Audio(greetingAudio);
+    audio.onended = () => { sessionStorage.setItem("athena-greeting-played", "true"); };
+    audio.play().catch(() => { /* autoplay blocked — user must click again */ });
+  };
+
+  const dismissGreeting = () => {
+    setShowGreetingBanner(false);
+    sessionStorage.setItem("athena-greeting-played", "true");
+    if (greetingAudio) URL.revokeObjectURL(greetingAudio);
+  };
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -292,6 +336,33 @@ export default function DashboardLayout({
         {/* Page Content */}
         <main className="p-4 lg:p-6">{children}</main>
       </div>
+
+      {/* Athena Voice Greeting — fires once on dashboard load */}
+      {showGreetingBanner && greetingReady && (
+        <div className="fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/30 bg-primary/5 shadow-xl p-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 shrink-0">
+            <Sparkles className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Athena has a message for you</p>
+            <p className="text-xs text-muted-foreground">Click to hear your personalized greeting</p>
+          </div>
+          <button
+            onClick={playGreeting}
+            className="rounded-lg bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+            aria-label="Play Athena's greeting"
+          >
+            <Volume2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={dismissGreeting}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Athena AI Guide Widget */}
       <AthenaWidget />
