@@ -40,7 +40,7 @@ function configured(env: SupabaseEnv) {
   if (!env.SUPABASE_URL) throw new Error("SUPABASE_URL is not configured");
   const key = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY is not configured");
-  return { url: env.SUPABASE_URL.replace(/\\/$/, ""), key };
+  return { url: env.SUPABASE_URL.replace(/\/$/, ""), key };
 }
 
 export async function querySupabase(env: SupabaseEnv, args: SupabaseQueryArgs) {
