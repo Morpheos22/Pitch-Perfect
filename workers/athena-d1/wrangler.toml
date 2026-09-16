@@ -16,7 +16,7 @@ ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5"
 WEB_SEARCH_PROVIDER = "brave"
 # Vision model for image analysis. Default is Llava 1.5 7B HF.
 # Alternatives: @cf/unum/uform-gen2-qwen-500m (faster), @cf/meta/llama-3.2-11b-vision-instruct
-VISION_MODEL = "@cf/llava-hf/llava-1.5-7b-hf"
+VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct"
 # Supabase URL is safe as a variable; keep service-role credentials in Wrangler secrets.
 SUPABASE_URL = "https://iwbshmshegewmctfucaz.supabase.co"
 # SUPABASE_SERVICE_ROLE_KEY must be set with: wrangler secret put SUPABASE_SERVICE_ROLE_KEY
