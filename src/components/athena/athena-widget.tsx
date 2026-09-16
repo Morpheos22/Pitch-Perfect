@@ -13,11 +13,6 @@ type Message = {
   extractedFacts?: number;
 };
 
-type SSEEvent = {
-  type: "meta" | "data" | "done" | "error";
-  data?: any;
-};
-
 const TIER_LABELS: Record<string, string> = {
   conversational: "Quick Chat",
   diligence: "Diligence",

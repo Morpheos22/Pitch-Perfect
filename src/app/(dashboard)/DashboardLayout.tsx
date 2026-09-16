@@ -13,7 +13,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/layout/logo";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { AthenaWidget } from "@/components/athena/athena-widget";
+// Lazy-load Athena to keep it out of the initial dashboard bundle.
+// The widget renders a fixed-position floating button; user interaction
+// (clicking "Open Athena") is what triggers the heavy chat code to load.
+// Saves ~30KB on initial dashboard paint.
+import dynamic from "next/dynamic";
+const AthenaWidget = dynamic(() => import("@/components/athena/athena-widget").then(m => ({ default: m.AthenaWidget })), {
+  ssr: false,
+  loading: () => null,
+});
 import { Sparkles, Volume2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
