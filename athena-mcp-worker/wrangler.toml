@@ -4,6 +4,13 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# D1 database — the middleman that holds auth state across all moving parts
+[[d1_databases]]
+binding = "ATHENA_STATE"
+database_name = "athena-activation-state"
+database_id = "f309a9db-f7d0-4339-af60-73cf83440999"
+
+# DurableObject — MCP server (tools)
 [[durable_objects.bindings]]
 name = "ATHENA_MCP"
 class_name = "AthenaMCP"
@@ -11,3 +18,22 @@ class_name = "AthenaMCP"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AthenaMCP"]
+
+# Cron trigger — keep the worker warm every 5 minutes (always on)
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Observability
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+persist = true
