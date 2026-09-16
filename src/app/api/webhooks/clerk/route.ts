@@ -380,6 +380,23 @@ async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
 async function fireAthenaWarmup(clerkId: string, email: string) {
   const tasks: Promise<void>[] = [];
 
+  // 0. Mark AI service as 'warming' in DB (prevents session dehydration)
+  tasks.push(
+    (async () => {
+      try {
+        const user = await prisma.user.findUnique({ where: { clerkId }, select: { id: true } });
+        if (user) {
+          await prisma.$executeRaw`
+            INSERT INTO public.ai_service_health ("userId", "clerkId", status, "warmedAt", "lastPingAt")
+            VALUES (${user.id}, ${clerkId}, 'warming', now(), now())
+            ON CONFLICT ("userId") DO UPDATE
+            SET status = 'warming', "warmedAt" = now(), "lastPingAt" = now(), "updatedAt" = now()
+          `;
+        }
+      } catch (e) { /* non-fatal — DB trigger handles it */ }
+    })(),
+  );
+
   // 1. Hit the preload endpoint (primes the route + Poke bridge)
   tasks.push(
     fetch(`${process.env.NEXT_PUBLIC_APP_URL || "https://pitchcoachai.tech"}/api/athena/preload`, {
@@ -388,32 +405,45 @@ async function fireAthenaWarmup(clerkId: string, email: string) {
     }).then(() => {}).catch(() => {}),
   );
 
-  // 2. Ping Poke API â warm up agent context with user info
+  // 2. Ping Poke API — warm up agent context
   const POKE_API_KEY = process.env.POKE_API_KEY;
+  let pokeWarmed = false;
   if (POKE_API_KEY && email) {
     tasks.push(
       fetch("https://poke.com/api/v1/inbound/api-message", {
         method: "POST",
         headers: { "Authorization": `Bearer ${POKE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: `System: User ${email} just authenticated on PitchCoach Ai. Warm up your context. They may ask about pitch deck scores, usage, or platform features. Use db_query tool for their Supabase data.`,
+          message: `System: User ${email} just authenticated on PitchCoach Ai. Warm up your context. Use db_query tool for their Supabase data.`,
         }),
-      }).then(() => {}).catch(() => {}),
+      }).then(() => { pokeWarmed = true; }).catch(() => {}),
     );
   }
 
-  // 3. Pre-warm the MCP DurableObject (cold starts are slow)
+  // 3. Pre-warm the MCP DurableObject + capture session ID
+  let mcpSessionId: string | null = null;
   tasks.push(
     fetch("https://athena-mcp-server.morphylee22.workers.dev/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", params: { protocolVersion: "2025-01-01", capabilities: {}, clientInfo: { name: "warmup", version: "1.0" } }, id: 1 }),
-    }).then(() => {}).catch(() => {}),
+    }).then(async (res) => {
+      mcpSessionId = res.headers.get("mcp-session-id");
+    }).catch(() => {}),
   );
 
   await Promise.race([
     Promise.allSettled(tasks),
-    new Promise(resolve => setTimeout(resolve, 3000)),
+    new Promise(resolve => setTimeout(resolve, 5000)),
   ]);
-  console.log(`[Clerk Webhook] Athena warm-up fired for ${email || clerkId}`);
+
+  // 4. Mark Athena as 'warm' in the DB
+  try {
+    const user = await prisma.user.findUnique({ where: { clerkId }, select: { id: true } });
+    if (user) {
+      await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSessionId}, ${pokeWarmed})`;
+    }
+  } catch (e) { /* non-fatal */ }
+
+  console.log(`[Clerk Webhook] Athena warm-up complete for ${email || clerkId} (mcp=${!!mcpSessionId}, poke=${pokeWarmed})`);
 }
