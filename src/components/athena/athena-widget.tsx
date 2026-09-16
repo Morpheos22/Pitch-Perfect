@@ -187,41 +187,48 @@ export function AthenaWidget() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE events (look for "event: X\ndata: Y\n\n")
-        const events: SSEEvent[] = [];
-        let eventStart = buffer.indexOf("event:");
-        let dataStart = buffer.indexOf("data:", eventStart);
-        let eventEnd = buffer.indexOf("\n\n", dataStart);
+        // Parse SSE events. Per the SSE spec, events are separated by a blank
+        // line ("\n\n"). Within an event, a line starting with "event:" sets
+        // the event type (default is "message" — we treat unknown/default as
+        // "data" for compatibility). Lines starting with "data:" contribute
+        // the payload, concatenated with "\n" if multiple are present.
+        //
+        // The previous parser required an "event:" prefix on every event,
+        // which silently dropped the bare "data:" chunks that Workers AI
+        // emits for content deltas. This is why Athena appeared to "not
+        // respond" — the API returned 200 with valid content, but the UI
+        // never rendered it.
+        let boundary: number;
+        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
 
-        while (eventStart >= 0 && dataStart >= 0 && eventEnd >= 0) {
-          const eventType = buffer.slice(eventStart + 6, dataStart).trim();
-          const dataStr = buffer.slice(dataStart + 5, eventEnd).trim();
-          try {
-            const parsedData = JSON.parse(dataStr);
-            events.push({ type: eventType as any, data: parsedData });
-          } catch { /* not JSON, skip */ }
-          buffer = buffer.slice(eventEnd + 2);
-          eventStart = buffer.indexOf("event:");
-          dataStart = buffer.indexOf("data:", eventStart);
-          eventEnd = buffer.indexOf("\n\n", dataStart);
-        }
+          let eventType = "data"; // SSE default when "event:" is absent
+          let dataStr = "";
+          for (const line of rawEvent.split("\n")) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataStr += (dataStr ? "\n" : "") + line.slice(5).trim();
+          }
+          if (!dataStr || dataStr === "[DONE]") continue;
 
-        for (const ev of events) {
-          if (ev.type === "meta" && ev.data) {
-            meta = ev.data;
+          let parsedData: any;
+          try { parsedData = JSON.parse(dataStr); } catch { continue; }
+
+          if (eventType === "meta" && parsedData) {
+            meta = parsedData;
             if (meta.session_id) setSessionId(meta.session_id);
-          } else if (ev.type === "data" && ev.data) {
+          } else if (eventType === "data") {
             // Workers AI sends OpenAI-style chunks: { choices: [{ delta: { content } }] }
             // OR our wrapper sends: { response: "...", delta: "..." }
-            const delta = ev.data.choices?.[0]?.delta?.content || ev.data.delta || ev.data.response || "";
+            const delta = parsedData.choices?.[0]?.delta?.content || parsedData.delta || parsedData.response || "";
             if (delta && typeof delta === "string") {
               accumulated += delta;
               setMessages((m) => m.map((msg, i) => i === assistantIdx ? { ...msg, content: accumulated, tier: meta.tier, model: meta.model, sessionId: meta.session_id, streaming: true } : msg));
             }
-          } else if (ev.type === "done") {
+          } else if (eventType === "done") {
             setMessages((m) => m.map((msg, i) => i === assistantIdx ? { ...msg, streaming: false } : msg));
-          } else if (ev.type === "error") {
-            throw new Error(ev.data?.error || "Stream error");
+          } else if (eventType === "error") {
+            throw new Error(parsedData?.error || "Stream error");
           }
         }
       }
