@@ -73,15 +73,15 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   try {
     if (request.method === "POST" && url.pathname === "/v1/athena") {
       const input = await readBody(request); const session = text(input.session_id || crypto.randomUUID());
-      const memories = await env.DB.prepare("SELECT fact, value FROM memory_facts WHERE session_id = ? ORDER BY created_at DESC LIMIT 100").bind(session).all();
+      let memories = { results: [] }; try { memories = await env.DB.prepare("SELECT fact, value FROM memory_facts WHERE session_id = ? ORDER BY created_at DESC LIMIT 100").bind(session).all(); } catch {}
       const context = memories.results.map((m: any) => `${m.fact}: ${m.value}`).join("\n");
       const messages: Message[] = [{ role: "system", content: `You are Athena. Score these axes: ${AXES.join(", ")}. Give conclusions, evidence, contradictions, and next actions; never reveal hidden chain-of-thought. Memory:\n${context}` }, ...(Array.isArray(input.turns) ? input.turns : []), { role: "user", content: text(input.message) }];
       if (input.stream === true) return streamResponse(env, messages);
       const response = await complete(env, messages);
-      await env.DB.prepare("INSERT INTO drill_turns (session_id, role, content, created_at) VALUES (?, ?, ?, datetime('now'))").bind(session, "user", text(input.message)).run();
+      try { await env.DB.prepare("INSERT INTO drill_turns (session_id, role, content, created_at) VALUES (?, ?, ?, datetime('now'))").bind(session, "user", text(input.message)).run(); } catch {}
       return json({ session_id: session, response });
     }
     if (request.method === "POST" && url.pathname === "/v1/tool") { const input = await readBody(request); return json(await d1Tool(env, text(input.name), input.arguments || {})); }
     return json({ service: "athena-d1", status: "ok", endpoints: ["POST /v1/athena", "POST /v1/tool"] });
-  } catch (error) { return json({ error: text(error) }, 500); }
+  } catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, 500); }
 } };
