@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { PLAN_LIMITS, formatPlanName } from "@/lib/plan-config";
 
-// ── Types ──
+// ââ Types ââ
 interface UsageData {
   e1DeckAnalyses: number;
   e2ScriptCoachSessions: number;
@@ -92,7 +92,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function DashboardPage() {
-  const { user: clerkUser } = useUser();
+  const { user: clerkUser, isLoaded, isSignedIn } = useUser();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [historyData, setHistoryData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,10 +132,21 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchUserData(), fetchHistory()]).finally(() => setLoading(false));
-  }, [fetchUserData, fetchHistory]);
+    if (!isLoaded) return;
+    if (!isSignedIn || !clerkUser?.id) { setLoading(false); return; }
+    const syncWithRetry = async (attempt = 0): Promise<Response> => {
+      const response = await fetch("/api/user/sync", { method: "POST", credentials: "same-origin" });
+      if (response.ok || attempt >= 3) return response;
+      await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
+      return syncWithRetry(attempt + 1);
+    };
+    void syncWithRetry().then(() => {
+      void fetch("/api/athena/preload", { method: "POST", credentials: "same-origin", keepalive: true }).catch(() => {});
+      return Promise.all([fetchUserData(), fetchHistory()]);
+    }).catch(() => Promise.all([fetchUserData(), fetchHistory()])).finally(() => setLoading(false));
+  }, [isLoaded, isSignedIn, clerkUser?.id, fetchUserData, fetchHistory]);
 
-  // ── Derived data ──
+  // ââ Derived data ââ
   const plan = userData?.subscription?.plan || "FREE";
   const planLabel = formatPlanName(plan);
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
@@ -210,11 +221,11 @@ export default function DashboardPage() {
 
   const firstName = clerkUser?.firstName || userData?.firstName || "there";
 
-  // Founder / ENTERPRISE users are top-tier — they never see Upgrade CTAs.
+  // Founder / ENTERPRISE users are top-tier â they never see Upgrade CTAs.
   // (ENTERPRISE is the legacy alias for Founder.)
   const isTopTier = plan === "FOUNDER" || plan === "ENTERPRISE";
 
-  // ── Module cards config ──
+  // ââ Module cards config ââ
   const modules = [
     {
       id: "m1", title: "Pitch Deck Analyser",
@@ -258,7 +269,7 @@ export default function DashboardPage() {
     },
   ];
 
-  // ── Loading skeleton ──
+  // ââ Loading skeleton ââ
   if (loading) {
     return (
       <div className="space-y-6">
@@ -289,13 +300,13 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Welcome back, {firstName} 👋</h1>
+          <h1 className="text-2xl font-bold">Welcome back, {firstName} ð</h1>
           <p className="text-muted-foreground">
             Ready to improve your pitch? Let&apos;s get started.
           </p>
         </div>
         <div className="flex gap-2">
-          {/* "Upgrade Plan" is hidden for Founder-tier users — there's nothing
+          {/* "Upgrade Plan" is hidden for Founder-tier users â there's nothing
               above Founder. They see Billing instead. */}
           {!isTopTier && (
             <Link href="/pricing">
