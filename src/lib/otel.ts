@@ -15,11 +15,14 @@
 
 export async function registerOTEL(opts?: { serviceName?: string }): Promise<void> {
   // Defensive: try to load @vercel/otel if available, otherwise no-op.
-  // This avoids a hard dependency that would fail the build if the package
-  // isn't installed yet. Using dynamic import() instead of require() to
-  // comply with @typescript-eslint/no-require-imports rule.
+  // The module name is stored in a variable so TypeScript doesn't try to
+  // resolve it at type-check time (the package may not be installed yet).
+  // Using dynamic import() instead of require() to comply with
+  // @typescript-eslint/no-require-imports rule.
+  const moduleName = "@vercel/otel";
   try {
-    const mod: any = await import("@vercel/otel").catch(() => null);
+    // @ts-expect-error — dynamic import of a possibly-uninstalled package
+    const mod: any = await import(/* @vite-ignore */ moduleName).catch(() => null);
     if (mod && typeof mod.registerOTEL === "function") {
       mod.registerOTEL(opts);
       console.log(`[otel] registered serviceName=${opts?.serviceName || "next-app"}`);
