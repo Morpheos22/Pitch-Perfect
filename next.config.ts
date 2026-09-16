@@ -5,6 +5,18 @@ const nextConfig: any = {
   output: "standalone",
   reactStrictMode: true,
 
+  // Reduce RSC prefetch traffic. Next.js 15+ defaults to prefetching every
+  // Link target's RSC payload on viewport. For an auth-walled dashboard with
+  // many Links in the nav, this generates 4+ background RSC requests per page
+  // load. Setting dynamic stale to 30s means repeated navigations within 30s
+  // reuse the cached RSC payload instead of re-fetching.
+  // (Link prefetching itself is still enabled — this only affects the staleness
+  // window of already-fetched RSC payloads.)
+  staleTimes: {
+    static: 180,
+    dynamic: 30,
+  },
+
   // Ensure @vercel/blob/client is properly transpiled for browser usage.
   // The client subpath uses Node.js modules (undici, crypto) that must be
   // replaced with browser-compatible versions via the package's "browser" field.
