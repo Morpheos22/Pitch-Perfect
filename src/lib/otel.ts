@@ -1,8 +1,8 @@
 // src/lib/otel.ts — Lightweight OpenTelemetry registration for Vercel.
 //
 // This is a thin wrapper around @vercel/otel which Vercel auto-instruments
-// when this package is installed. We're using a defensive import so the
-// build still succeeds if @vercel/otel is not yet a dependency.
+// when this package is installed. We're using a defensive dynamic import so
+// the build still succeeds if @vercel/otel is not yet a dependency.
 //
 // What this gives us (free on Vercel):
 //   - Route-level error attribution in the Vercel dashboard
@@ -13,15 +13,16 @@
 // To enable full tracing, install: npm i @vercel/otel
 // Until then, this is a no-op that won't break anything.
 
-export function registerOTEL(opts?: { serviceName?: string }) {
+export async function registerOTEL(opts?: { serviceName?: string }): Promise<void> {
   // Defensive: try to load @vercel/otel if available, otherwise no-op.
-  // This avoids a hard dependency that would fail the build if the package
-  // isn't installed yet.
+  // The module name is stored in a variable so TypeScript doesn't try to
+  // resolve it at type-check time (the package may not be installed yet).
+  // Using dynamic import() instead of require() to comply with
+  // @typescript-eslint/no-require-imports rule.
+  const moduleName = "@vercel/otel";
   try {
-    // Use dynamic require to avoid bundler resolving this at build time.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require("@vercel/otel");
-    if (typeof mod.registerOTEL === "function") {
+    const mod: any = await import(moduleName).catch(() => null);
+    if (mod && typeof mod.registerOTEL === "function") {
       mod.registerOTEL(opts);
       console.log(`[otel] registered serviceName=${opts?.serviceName || "next-app"}`);
       return;

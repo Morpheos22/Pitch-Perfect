@@ -13,15 +13,15 @@
 export async function register() {
   // Only run on the server (not in the Edge runtime or build-time).
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { registerOTEL } = await import("./src/lib/otel").catch(() => ({ registerOTEL: null }));
-    if (registerOTEL) {
-      try {
-        registerOTEL({ serviceName: "pitchcoach-ai" });
-      } catch (e) {
-        // Don't crash the server if instrumentation fails — log and continue.
-        // The console.error here goes to Vercel's function logs.
-        console.error("[instrumentation] registerOTEL failed:", e);
+    try {
+      const { registerOTEL } = await import("./src/lib/otel");
+      if (registerOTEL) {
+        await registerOTEL({ serviceName: "pitchcoach-ai" });
       }
+    } catch (e) {
+      // Don't crash the server if instrumentation fails — log and continue.
+      // The console.error here goes to Vercel's function logs.
+      console.error("[instrumentation] registerOTEL failed:", e);
     }
   }
 }
