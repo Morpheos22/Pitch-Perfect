@@ -29,8 +29,13 @@ CREATE TABLE IF NOT EXISTS drill_turns (
   answer TEXT,
   score REAL,
   feedback TEXT,
+  tier TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add tier column to existing drill_turns table (additive, idempotent)
+-- Run separately because CREATE TABLE IF NOT EXISTS won't add columns to existing tables.
+-- Safe to ignore if the column already exists.
 
 CREATE TABLE IF NOT EXISTS discrepancies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
