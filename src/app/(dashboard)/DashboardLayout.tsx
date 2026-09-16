@@ -339,7 +339,7 @@ export default function DashboardLayout({
 
       {/* Athena Voice Greeting — fires once on dashboard load */}
       {showGreetingBanner && greetingReady && (
-        <div className="fixed bottom-24 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/30 bg-primary/5 shadow-xl p-4 flex items-center gap-3">
+        <div className="fixed bottom-24 right-4 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/30 bg-primary/5 shadow-xl p-4 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 shrink-0">
             <Sparkles className="h-5 w-5 text-primary" />
           </div>
