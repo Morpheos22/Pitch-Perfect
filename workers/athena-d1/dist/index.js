@@ -182,17 +182,34 @@ var toolDefinitions = [
   { name: "generate_readiness_memo", description: "Finalize an Investment Committee readiness memo. Only call when required questioning is complete or drill is explicitly terminated.", parameters: { type: "object", properties: { session_id: { type: "string" } }, required: ["session_id"] } },
   ...supabaseToolDefinitions
 ];
+function stripCoT(raw) {
+  if (!raw) return raw;
+  const closePatterns = [
+    /<\/think>/gi,
+    /<\|end_of_think\|>/gi,
+    /<\|\/think\|>/gi
+  ];
+  let lastClose = -1;
+  for (const re of closePatterns) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(raw)) !== null) lastClose = Math.max(lastClose, m.index + m[0].length);
+  }
+  let body = lastClose >= 0 ? raw.slice(lastClose) : raw;
+  body = body.replace(/<think>/gi, "").replace(/<\|begin_of_think\|>/gi, "").trim();
+  return body;
+}
 async function complete(env, messages, stream = false) {
   let current = [...messages];
   for (let i = 0; i < 4; i++) {
-    const result = await env.AI.run(MODEL, { messages: current, tools: toolDefinitions, stream });
+    const result = await env.AI.run(MODEL, { messages: current, tools: toolDefinitions, stream, max_tokens: 4096 });
     if (stream) return result;
     const choice = result.choices?.[0]?.message || result.message || result.response || result;
     const calls = choice.tool_calls || [];
     if (!calls.length) {
-      let body = text(choice.content ?? result.response ?? result);
-      body = body.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\n]*<\|?begin_of_think\|?>[\s\S]*?<\|?end_of_think\|?>/gi, "").trim();
-      return body || text(choice.content ?? result.response);
+      const raw = text(choice.content ?? result.response ?? result);
+      const stripped = stripCoT(raw);
+      return stripped || raw;
     }
     current.push({ role: "assistant", content: choice.content || "", tool_calls: calls });
     for (const call of calls) {

@@ -148,19 +148,45 @@ const toolDefinitions = [
 
 // Cloudflare Workers AI returns either OpenAI-shaped { choices:[{message:{...}}] }
 // or a flat { response: "..." } object depending on the model. Normalize.
+// DeepSeek-R1 emits a reasoning section delimited by special tokens before
+// the final answer. Workers AI renders these markers as visible text. Strip
+// everything before the LAST occurrence of the end-of-think marker so only
+// Athena's final verdict reaches the founder. Per the personality spec:
+//   "Never reveal hidden chain-of-thought."
+// Handle: <think>...</think>, <|begin_of_think|>...<|end_of_think|>,
+// and the bare-letter rendering some gateways emit.
+function stripCoT(raw: string): string {
+  if (!raw) return raw;
+  const closePatterns = [
+    /<\/think>/gi,
+    /<\|end_of_think\|>/gi,
+    /<\|\/think\|>/gi,
+  ];
+  let lastClose = -1;
+  for (const re of closePatterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(raw)) !== null) lastClose = Math.max(lastClose, m.index + m[0].length);
+  }
+  let body = lastClose >= 0 ? raw.slice(lastClose) : raw;
+  // Remove residual opening markers
+  body = body.replace(/<think>/gi, "").replace(/<\|begin_of_think\|>/gi, "").trim();
+  return body;
+}
+
 async function complete(env: Env, messages: Message[], stream = false) {
   let current = [...messages];
   for (let i = 0; i < 4; i++) {
-    const result: any = await env.AI.run(MODEL, { messages: current, tools: toolDefinitions, stream });
+    // max_tokens: 4096 - DeepSeek-R1 needs room to think AND produce a final
+    // answer. Default Workers AI limit truncates mid-reasoning.
+    const result: any = await env.AI.run(MODEL, { messages: current, tools: toolDefinitions, stream, max_tokens: 4096 });
     if (stream) return result;
     const choice = result.choices?.[0]?.message || result.message || result.response || result;
     const calls = choice.tool_calls || [];
     if (!calls.length) {
-      // DeepSeek-R1 emits thinking inside <think>...</think> blocks. Strip them
-      // per Athena's rule: "Never reveal hidden chain-of-thought."
-      let body = text(choice.content ?? result.response ?? result);
-      body = body.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\n]*<\|?begin_of_think\|?>[\s\S]*?<\|?end_of_think\|?>/gi, "").trim();
-      return body || text(choice.content ?? result.response);
+      const raw = text(choice.content ?? result.response ?? result);
+      const stripped = stripCoT(raw);
+      return stripped || raw;
     }
     current.push({ role: "assistant", content: choice.content || "", tool_calls: calls });
     for (const call of calls) {
