@@ -9,9 +9,14 @@ export interface Env extends SupabaseEnv {
   WEB_SEARCH_URL?: string;
   WEB_SEARCH_API_KEY?: string;
   WEB_SEARCH_PROVIDER?: string;
-  // Vision model for image analysis (default: Llava 1.5 7B HF)
-  // Alternatives: @cf/unum/uform-gen2-qwen-500m (faster), @cf/meta/llama-3.2-11b-vision-instruct
+  // Vision model for image analysis (default: Llama 3.2 11B Vision)
+  // Alternatives: @cf/llava-hf/llava-1.5-7b-hf, @cf/unum/uform-gen2-qwen-500m
   VISION_MODEL?: string;
+  // Cloudflare REST API creds for vision model calls (the AI binding has
+  // serialization issues with vision models in the current Workers runtime;
+  // we fall back to the REST API which accepts base64 strings directly).
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
 }
 
 type Json = Record<string, any>;
@@ -41,12 +46,11 @@ const AXES = ["problem", "market", "solution", "traction", "business_model", "go
 
 // Default vision model — Llava 1.5 7B is well-supported on Cloudflare Workers AI.
 // Override with VISION_MODEL env var if a different model is preferred.
-// Default vision model — Llama 3.2 11B Vision supports the OpenAI-compatible
-// messages format with content blocks (text + image_url). Llava 1.5 7B
-// requires a different format ({ image: bytes, prompt: string }) that has
-// known serialization issues in the Workers runtime. Llama 3.2 Vision is
-// the safer default.
-const VISION_MODEL_DEFAULT = "@cf/meta/llama-3.2-11b-vision-instruct";
+// Default vision model — Llava 1.5 7B HF. The REST API approach (used when
+// CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN are set) works with both
+// Llava and Llama 3.2 Vision. Without REST API creds, the AI binding fallback
+// is used (may have issues with some models).
+const VISION_MODEL_DEFAULT = "@cf/llava-hf/llava-1.5-7b-hf";
 
 // ── Behavior detection: prompt injection, profanity, deceit signals ───────
 // Deterministic TS-side guards. Run BEFORE the model is invoked.
@@ -545,29 +549,74 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
 
       if (base64Data && !result?.error) {
         try {
-          // Use OpenAI-compatible messages format with content blocks.
-          // This works with Llama 3.2 Vision (@cf/meta/llama-3.2-11b-vision-instruct)
-          // and other models that support the standard chat completions format.
-          // The image is passed as a data URL inside the image_url content block.
-          const dataUrl = `data:${mimeType};base64,${base64Data}`;
-          const visionRes: any = await env.AI.run(model, {
-            messages: [{
-              role: "user",
-              content: [
-                { type: "text", text: question },
-                { type: "image_url", image_url: { url: dataUrl } },
-              ],
-            }],
-            max_tokens: 1024,
-          });
-          const description = visionRes?.response || visionRes?.choices?.[0]?.message?.content || visionRes?.result?.response || "";
-          result = {
-            model,
-            question,
-            description: typeof description === "string" ? description : JSON.stringify(description),
-            mime_type: mimeType,
-            provenance: { source: "cloudflare_workers_ai_vision", model, timestamp: new Date().toISOString() },
-          };
+          // Use the Cloudflare REST API directly. The Workers AI binding
+          // (env.AI.run) has a known serialization issue with vision models
+          // in the current runtime — Uint8Array image data is rejected with
+          // "5006: required properties at '/' are 'image'". The REST API
+          // accepts base64 strings directly and is more reliable.
+          //
+          // Requires CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN secrets.
+          // Falls back to env.AI.run if REST creds are not configured.
+          const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+          const apiToken = env.CLOUDFLARE_API_TOKEN;
+
+          if (accountId && apiToken) {
+            // REST API approach — reliable
+            const restUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+            const restRes = await fetch(restUrl, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${apiToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                image: base64Data,  // base64 string — REST API accepts this
+                prompt: question,
+              }),
+              signal: AbortSignal.timeout(30_000),
+            });
+            if (!restRes.ok) {
+              const errBody = await restRes.text();
+              result = { error: `Vision REST API failed: ${restRes.status} — ${errBody.slice(0, 300)}` };
+            } else {
+              const restJson: any = await restRes.json();
+              if (!restJson.success) {
+                result = { error: `Vision REST API error: ${JSON.stringify(restJson.errors || restJson)}` };
+              } else {
+                const description = restJson.result?.response || restJson.result?.choices?.[0]?.message?.content || "";
+                result = {
+                  model,
+                  question,
+                  description: typeof description === "string" ? description : JSON.stringify(description),
+                  mime_type: mimeType,
+                  provenance: { source: "cloudflare_rest_api_vision", model, timestamp: new Date().toISOString() },
+                };
+              }
+            }
+          } else {
+            // Fallback: try env.AI.run with the OpenAI-compatible format
+            // (may fail with 5006 error if the binding has the serialization issue)
+            const dataUrl = `data:${mimeType};base64,${base64Data}`;
+            const visionRes: any = await env.AI.run(model, {
+              messages: [{
+                role: "user",
+                content: [
+                  { type: "text", text: question },
+                  { type: "image_url", image_url: { url: dataUrl } },
+                ],
+              }],
+              max_tokens: 1024,
+            });
+            const description = visionRes?.response || visionRes?.choices?.[0]?.message?.content || visionRes?.result?.response || "";
+            result = {
+              model,
+              question,
+              description: typeof description === "string" ? description : JSON.stringify(description),
+              mime_type: mimeType,
+              provenance: { source: "cloudflare_workers_ai_binding_vision", model, timestamp: new Date().toISOString() },
+              warning: "Used AI binding fallback — set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN secrets for reliable REST API vision.",
+            };
+          }
         } catch (e) {
           result = { error: `Vision model failed: ${e instanceof Error ? e.message : String(e)}` };
         }
