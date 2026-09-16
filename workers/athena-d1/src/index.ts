@@ -14,7 +14,8 @@ export interface Env extends SupabaseEnv {
 type Json = Record<string, any>;
 type Message = { role: string; content?: string; tool_call_id?: string; name?: string; tool_calls?: any[] };
 const MODEL = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
-const FALLBACK_MODEL = "@cf/meta/llama-3.3-70b-instruct";
+// Use the same model for the health probe — Llama-3.3-70b isn't available on this account (error 5007).
+const PROBE_MODEL = MODEL;
 const AXES = ["problem", "market", "solution", "traction", "business_model", "go_to_market", "founder"];
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,Authorization" } });
 const text = (v: unknown) => typeof v === "string" ? v : JSON.stringify(v ?? "");
@@ -154,7 +155,13 @@ async function complete(env: Env, messages: Message[], stream = false) {
     if (stream) return result;
     const choice = result.choices?.[0]?.message || result.message || result.response || result;
     const calls = choice.tool_calls || [];
-    if (!calls.length) return text(choice.content ?? result.response ?? result);
+    if (!calls.length) {
+      // DeepSeek-R1 emits thinking inside <think>...</think> blocks. Strip them
+      // per Athena's rule: "Never reveal hidden chain-of-thought."
+      let body = text(choice.content ?? result.response ?? result);
+      body = body.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\n]*<\|?begin_of_think\|?>[\s\S]*?<\|?end_of_think\|?>/gi, "").trim();
+      return body || text(choice.content ?? result.response);
+    }
     current.push({ role: "assistant", content: choice.content || "", tool_calls: calls });
     for (const call of calls) {
       const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : (call.function?.arguments || {});
@@ -182,7 +189,7 @@ export default {
       if (request.method === "GET" && url.pathname === "/health") {
         const d1Probe = await safeD1(env.DB.prepare("SELECT 1 AS ok").first(), "health-d1-probe");
         let aiProbe: any = null;
-        try { aiProbe = await env.AI.run(FALLBACK_MODEL, { messages: [{ role: "user", content: "ping" }], max_tokens: 1 }); } catch (e) { aiProbe = { error: e instanceof Error ? e.message : String(e) }; }
+        try { aiProbe = await env.AI.run(PROBE_MODEL, { messages: [{ role: "user", content: "ping" }], max_tokens: 1 }); } catch (e) { aiProbe = { error: e instanceof Error ? e.message : String(e) }; }
         return json({
           service: "athena-d1",
           status: "ok",

@@ -56,7 +56,7 @@ async function handleSupabaseTool(env, name, args) {
 
 // src/index.ts
 var MODEL = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
-var FALLBACK_MODEL = "@cf/meta/llama-3.3-70b-instruct";
+var PROBE_MODEL = MODEL;
 var AXES = ["problem", "market", "solution", "traction", "business_model", "go_to_market", "founder"];
 var json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,Authorization" } });
 var text = (v) => typeof v === "string" ? v : JSON.stringify(v ?? "");
@@ -189,7 +189,11 @@ async function complete(env, messages, stream = false) {
     if (stream) return result;
     const choice = result.choices?.[0]?.message || result.message || result.response || result;
     const calls = choice.tool_calls || [];
-    if (!calls.length) return text(choice.content ?? result.response ?? result);
+    if (!calls.length) {
+      let body = text(choice.content ?? result.response ?? result);
+      body = body.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\n]*<\|?begin_of_think\|?>[\s\S]*?<\|?end_of_think\|?>/gi, "").trim();
+      return body || text(choice.content ?? result.response);
+    }
     current.push({ role: "assistant", content: choice.content || "", tool_calls: calls });
     for (const call of calls) {
       const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments || {};
@@ -213,7 +217,7 @@ var index_default = {
         const d1Probe = await safeD1(env.DB.prepare("SELECT 1 AS ok").first(), "health-d1-probe");
         let aiProbe = null;
         try {
-          aiProbe = await env.AI.run(FALLBACK_MODEL, { messages: [{ role: "user", content: "ping" }], max_tokens: 1 });
+          aiProbe = await env.AI.run(PROBE_MODEL, { messages: [{ role: "user", content: "ping" }], max_tokens: 1 });
         } catch (e) {
           aiProbe = { error: e instanceof Error ? e.message : String(e) };
         }
