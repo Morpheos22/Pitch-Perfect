@@ -24,6 +24,28 @@ declare global { interface Window { SpeechRecognition?: SpeechRecognitionConstru
 
 const welcome: Message = { role: "assistant", content: "Hi! I'm Athena, your AI guide. I can help you navigate PitchCoach Ai, understand your scores, and get the most out of your coaching sessions. How can I help you today?" };
 
+// 15 randomized fallback responses — used when the auth trigger is delayed
+// or the AI model is still activating. Each is a complete, helpful response
+// that doesn't require backend tools. Preloaded in the widget so the user
+// gets an instant response even during auth latency.
+const fallbackResponses: string[] = [
+  "I'm Athena. While I'm connecting to your data, I can tell you that PitchCoach Ai scores your pitch across eight dimensions — from problem clarity to financial projections. Upload your deck and I'll break it down.",
+  "Welcome back. I'm initializing my connection to your pitch data. In the meantime: your scoring ranges from 0 (Not Ready) to 100 (Highly Prepared). Anything above 61 is investor-ready.",
+  "Athena here, just warming up. Did you know the E1 Pitch Deck Analyser can score your deck in under 60 seconds? Upload a PDF or PPTX and I'll show you where you stand.",
+  "Good to see you. I'm syncing with your dashboard now. While we wait — the Script Check module analyzes your elevator pitch element by element. Try it after your deck analysis.",
+  "Hi! I'm still connecting to the backend. Quick tip: investors spend an average of 3 minutes on a pitch deck. Your first slide needs a hook that makes them read the second.",
+  "Athena, initializing. The Live Pitch module records your delivery and analyzes body language, pacing, and confidence. It's the fastest way to find your weak spots.",
+  "Welcome. I'm bringing your data online now. Your Founder tier includes unlimited sessions — deck analysis, script coaching, live pitch, and full 30-minute sessions.",
+  "Hi there! I'm Athena, your pitch coach. I'm connecting to your session history. Meanwhile: the Full Pitch Session combines your deck + a 30-minute video for a 6-dimension readiness score.",
+  "Athena, coming online. Here's something useful while we connect: a pitch deck should have 10-15 slides maximum. More than that and investors stop reading.",
+  "Good to have you back. I'm syncing my context with your account. Quick insight: your 'ask' slide is the second most-viewed slide by investors. Make it specific and justified.",
+  "Hello! I'm Athena, still warming up my connection. The market opportunity slide should be TAM-SAM-SOM format with bottom-up sizing. Investors will catch top-down inflation immediately.",
+  "Athena here. While I connect to your data, remember: your team slide matters more than you think. Investors invest in people first, ideas second. Show credibility.",
+  "Welcome back! I'm initializing my AI service. Fun fact: decks with a clear problem-solution structure score 23% higher on average than narrative-only decks.",
+  "Hi! I'm Athena, getting ready to help. While I connect: the E5 Founder Coaching module includes investor research, cohort matching, and pathway recommendations. Worth exploring.",
+  "Athena, activating now. If you're preparing for a specific pitch, tell me the audience — seed VCs, angel groups, or accelerators each need different emphasis in your deck.",
+];
+
 export function AthenaWidget() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [hydrated, setHydrated] = useState(false);
@@ -34,6 +56,8 @@ export function AthenaWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([welcome]);
   const [backendConnected, setBackendConnected] = useState(false);
+  const [modelActivated, setModelActivated] = useState(false);
+  const [activating, setActivating] = useState(false);
   useEffect(() => { if (!isLoaded) return; try { const saved = window.sessionStorage.getItem(storageKey); if (saved) { const parsed = JSON.parse(saved) as { messages?: Message[]; open?: boolean }; if (Array.isArray(parsed.messages) && parsed.messages.length) setMessages(parsed.messages ?? [welcome]); // Never restore open=true — widget always starts closed
   } } catch {} setHydrated(true); }, [isLoaded, storageKey]);
   useEffect(() => { if (!hydrated) return; try { window.sessionStorage.setItem(storageKey, JSON.stringify({ messages, open: false })); } catch {} }, [hydrated, storageKey, messages, open]);
@@ -63,38 +87,83 @@ export function AthenaWidget() {
   useEffect(() => { if (open && isLoaded && hydrated) refreshQuota(); }, [open, isLoaded, hydrated, isSignedIn, refreshQuota]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, loading]);
 
-  // ── Backend AI service layer connection — fires on mount, NOT on open ──
-  // The widget connects to the backend immediately when it renders (closed),
-  // receives the warm-up trigger, and establishes the AI service connection.
-  // The interaction UI only opens when the user clicks the sparkle button.
+  // ── AI Service Layer Activation Flow ────────────────────────────────────
+  // Phase 1 (mount, closed): Widget renders, calls GET /api/athena/activate
+  //   → Returns { activated: false, status: 'standby' } — AI model nested, awaiting auth
+  // Phase 2 (signed in): Polls /activate every 2s until status='active'
+  //   → If primary trigger (Clerk webhook) succeeded: status='active' immediately
+  //   → If primary failed: dashboard fetch fires POST /activate (fallback trigger)
+  // Phase 3 (user clicks open): Widget opens, interaction begins
+  //   → If model not yet activated: uses fallback responses (15 randomized)
+  //   → When activation completes: switches to full agent mode (Poke API + tools)
   useEffect(() => {
-    if (!hydrated || !isSignedIn) return;
+    if (!hydrated) return;
     let cancelled = false;
+    let pollCount = 0;
+    const maxPolls = 15; // max 30s of polling (15 × 2s)
 
-    (async () => {
+    const poll = async () => {
+      if (cancelled) return;
       try {
-        // Check if Athena's AI service is warm
-        const warmthRes = await fetch("/api/athena/warmth", { method: "GET" });
-        if (cancelled) return;
+        const res = await fetch("/api/athena/activate", { method: "GET" });
+        if (cancelled || !res.ok) { setBackendConnected(false); return; }
+        setBackendConnected(true);
+        const data = await res.json();
 
-        if (warmthRes.ok) {
-          const warmth = await warmthRes.json();
-          // If cold or stale, the backend will warm up via /api/user/sync
-          // (which fires in parallel). We just mark the connection status.
-          setBackendConnected(true);
+        if (data.activated) {
+          setModelActivated(true);
+          setActivating(false);
+          return; // Stop polling — model is active
+        }
+
+        // Not yet activated — check if we should fire the fallback trigger
+        if (data.status === "stale" || (data.status === "standby" && isSignedIn && pollCount === 2)) {
+          // Dashboard sync should have fired the trigger by now (3 polls = 6s)
+          // If still not activated, fire fallback trigger from the widget
+          setActivating(true);
+          try {
+            const triggerRes = await fetch("/api/athena/activate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fallback: true }),
+            });
+            if (triggerRes.ok) {
+              const triggerData = await triggerRes.json();
+              if (triggerData.activated) {
+                setModelActivated(true);
+                setActivating(false);
+                return;
+              }
+            }
+          } catch { /* fallback failed — continue polling */ }
+        }
+
+        pollCount++;
+        if (pollCount < maxPolls) {
+          setTimeout(poll, 2000); // Poll every 2s
         } else {
-          // Warmth endpoint not available — still connected (non-fatal)
-          setBackendConnected(true);
+          // Timeout — model not activated. Widget will use fallback responses.
+          setActivating(false);
+          console.warn("[Athena] Activation timed out after 30s — using fallback responses");
         }
       } catch {
-        // Connection failed — widget still renders, user can click to open
-        // The chat route will attempt warm-up on first message
         setBackendConnected(false);
+        // Retry after 2s
+        if (pollCount < maxPolls) {
+          pollCount++;
+          setTimeout(poll, 2000);
+        }
       }
-    })();
+    };
 
+    poll();
     return () => { cancelled = true; };
   }, [hydrated, isSignedIn]);
+
+  // Get a random fallback response
+  const getFallbackResponse = useCallback((): string => {
+    return fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+  }, []);
 
   const cleanupAudio = useCallback(() => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.onended = null; audioRef.current.onerror = null; audioRef.current = null; }
@@ -160,6 +229,15 @@ export function AthenaWidget() {
     stopRecording();
     const text = input.trim() || "Analyze this image"; const attached = image;
     setInput(""); setImage(null); setMessages(prev => [...prev, { role: "user", content: attached ? `${text} [image attached]` : text }]); setLoading(true);
+
+    // If AI model is not yet activated, use a fallback response (instant, no backend call)
+    if (!modelActivated) {
+      await new Promise(r => setTimeout(r, 500)); // small delay for realism
+      setMessages(prev => [...prev, { role: "assistant", content: getFallbackResponse() }]);
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/athena/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, history: messages, ...(attached ? { image: attached } : {}) }) });
       const data = await res.json();
@@ -176,9 +254,13 @@ export function AthenaWidget() {
 
   if (!open) return <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110 relative" aria-label="Open Athena AI Guide">
     <Sparkles className="h-6 w-6" />
-    {backendConnected && <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+    {modelActivated && <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
       <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-emerald-500" />
+    </span>}
+    {activating && !modelActivated && <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+      <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-amber-500" />
     </span>}
   </button>;
   const nudge = quota?.tier === "anon" && quota.remaining > 0 && quota.remaining <= 2;

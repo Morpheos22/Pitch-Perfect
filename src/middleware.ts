@@ -734,7 +734,7 @@ export default clerkMiddleware(async (auth, request) => {
     '/api/athena/debug',
     '/api/athena/greet',
     '/api/athena/speak',
-    '/api/athena/warmth',
+    '/api/athena/activate',
   ];
   const hasOwnRateLimit = routesWithOwnRateLimit.some(r => pathname === r || pathname.startsWith(r + '/'));
 
