@@ -417,7 +417,23 @@ export function AthenaWidget() {
     }
   }, [input, loading, messages, sessionId]);
 
-  if (!open) return <button onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena"><Sparkles className="h-6 w-6" /></button>;
+  // Request mic permission upfront when opening Athena.
+  const requestMicPermissionOnOpen = useCallback(async () => {
+    userInteractedRef.current = true;
+    if (pendingSpeechRef.current) {
+      const text = pendingSpeechRef.current;
+      pendingSpeechRef.current = null;
+      speak(text);
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch {
+      // Silent — user will get specific error when they try to record
+    }
+  }, [speak]);
+
+  if (!open) return <button onClick={() => { setOpen(true); requestMicPermissionOnOpen(); }} className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena"><Sparkles className="h-6 w-6" /></button>;
 
   const secondsLeft = MAX_RECORDING_SECONDS - recordingTime;
 
