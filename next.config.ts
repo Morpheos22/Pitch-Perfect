@@ -161,7 +161,7 @@ const nextConfig: any = {
           // Strict Permissions-Policy — disable all browser features we don't use
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(), interest-cohort=(), browsing-topics=(), clipboard-read=(), clipboard-write=(self), payment=(), usb=(), bluetooth=(), nfc=(), magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), vr=(), xr-spatial-tracking=()',
+            value: 'camera=(), microphone=(self), geolocation=(), interest-cohort=(), browsing-topics=(), clipboard-read=(), clipboard-write=(self), payment=(), usb=(), bluetooth=(), nfc=(), magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), vr=(), xr-spatial-tracking=()',
           },
           // Strict HSTS with preload
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
