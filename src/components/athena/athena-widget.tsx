@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square, MicOff } from "lucide-react";
+import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -89,7 +89,6 @@ export function AthenaWidget() {
   const [recording, setRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
-  const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hi, I'm Athena. Ask me anything about your pitch." }]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -129,7 +128,22 @@ export function AthenaWidget() {
       audioRef.current = audio;
       audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
       audio.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (playErr) {
+        // Autoplay policy: browser blocks audio.play() until user interacts.
+        // On mobile, the first auto-speak attempt may fail. Show a "tap to play"
+        // banner so the user can explicitly trigger playback.
+        if (playErr instanceof DOMException && (playErr.name === "NotAllowedError" || playErr.name === "AbortError")) {
+          setSpeaking(false);
+          setError("Tap to listen — your browser blocked auto-play. Click the Voice toggle once to enable audio.");
+          // Clean up the audio element — user will need to interact first
+          URL.revokeObjectURL(url);
+          audioRef.current = null;
+        } else {
+          throw playErr;
+        }
+      }
     } catch (e) {
       console.error("[Athena] voice playback failed:", e);
       setSpeaking(false);
@@ -171,18 +185,6 @@ export function AthenaWidget() {
     });
   }, [stopSpeaking]);
 
-  // Check mic permission on mount
-  useEffect(() => {
-    if (navigator.permissions) {
-      navigator.permissions.query({ name: "microphone" as PermissionName }).then(result => {
-        setMicPermission(result.state as "granted" | "denied" | "unknown");
-        result.onchange = () => setMicPermission(result.state as "granted" | "denied" | "unknown");
-      }).catch(() => {
-        // permissions API not supported — leave as unknown
-      });
-    }
-  }, []);
-
   // Microphone recording — request permission first, then record
   const startRecording = useCallback(async () => {
     setError(null);
@@ -191,9 +193,7 @@ export function AthenaWidget() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      setMicPermission("granted");
     } catch (e) {
-      setMicPermission("denied");
       if (e instanceof DOMException) {
         if (e.name === "NotAllowedError") {
           setError("Microphone access denied. Click the mic icon again and allow access when your browser prompts you.");
@@ -445,15 +445,11 @@ export function AthenaWidget() {
           <button
             onClick={startRecording}
             disabled={loading || transcribing}
-            className={`flex items-center justify-center rounded-lg border px-3 py-2 disabled:opacity-50 ${
-              micPermission === "denied"
-                ? "border-red-500/50 text-red-500 hover:bg-red-500/10"
-                : "border-input bg-background text-muted-foreground hover:bg-muted"
-            }`}
+            className="flex items-center justify-center rounded-lg border border-input bg-background px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-50"
             aria-label="Record audio (15 seconds max)"
-            title={micPermission === "denied" ? "Microphone access denied — click to try again" : "Record audio (15 seconds max)"}
+            title="Record audio (15 seconds max)"
           >
-            {micPermission === "denied" ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            <Mic className="h-4 w-4" />
           </button>
         )}
         <input
