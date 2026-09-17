@@ -1304,7 +1304,6 @@ async function voiceStream(env: Env, text: string, sessionId: string): Promise<R
       "content-type": "audio/mpeg",
       "cache-control": "no-cache, no-transform",
       "connection": "keep-alive",
-      ...(isAllowedOrigin(request, env) ? { "access-control-allow-origin": request.headers.get("origin") || "" } : {}),
       "x-athena-session": sessionId,
       "x-athena-voice": voiceId,
     },
