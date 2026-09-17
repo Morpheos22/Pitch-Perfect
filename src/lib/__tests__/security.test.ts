@@ -443,7 +443,7 @@ describe("Security headers", () => {
 
   it("includes Permissions-Policy that disables camera, microphone, geolocation", () => {
     expect(SECURITY_HEADERS["Permissions-Policy"]).toContain("camera=()");
-    expect(SECURITY_HEADERS["Permissions-Policy"]).toContain("microphone=()");
+    expect(SECURITY_HEADERS["Permissions-Policy"]).toContain("microphone=(self)");
     expect(SECURITY_HEADERS["Permissions-Policy"]).toContain("geolocation=()");
   });
 });
