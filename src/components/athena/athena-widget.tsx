@@ -104,32 +104,6 @@ export function AthenaWidget() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, loading, speaking]);
 
-  // Track user interaction — browsers block audio.play() until the user
-  // has interacted with the page (click, tap, keydown). Once they do, all
-  // subsequent audio.play() calls work normally.
-  useEffect(() => {
-    const markInteracted = () => {
-      if (!userInteractedRef.current) {
-        userInteractedRef.current = true;
-        // If there's pending speech queued from before the user interacted, play it now
-        if (pendingSpeechRef.current) {
-          const text = pendingSpeechRef.current;
-          pendingSpeechRef.current = null;
-          speak(text);
-        }
-      }
-    };
-    // Any of these counts as user interaction
-    window.addEventListener("click", markInteracted, { once: true });
-    window.addEventListener("touchend", markInteracted, { once: true });
-    window.addEventListener("keydown", markInteracted, { once: true });
-    return () => {
-      window.removeEventListener("click", markInteracted);
-      window.removeEventListener("touchend", markInteracted);
-      window.removeEventListener("keydown", markInteracted);
-    };
-  }, [speak]);
-
   // Voice playback — calls /api/athena/voice (ElevenLabs streaming MP3).
   const speak = useCallback(async (text: string) => {
     // If already speaking, stop
@@ -187,6 +161,32 @@ export function AthenaWidget() {
     }
     setSpeaking(false);
   }, []);
+
+  // Track user interaction — browsers block audio.play() until the user
+  // has interacted with the page (click, tap, keydown). Once they do, all
+  // subsequent audio.play() calls work normally. This useEffect is defined
+  // AFTER speak() so it can reference it.
+  useEffect(() => {
+    const markInteracted = () => {
+      if (!userInteractedRef.current) {
+        userInteractedRef.current = true;
+        // If there's pending speech queued from before the user interacted, play it now
+        if (pendingSpeechRef.current) {
+          const text = pendingSpeechRef.current;
+          pendingSpeechRef.current = null;
+          speak(text);
+        }
+      }
+    };
+    window.addEventListener("click", markInteracted, { once: true });
+    window.addEventListener("touchend", markInteracted, { once: true });
+    window.addEventListener("keydown", markInteracted, { once: true });
+    return () => {
+      window.removeEventListener("click", markInteracted);
+      window.removeEventListener("touchend", markInteracted);
+      window.removeEventListener("keydown", markInteracted);
+    };
+  }, [speak]);
 
   // Auto-speak when voice mode is ON and a message finishes streaming
   useEffect(() => {
