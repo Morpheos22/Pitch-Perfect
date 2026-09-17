@@ -1,95 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-
+import { z } from "zod";
+import { askAthenaWithTools } from "@/lib/athena-agent";
+import { prisma } from "@/lib/db";
+import { checkAthenaQuota, reserveAnonSlot, releaseAnonSlot, ATHENA_QUOTA } from "@/lib/athena-quota";
+import { getClientIp, getDeviceFingerprint } from "@/lib/security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // accommodate deep-tier DeepSeek-R1 (50-70s)
-
-const ENGINE_URL = process.env.ATHENA_ENGINE_URL || "https://athena-d1.morphylee22.workers.dev/v1/athena";
-
+export const maxDuration = 30;
+const MAX_HISTORY = 50;
+const MAX_HISTORY_CONTENT = 10000;
+const MAX_IMAGE_LENGTH = 5_000_000;
+const historyItemSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(MAX_HISTORY_CONTENT) }).strict();
+const historySchema = z.array(historyItemSchema).max(MAX_HISTORY);
+const imageSchema = z.string().max(MAX_IMAGE_LENGTH).refine((value) => /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(value), "Invalid image payload");
+function quotaHeaders(result: { tier: "anon" | "auth"; remaining: number; resetAt: number; retryAfter?: number; requiresSignIn?: boolean }) { return { "X-Athena-Tier": result.tier, "X-Athena-Remaining": String(result.remaining), "X-Athena-Reset": String(result.resetAt), ...(result.requiresSignIn ? { "X-Athena-Requires-Sign-In": "1" } : {}), ...(result.retryAfter ? { "Retry-After": String(result.retryAfter) } : {}) }; }
 export async function POST(request: NextRequest) {
-  const body = await request.text();
-  if (!body) return NextResponse.json({ error: "Request body is required" }, { status: 400 });
-  let parsed: unknown;
-  try { parsed = JSON.parse(body); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-  const input = parsed as { message?: unknown; tier?: unknown; stream?: unknown; session_id?: unknown; turns?: unknown; user_name?: unknown };
-  if (typeof input.message !== "string" || !input.message.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
-
-  // Identify the founder (Clerk userId + firstName) so Athena can address
-  // them by name and fetch their deck from Supabase.
-  let founderId: string | undefined;
-  let founderName: string | undefined;
+  let isAnon = false;
   try {
-    const { userId, sessionClaims } = await auth();
-    if (userId) {
-      founderId = userId;
-      // Pull firstName from Clerk JWT claims if available
-      const meta = sessionClaims as any;
-      founderName = meta?.firstName || meta?.u?.first_name || undefined;
-    }
-  } catch { /* anonymous visitor — allow through */ }
-  // Allow client-side override (e.g., from onboarding form) but prefer server-side
-  const userName = (typeof input.user_name === "string" ? input.user_name : undefined) || founderName;
-
-  const upstreamPayload = {
-    message: input.message,
-    tier: typeof input.tier === "string" ? input.tier : undefined,
-    stream: input.stream === true || input.stream === "true",
-    session_id: typeof input.session_id === "string" ? input.session_id : undefined,
-    turns: Array.isArray(input.turns) ? input.turns : undefined,
-    founder_id: founderId,
-    user_name: userName,
-  };
-
-  // SSE streaming: if the client wants streaming, pass through the worker's
-  // event-stream directly without buffering. This is what makes DeepSeek-R1
-  // feel responsive — tokens arrive as they're generated.
-  if (upstreamPayload.stream) {
-    let upstream: Response;
-    try {
-      upstream = await fetch(ENGINE_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "text/event-stream" },
-        body: JSON.stringify(upstreamPayload),
-        cache: "no-store",
-      });
-    } catch (error) {
-      return NextResponse.json({ error: "Athena engine is unreachable", detail: error instanceof Error ? error.message : String(error) }, { status: 502 });
-    }
-    return new NextResponse(upstream.body, {
-      status: upstream.status,
-      headers: {
-        "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-cache, no-transform",
-        "connection": "keep-alive",
-        "x-athena-tier": upstream.headers.get("x-athena-tier") || "",
-        "x-athena-model": upstream.headers.get("x-athena-model") || "",
-        "x-athena-session": upstream.headers.get("x-athena-session") || "",
-      },
-    });
-  }
-
-  // Non-streaming path — wait for full verdict
-  let upstream: Response;
-  try {
-    upstream = await fetch(ENGINE_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(upstreamPayload),
-      cache: "no-store",
-    });
-  } catch (error) {
-    return NextResponse.json({ error: "Athena engine is unreachable", detail: error instanceof Error ? error.message : String(error) }, { status: 502 });
-  }
-
-  const responseBody = await upstream.text();
-  return new NextResponse(responseBody, {
-    status: upstream.status,
-    headers: {
-      "content-type": upstream.headers.get("content-type") || "application/json",
-      "cache-control": "no-store",
-      "x-athena-tier": upstream.headers.get("x-athena-tier") || "",
-      "x-athena-model": upstream.headers.get("x-athena-model") || "",
-    },
-  });
+    const { userId } = await auth();
+    let body: unknown;
+    try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+    const parsed = z.object({ message: z.string().min(1).max(2000), history: historySchema.optional().default([]), context: z.unknown().optional(), sessionId: z.string().max(128).optional(), image: imageSchema.optional() }).strict().safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten().fieldErrors }, { status: 400 });
+    const { message, history, context, sessionId, image } = parsed.data;
+    const tier: "anon" | "auth" = userId ? "auth" : "anon";
+    isAnon = tier === "anon";
+    const identifier = userId ? userId : `${getClientIp(request)}:${await getDeviceFingerprint(request)}`;
+    const quota = checkAthenaQuota(tier, identifier);
+    if (!quota.allowed) { const status = quota.requiresSignIn ? 402 : 429; return NextResponse.json({ error: quota.concurrencyBlocked ? "athena_busy" : "athena_quota_exceeded", message: quota.concurrencyBlocked ? "Athena is helping other visitors right now. Please try again in a moment." : quota.requiresSignIn ? "You've reached Athena's free visitor limit. Sign in to keep chatting — it's free." : "You've reached Athena's chat limit for now. Please try again later.", retryAfter: quota.retryAfter, remaining: 0, resetAt: quota.resetAt, tier: quota.tier, requiresSignIn: quota.requiresSignIn }, { status, headers: quotaHeaders(quota) }); }
+    if (isAnon) reserveAnonSlot();
+    let internalUserId: string | undefined;
+    if (userId) internalUserId = (await prisma.user.findUnique({ where: { clerkId: userId }, select: { id: true } }))?.id;
+    const typedContext = (context as { firstName?: string; currentModule?: string; currentPage?: string; plan?: string } | null) || {};
+    const ctx = userId ? { userId, internalUserId, sessionId, firstName: typedContext.firstName, currentModule: typedContext.currentModule, currentPage: typedContext.currentPage, plan: typedContext.plan } : undefined;
+    const response = await askAthenaWithTools(message, ctx, history, image, { userId: internalUserId || userId || undefined, sessionId, context: ctx });
+    return NextResponse.json({ response, timestamp: new Date().toISOString(), tier, remaining: quota.remaining, resetAt: quota.resetAt, nudgeSignIn: tier === "anon" && quota.remaining <= ATHENA_QUOTA.ANON.limit - 2 }, { status: 200, headers: quotaHeaders({ tier, remaining: quota.remaining, resetAt: quota.resetAt }) });
+  } catch (error) { console.error("[Athena Chat] Error:", error); return NextResponse.json({ error: "Failed to get response from Athena" }, { status: 500 }); } finally { if (isAnon) releaseAnonSlot(); }
 }
