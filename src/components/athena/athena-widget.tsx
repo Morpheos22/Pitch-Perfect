@@ -38,6 +38,72 @@ function parseOutputContract(raw: string): { sections: Array<{ label: string; bo
   return { sections, raw };
 }
 
+// Convert an audio Blob (any format MediaRecorder produces) to 16kHz mono WAV.
+// Cloudflare's @cf/openai/whisper model reliably accepts WAV; webm/opus is
+// unreliable. This conversion uses the Web Audio API (AudioContext +
+// OfflineAudioContext) which is supported in all modern browsers.
+async function convertToWav(inputBlob: Blob): Promise<Blob> {
+  const arrayBuffer = await inputBlob.arrayBuffer();
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  // Resample to 16kHz mono — Whisper's preferred format
+  const targetSampleRate = 16000;
+  const numChannels = 1;
+  const offlineCtx = new OfflineAudioContext(numChannels, Math.ceil(audioBuffer.duration * targetSampleRate), targetSampleRate);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+  const renderedBuffer = await offlineCtx.startRendering();
+  // Encode the AudioBuffer as 16-bit PCM WAV
+  return audioBufferToWav(renderedBuffer);
+}
+
+// Encode an AudioBuffer as a 16-bit PCM WAV Blob.
+function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const numChannels = 1;
+  const sampleRate = buffer.sampleRate;
+  const numFrames = buffer.length;
+  const bytesPerSample = 2; // 16-bit
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numFrames * blockAlign;
+  const bufferSize = 44 + dataSize; // 44-byte header + PCM data
+  const arrayBuffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(arrayBuffer);
+  // RIFF header
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, "WAVE");
+  // fmt chunk
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true); // chunk size
+  view.setUint16(20, 1, true); // audio format = PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true); // bits per sample
+  // data chunk
+  writeString(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+  // Write PCM samples (use channel 0 — we rendered mono)
+  const channelData = buffer.getChannelData(0);
+  let offset = 44;
+  for (let i = 0; i < numFrames; i++) {
+    const sample = Math.max(-1, Math.min(1, channelData[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
 function AthenaMessage({ message }: { message: Message }) {
   const isUser = message.role === "user";
   const [expanded, setExpanded] = useState(false);
@@ -256,7 +322,16 @@ export function AthenaWidget() {
 
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream);
+      // Request audio/webm;codecs=opus explicitly (most widely supported).
+      // The blob will be converted to WAV before upload.
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     } catch {
       setError("Your browser does not support audio recording. Try a modern browser (Chrome, Firefox, Safari, Edge).");
       stream.getTracks().forEach((t) => t.stop());
@@ -269,7 +344,7 @@ export function AthenaWidget() {
     };
 
     recorder.onstop = async () => {
-      const blob = new Blob(recordingChunksRef.current, { type: "audio/webm" });
+      const webmBlob = new Blob(recordingChunksRef.current, { type: "audio/webm" });
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       if (recordingTimerRef.current) {
@@ -278,8 +353,11 @@ export function AthenaWidget() {
       }
       setTranscribing(true);
       try {
+        // Convert to 16kHz mono WAV — Cloudflare Whisper reliably accepts WAV.
+        // The raw webm/opus blob is unreliable for transcription.
+        const wavBlob = await convertToWav(webmBlob);
         const formData = new FormData();
-        formData.append("audio", blob, "recording.webm");
+        formData.append("audio", wavBlob, "recording.wav");
         formData.append("session_id", sessionId || "");
         const res = await fetch("/api/athena/audio", { method: "POST", body: formData });
         if (!res.ok) {
