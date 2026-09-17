@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square } from "lucide-react";
+import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square, Lock } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -90,22 +90,69 @@ export function AthenaWidget() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hi, I'm Athena. Ask me anything about your pitch." }]);
+
+  // audioUnlocked is the gate. Audio playback is DISABLED until the user
+  // performs a gesture that successfully resolves getUserMedia({ audio: true }).
+  // This satisfies the browser autoplay policy (user gesture + media access)
+  // and ensures we never attempt audio.play() before permission is granted.
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [requestingAccess, setRequestingAccess] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpokenIdxRef = useRef<number | null>(null);
-  const userInteractedRef = useRef(false);
-  const pendingSpeechRef = useRef<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, loading, speaking]);
 
-  // Voice playback — calls /api/athena/voice (ElevenLabs streaming MP3).
+  // ── Audio access ──────────────────────────────────────────────────────
+  // The ONLY way audioUnlocked becomes true is via this function, which
+  // requires a user gesture (click) and a successful getUserMedia resolution.
+  // If the user denies or there's no mic, audioUnlocked stays false and
+  // speak() is a silent no-op.
+  const requestAudioAccess = useCallback(async (): Promise<boolean> => {
+    if (audioUnlocked) return true;
+    setRequestingAccess(true);
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Success — immediately stop the stream. We only needed the permission
+      // grant to satisfy the autoplay policy and unlock audio playback.
+      stream.getTracks().forEach((t) => t.stop());
+      setAudioUnlocked(true);
+      setRequestingAccess(false);
+      return true;
+    } catch (e) {
+      setRequestingAccess(false);
+      if (e instanceof DOMException) {
+        if (e.name === "NotAllowedError") {
+          setError("Microphone access denied. Athena needs mic permission to enable voice. Click the lock icon to try again.");
+        } else if (e.name === "NotFoundError") {
+          setError("No microphone found. Connect a microphone and try again.");
+        } else {
+          setError(`Microphone error: ${e.message}`);
+        }
+      } else {
+        setError(`Microphone access failed: ${String(e)}`);
+      }
+      return false;
+    }
+  }, [audioUnlocked]);
+
+  // ── Voice playback ────────────────────────────────────────────────────
+  // speak() is a no-op until audioUnlocked is true. This prevents autoplay
+  // failures and ensures we never queue speech that can't play.
   const speak = useCallback(async (text: string) => {
+    if (!audioUnlocked) {
+      // Audio not unlocked — don't attempt playback, don't queue.
+      // The user will see the text reply; voice requires explicit unlock.
+      return;
+    }
     // If already speaking, stop
     if (audioRef.current) {
       audioRef.current.pause();
@@ -130,30 +177,13 @@ export function AthenaWidget() {
       audioRef.current = audio;
       audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
       audio.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
-      try {
-        await audio.play();
-      } catch (playErr) {
-        // Autoplay policy: if the user hasn't interacted with the page yet,
-        // audio.play() fails with NotAllowedError. Queue the speech and play
-        // it once the user interacts (the interaction listener will pick it up).
-        if (playErr instanceof DOMException && (playErr.name === "NotAllowedError" || playErr.name === "AbortError")) {
-          pendingSpeechRef.current = text;
-          setSpeaking(false);
-          URL.revokeObjectURL(url);
-          audioRef.current = null;
-          // Don't show an error — the interaction listener will play this
-          // automatically once the user clicks/taps anywhere.
-        } else {
-          throw playErr;
-        }
-      }
+      await audio.play();
     } catch (e) {
       console.error("[Athena] voice playback failed:", e);
       setSpeaking(false);
     }
-  }, [sessionId]);
+  }, [audioUnlocked, sessionId]);
 
-  // Stop speaking
   const stopSpeaking = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -162,35 +192,10 @@ export function AthenaWidget() {
     setSpeaking(false);
   }, []);
 
-  // Track user interaction — browsers block audio.play() until the user
-  // has interacted with the page (click, tap, keydown). Once they do, all
-  // subsequent audio.play() calls work normally. This useEffect is defined
-  // AFTER speak() so it can reference it.
+  // Auto-speak when voice mode is ON and a message finishes streaming.
+  // Only fires if audioUnlocked is true — otherwise the reply is text-only.
   useEffect(() => {
-    const markInteracted = () => {
-      if (!userInteractedRef.current) {
-        userInteractedRef.current = true;
-        // If there's pending speech queued from before the user interacted, play it now
-        if (pendingSpeechRef.current) {
-          const text = pendingSpeechRef.current;
-          pendingSpeechRef.current = null;
-          speak(text);
-        }
-      }
-    };
-    window.addEventListener("click", markInteracted, { once: true });
-    window.addEventListener("touchend", markInteracted, { once: true });
-    window.addEventListener("keydown", markInteracted, { once: true });
-    return () => {
-      window.removeEventListener("click", markInteracted);
-      window.removeEventListener("touchend", markInteracted);
-      window.removeEventListener("keydown", markInteracted);
-    };
-  }, [speak]);
-
-  // Auto-speak when voice mode is ON and a message finishes streaming
-  useEffect(() => {
-    if (voiceMode !== "auto") return;
+    if (voiceMode !== "auto" || !audioUnlocked) return;
     const lastIdx = messages.length - 1;
     const lastMsg = messages[lastIdx];
     if (lastMsg && lastMsg.role === "assistant" && !lastMsg.streaming && lastMsg.content && lastSpokenIdxRef.current !== lastIdx) {
@@ -200,24 +205,36 @@ export function AthenaWidget() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [messages, voiceMode, speak]);
+  }, [messages, voiceMode, audioUnlocked, speak]);
 
-  // Toggle voice mode
-  const toggleVoice = useCallback(() => {
-    setVoiceMode(v => {
-      const next = v === "auto" ? "off" : "auto";
-      if (next === "off") {
-        // Stop any current playback when turning off
-        stopSpeaking();
+  // ── Voice toggle ──────────────────────────────────────────────────────
+  // If audio is locked, clicking the toggle triggers requestAudioAccess
+  // instead of toggling voiceMode. Once unlocked, it toggles normally.
+  const handleVoiceToggle = useCallback(async () => {
+    if (!audioUnlocked) {
+      const granted = await requestAudioAccess();
+      if (granted) {
+        // Permission granted — voiceMode is already "auto" by default,
+        // so auto-speak will now work for subsequent replies.
       }
+      return;
+    }
+    setVoiceMode((v) => {
+      const next = v === "auto" ? "off" : "auto";
+      if (next === "off") stopSpeaking();
       return next;
     });
-  }, [stopSpeaking]);
+  }, [audioUnlocked, requestAudioAccess, stopSpeaking]);
 
-  // Microphone recording — request permission first, then record
+  // ── Microphone recording ──────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     setError(null);
-    // Step 1: explicitly request permission
+    // Ensure audio is unlocked (getUserMedia here also counts as a user gesture)
+    if (!audioUnlocked) {
+      const granted = await requestAudioAccess();
+      if (!granted) return;
+    }
+
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -237,13 +254,12 @@ export function AthenaWidget() {
       return;
     }
 
-    // Step 2: set up the recorder
     let recorder: MediaRecorder;
     try {
       recorder = new MediaRecorder(stream);
     } catch {
       setError("Your browser does not support audio recording. Try a modern browser (Chrome, Firefox, Safari, Edge).");
-      stream.getTracks().forEach(t => t.stop());
+      stream.getTracks().forEach((t) => t.stop());
       return;
     }
     recordingChunksRef.current = [];
@@ -254,26 +270,18 @@ export function AthenaWidget() {
 
     recorder.onstop = async () => {
       const blob = new Blob(recordingChunksRef.current, { type: "audio/webm" });
-      // Stop the mic stream
-      stream.getTracks().forEach(t => t.stop());
+      stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
-
-      // Stop the timer
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
-
-      // Step 3: transcribe via /api/athena/audio
       setTranscribing(true);
       try {
         const formData = new FormData();
         formData.append("audio", blob, "recording.webm");
         formData.append("session_id", sessionId || "");
-        const res = await fetch("/api/athena/audio", {
-          method: "POST",
-          body: formData,
-        });
+        const res = await fetch("/api/athena/audio", { method: "POST", body: formData });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || err.detail || `Audio API returned ${res.status}`);
@@ -292,17 +300,13 @@ export function AthenaWidget() {
       }
     };
 
-    // Step 4: start recording
     recorder.start();
     mediaRecorderRef.current = recorder;
     setRecording(true);
     setRecordingTime(0);
-
-    // Step 5: start the 15-second countdown timer
     recordingTimerRef.current = setInterval(() => {
-      setRecordingTime(t => {
+      setRecordingTime((t) => {
         if (t + 1 >= MAX_RECORDING_SECONDS) {
-          // Auto-stop at 15 seconds
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
             mediaRecorderRef.current.stop();
           }
@@ -311,7 +315,7 @@ export function AthenaWidget() {
         return t + 1;
       });
     }, 1000);
-  }, [sessionId]);
+  }, [audioUnlocked, requestAudioAccess, sessionId]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -324,7 +328,7 @@ export function AthenaWidget() {
   useEffect(() => {
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     };
   }, []);
@@ -336,40 +340,32 @@ export function AthenaWidget() {
     setError(null);
     setMessages((m) => [...m, { role: "user", content: message }]);
     setLoading(true);
-
     const assistantIdx = messages.length + 1;
     setMessages((m) => [...m, { role: "assistant", content: "", streaming: true }]);
-
     try {
       const response = await fetch("/api/athena/chat", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "text/event-stream" },
         body: JSON.stringify({ message, turns: messages, stream: true, session_id: sessionId }),
       });
-
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || data.detail || `Athena returned HTTP ${response.status}`);
       }
-
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response stream");
-
       const decoder = new TextDecoder();
       let buffer = "";
       let accumulated = "";
       let meta: { tier?: string; model?: string; session_id?: string } = {};
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
         let boundary: number;
         while ((boundary = buffer.indexOf("\n\n")) >= 0) {
           const rawEvent = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-
           let eventType = "data";
           let dataStr = "";
           for (const line of rawEvent.split("\n")) {
@@ -377,10 +373,8 @@ export function AthenaWidget() {
             else if (line.startsWith("data:")) dataStr += (dataStr ? "\n" : "") + line.slice(5).trim();
           }
           if (!dataStr || dataStr === "[DONE]") continue;
-
           let parsedData: any;
           try { parsedData = JSON.parse(dataStr); } catch { continue; }
-
           if (eventType === "meta" && parsedData) {
             meta = parsedData;
             if (meta.session_id) setSessionId(meta.session_id);
@@ -397,7 +391,6 @@ export function AthenaWidget() {
           }
         }
       }
-
       if (!accumulated && buffer.trim()) {
         try {
           const data = JSON.parse(buffer);
@@ -417,25 +410,34 @@ export function AthenaWidget() {
     }
   }, [input, loading, messages, sessionId]);
 
-  // Request mic permission upfront when opening Athena.
-  const requestMicPermissionOnOpen = useCallback(async () => {
-    userInteractedRef.current = true;
-    if (pendingSpeechRef.current) {
-      const text = pendingSpeechRef.current;
-      pendingSpeechRef.current = null;
-      speak(text);
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop());
-    } catch {
-      // Silent — user will get specific error when they try to record
-    }
-  }, [speak]);
+  // Open handler — just opens the widget. Does NOT request audio access
+  // automatically. The user explicitly clicks the voice toggle or mic
+  // button to grant permission. This is cleaner and avoids surprising
+  // the user with a permission prompt the moment they open Athena.
+  const handleOpen = useCallback(() => {
+    setOpen(true);
+  }, []);
 
-  if (!open) return <button onClick={() => { setOpen(true); requestMicPermissionOnOpen(); }} className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena"><Sparkles className="h-6 w-6" /></button>;
+  if (!open) return <button onClick={handleOpen} className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena"><Sparkles className="h-6 w-6" /></button>;
 
   const secondsLeft = MAX_RECORDING_SECONDS - recordingTime;
+
+  // Determine the voice toggle state:
+  // - Locked (audioUnlocked = false): show Lock icon, click to request access
+  // - Voice ON (audioUnlocked + voiceMode=auto): show Volume2, click to mute
+  // - Muted (audioUnlocked + voiceMode=off): show VolumeX, click to enable
+  const voiceToggleLabel = !audioUnlocked ? "Locked" : voiceMode === "auto" ? "Voice" : "Muted";
+  const voiceToggleIcon = !audioUnlocked ? <Lock className="h-3.5 w-3.5" /> : voiceMode === "auto" ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />;
+  const voiceToggleTitle = !audioUnlocked
+    ? "Voice locked — click to grant mic permission and enable voice"
+    : voiceMode === "auto"
+    ? "Voice ON — Athena speaks every reply. Click to mute."
+    : "Voice OFF — text only. Click to enable voice.";
+  const voiceToggleClass = !audioUnlocked
+    ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
+    : voiceMode === "auto"
+    ? "bg-primary text-primary-foreground shadow-sm"
+    : "bg-muted text-muted-foreground hover:bg-muted/80";
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-border bg-background shadow-2xl" style={{ maxHeight: "70vh" }}>
@@ -448,22 +450,17 @@ export function AthenaWidget() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Unified voice toggle — ON = auto-speak every reply, OFF = text only.
-              This is the SINGLE voice indicator. No per-message voice buttons. */}
           <button
-            onClick={toggleVoice}
-            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all ${
-              voiceMode === "auto"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-muted text-muted-foreground hover:bg-muted/80"
-            }`}
-            aria-label={voiceMode === "auto" ? "Voice on — click to mute" : "Voice off — click to enable"}
-            aria-pressed={voiceMode === "auto"}
-            title={voiceMode === "auto" ? "Voice ON — Athena speaks every reply. Click to mute." : "Voice OFF — text only. Click to enable voice."}
+            onClick={handleVoiceToggle}
+            disabled={requestingAccess}
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all disabled:opacity-50 ${voiceToggleClass}`}
+            aria-label={voiceToggleTitle}
+            aria-pressed={audioUnlocked && voiceMode === "auto"}
+            title={voiceToggleTitle}
           >
-            {voiceMode === "auto" ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-            <span>{voiceMode === "auto" ? "Voice" : "Muted"}</span>
-            {speaking && voiceMode === "auto" && <Loader2 className="h-3 w-3 animate-spin ml-0.5" />}
+            {requestingAccess ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : voiceToggleIcon}
+            <span>{requestingAccess ? "Requesting…" : voiceToggleLabel}</span>
+            {speaking && audioUnlocked && voiceMode === "auto" && !requestingAccess && <Loader2 className="h-3 w-3 animate-spin ml-0.5" />}
           </button>
           <button onClick={() => setOpen(false)} aria-label="Close Athena" className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
@@ -489,7 +486,7 @@ export function AthenaWidget() {
         ) : (
           <button
             onClick={startRecording}
-            disabled={loading || transcribing}
+            disabled={loading || transcribing || requestingAccess}
             className="flex items-center justify-center rounded-lg border border-input bg-background px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-50"
             aria-label="Record audio (15 seconds max)"
             title="Record audio (15 seconds max)"
