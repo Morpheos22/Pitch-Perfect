@@ -97,7 +97,9 @@ export function AthenaWidget() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [speaking, setSpeaking] = useState<number | null>(null);
-  const [voiceMode, setVoiceMode] = useState<"auto" | "off">("off"); // voice toggle
+  // Voice mode defaults to ON — per the master prompt, Athena always replies
+  // with voice. The user can toggle it OFF via the header button.
+  const [voiceMode, setVoiceMode] = useState<"auto" | "off">("auto");
   const [recording, setRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
