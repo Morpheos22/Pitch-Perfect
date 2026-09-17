@@ -96,11 +96,39 @@ export function AthenaWidget() {
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpokenIdxRef = useRef<number | null>(null);
+  const userInteractedRef = useRef(false);
+  const pendingSpeechRef = useRef<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, loading, speaking]);
+
+  // Track user interaction — browsers block audio.play() until the user
+  // has interacted with the page (click, tap, keydown). Once they do, all
+  // subsequent audio.play() calls work normally.
+  useEffect(() => {
+    const markInteracted = () => {
+      if (!userInteractedRef.current) {
+        userInteractedRef.current = true;
+        // If there's pending speech queued from before the user interacted, play it now
+        if (pendingSpeechRef.current) {
+          const text = pendingSpeechRef.current;
+          pendingSpeechRef.current = null;
+          speak(text);
+        }
+      }
+    };
+    // Any of these counts as user interaction
+    window.addEventListener("click", markInteracted, { once: true });
+    window.addEventListener("touchend", markInteracted, { once: true });
+    window.addEventListener("keydown", markInteracted, { once: true });
+    return () => {
+      window.removeEventListener("click", markInteracted);
+      window.removeEventListener("touchend", markInteracted);
+      window.removeEventListener("keydown", markInteracted);
+    };
+  }, [speak]);
 
   // Voice playback — calls /api/athena/voice (ElevenLabs streaming MP3).
   const speak = useCallback(async (text: string) => {
@@ -131,15 +159,16 @@ export function AthenaWidget() {
       try {
         await audio.play();
       } catch (playErr) {
-        // Autoplay policy: browser blocks audio.play() until user interacts.
-        // On mobile, the first auto-speak attempt may fail. Show a "tap to play"
-        // banner so the user can explicitly trigger playback.
+        // Autoplay policy: if the user hasn't interacted with the page yet,
+        // audio.play() fails with NotAllowedError. Queue the speech and play
+        // it once the user interacts (the interaction listener will pick it up).
         if (playErr instanceof DOMException && (playErr.name === "NotAllowedError" || playErr.name === "AbortError")) {
+          pendingSpeechRef.current = text;
           setSpeaking(false);
-          setError("Tap to listen — your browser blocked auto-play. Click the Voice toggle once to enable audio.");
-          // Clean up the audio element — user will need to interact first
           URL.revokeObjectURL(url);
           audioRef.current = null;
+          // Don't show an error — the interaction listener will play this
+          // automatically once the user clicks/taps anywhere.
         } else {
           throw playErr;
         }
