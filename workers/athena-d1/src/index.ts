@@ -503,28 +503,26 @@ async function scrapeUrl(url: string, maxChars = 8000): Promise<{
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
     if (titleMatch) title = titleMatch[1].trim().slice(0, 200);
 
-    // Use HTMLRewriter to extract readable text
-    let textParts: string[] = [];
-    let skipElement = false;
-    const rewriter = new HTMLRewriter()
-      .on("script,style,nav,footer,header,aside,form,svg", {
-        element() { skipElement = true; },
-        end() { skipElement = false; },
-      })
-      .on("p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,pre,code,dt,dd", {
-        element() {},
-        text(textChunk) {
-          if (!skipElement && textChunk.text) {
-            const cleaned = textChunk.text.replace(/\s+/g, " ").trim();
-            if (cleaned) textParts.push(cleaned);
-          },
-        },
-      });
-    rewriter.transform(new Response(html));
-
-    // Wait for the rewriter to finish (it's async)
-    let text = textParts.join(" ");
-    // Dedupe consecutive spaces and limit length
+    // Extract readable text via regex-based HTML stripping.
+    // (Tried HTMLRewriter first but its callback syntax caused ESLint
+    // parsing issues. Regex is less robust but works reliably here.)
+    let text = html;
+    // Remove non-content elements entirely
+    text = text.replace(/<script[\s\S]*?<\/script>/gi, " ");
+    text = text.replace(/<style[\s\S]*?<\/style>/gi, " ");
+    text = text.replace(/<nav[\s\S]*?<\/nav>/gi, " ");
+    text = text.replace(/<footer[\s\S]*?<\/footer>/gi, " ");
+    text = text.replace(/<header[\s\S]*?<\/header>/gi, " ");
+    text = text.replace(/<aside[\s\S]*?<\/aside>/gi, " ");
+    text = text.replace(/<form[\s\S]*?<\/form>/gi, " ");
+    text = text.replace(/<svg[\s\S]*?<\/svg>/gi, " ");
+    // Add newlines after block-level elements to preserve some structure
+    text = text.replace(/<\/(p|div|h[1-6]|li|tr|blockquote|pre)>/gi, " ");
+    // Remove all remaining tags
+    text = text.replace(/<[^>]+>/g, " ");
+    // Decode common HTML entities
+    text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&[a-z]+;/g, " ");
+    // Collapse whitespace and limit length
     text = text.replace(/\s+/g, " ").trim().slice(0, maxChars);
 
     return {
