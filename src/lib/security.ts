@@ -420,7 +420,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
   "X-DNS-Prefetch-Control": "off",
   // Disable browser features we don't use
   "Permissions-Policy":
-    "camera=(), microphone=(), geolocation=(), interest-cohort=(), browsing-topics=(), clipboard-read=(), clipboard-write=(self), payment=()",
+    "camera=(), microphone=(self), geolocation=(), interest-cohort=(), browsing-topics=(), clipboard-read=(), clipboard-write=(self), payment=()",
   // Cross-origin isolation (prevents side-channel attacks like Spectre)
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Embedder-Policy": "credentialless",
