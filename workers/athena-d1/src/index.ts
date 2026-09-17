@@ -761,11 +761,11 @@ async function transcribeAudio(env: Env, audioBase64: string, _mimeType: string)
     const audioBytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) audioBytes[i] = binaryString.charCodeAt(i);
 
-    // The Workers AI binding for Whisper expects the audio as a base64-encoded
-    // string in the "audio" field (not raw bytes). The "8006: Invalid data"
-    // error occurs when passing Uint8Array directly.
+    // The Workers AI binding for Whisper expects audio as a regular array of
+    // byte values (number[]), not a Uint8Array or base64 string.
+    // Converting Uint8Array to a regular array via Array.from().
     const result: any = await env.AI.run(WHISPER_MODEL, {
-      audio: audioBase64,
+      audio: Array.from(audioBytes),
     });
 
     // Whisper returns { text: "...", segments: [...], language: "..." }
