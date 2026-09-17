@@ -118,6 +118,25 @@ CREATE TABLE IF NOT EXISTS session_state (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Security incidents — reported by Athena via the report_vulnerability tool
+-- when she identifies vulnerabilities in her own architecture or the platform.
+-- Team reviews via GET /v1/security/incidents (secret-protected).
+CREATE TABLE IF NOT EXISTS security_incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT,
+  severity TEXT NOT NULL,  -- 'low' | 'medium' | 'high' | 'critical'
+  category TEXT NOT NULL,  -- e.g. 'prompt_injection_bypass', 'tool_misuse', 'data_exposure'
+  description TEXT NOT NULL,
+  affected_component TEXT,
+  evidence TEXT,
+  recommended_fix TEXT,
+  founder_context TEXT,
+  status TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'triaged' | 'resolved' | 'wontfix' | 'false_positive'
+  team_notes TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_facts_session ON memory_facts(session_id);
 CREATE INDEX IF NOT EXISTS idx_turns_session ON drill_turns(session_id);
@@ -127,3 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_exec_session ON tool_executions(session_id);
 CREATE INDEX IF NOT EXISTS idx_prompt_logs_session ON prompt_logs(session_id);
 
 CREATE INDEX IF NOT EXISTS idx_session_warnings_session ON session_warnings(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_security_incidents_status ON security_incidents(status);
+CREATE INDEX IF NOT EXISTS idx_security_incidents_severity ON security_incidents(severity);
+CREATE INDEX IF NOT EXISTS idx_security_incidents_session ON security_incidents(session_id);
