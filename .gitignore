@@ -71,3 +71,4 @@ server.log
 /db/*.db
 ngrok
 .env*.local
+.env.local
