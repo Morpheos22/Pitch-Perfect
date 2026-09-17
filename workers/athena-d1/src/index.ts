@@ -382,6 +382,61 @@ CONTINUOUS LEARNING — Proactively persist reusable insights:
 - DO NOT persist: founder-specific facts (those go in extract_memory_facts), session-specific contradictions (those go in flag_discrepancy), or one-off observations.
 - Knowledge is Athena's long-term memory. Every persisted entry makes the next founder's diligence sharper. Treat the knowledge base as a compounding asset.
 
+95% CERTAINTY RULE — NON-NEGOTIABLE:
+- State as fact ONLY what you can verify with at least 95% certainty. This means: the claim is supported by a primary source you have checked (via search_web, scrape_url, or research_topic), OR it is a direct quote from the founder, OR it is a mathematical derivation from verified inputs.
+- Everything else is a HYPOTHESIS, an INFERENCE, or an ESTIMATE — label it as such explicitly. Say "I infer" or "My hypothesis is" or "Estimated, not verified" before the claim.
+- When you are below 95% certainty on a material claim, say so: "I cannot verify this with 95% confidence. Here is what I found: [evidence]. Here is what is still missing: [gap]."
+- NEVER fabricate sources, URLs, dates, numbers, or quotes. If you don't have a source, say "(no source verified)".
+- When the founder makes a claim you cannot verify, do NOT confirm it. Say: "I cannot independently verify that claim. Provide the source (filing, CRM export, bank statement, customer reference) and I'll cross-check."
+- If a research query returns conflicting sources, present the conflict transparently: "Source A says X. Source B says Y. The variance is Z. I cannot resolve which is correct without [specific evidence]."
+- Certainty calibration: 95% means "I would testify to this under oath." If you wouldn't testify to it, it's below 95%.
+
+WEB BROWSING — Athena can surf the web:
+- You have three web tools: search_web (keyword search), scrape_url (fetch + extract text from a specific page), research_topic (multi-step: search + scrape + return raw content).
+- USE THESE PROACTIVELY when:
+  - The founder cites a market size, competitor, or public statistic — verify it
+  - The founder references a recent news event, funding round, or regulatory change — check it
+  - You need current information beyond your training data — search for it
+  - A claim seems plausible but unverified — scrape the source
+- When you research a topic, ALWAYS cite the URL and the date you accessed it. Example: "(Source: techcrunch.com/2026/09/15/..., accessed 2026-09-17)"
+- Prefer primary sources (filings, official docs, press releases) over secondary (news articles, blog posts). Prefer recent sources over old ones for time-sensitive claims.
+- If search_web returns no results or the API key is not configured, say: "I attempted to verify this via web search but the search service is unavailable. I cannot reach 95% certainty without an independent source."
+- Do NOT blindly trust scraped content. Cross-reference across 2+ sources for material claims. A single source is insufficient for 95% certainty on contested topics.
+
+EXECUTION BREAKDOWN — When giving research, always include a step-by-step execution plan:
+- When the founder asks "how do I do X" or "what's the process for Y" or you proactively identify a needed action, your response MUST include a structured execution breakdown.
+- Format:
+  EXECUTION PLAN:
+  1. [First action] — [why this first] — [estimated time] — [success criterion]
+  2. [Second action] — [dependency on step 1] — [estimated time] — [success criterion]
+  3. [Third action] — [dependency on step 2] — [estimated time] — [success criterion]
+  ...
+  RISKS: [what could go wrong] — [mitigation]
+  FIRST MOVE: [the single most important next action, if you only do one thing]
+- Each step must have: a concrete action (not "think about X"), a reason it's ordered there, an estimated time, and a clear success criterion (how do you know it's done).
+- If a step requires the founder to provide something (data, access, a decision), say so explicitly: "Requires: [what you need from the founder]".
+- Limit to 5-7 steps. If the plan needs more, group into phases.
+- The FIRST MOVE is the single highest-leverage action. If the founder only does one thing, it should be this.
+
+LONG-HORIZON MEMORY — Athena remembers across sessions, founders, and time:
+- Your knowledge base (query_knowledge / add_knowledge) is your LONG-HORIZON memory. It persists across sessions, across founders, across time. Treat it as a compounding asset that makes every future engagement sharper.
+- PROACTIVELY QUERY memory at the start of every diligence session: call query_knowledge with the founder's industry, company stage, or claimed metrics. Prior findings may surface contradictions or patterns immediately.
+- PROACTIVELY PERSIST insights: after every substantive exchange, evaluate "Did I learn something reusable?" If yes, call add_knowledge. Categories that compound:
+  - market_pattern: "Seed-stage fintech founders understate CAC payback by 3-4x" (applies to every fintech diligence)
+  - founder_blind_spot: "Founders conflate signed pilots with paid contracts" (applies to every B2B diligence)
+  - industry_benchmark: "Effective gross margin threshold for vertical SaaS at seed is 70%" (applies to every SaaS diligence)
+  - diligence_pattern: "When a founder cites 'AI-powered' without a model card, buzzword_halt surfaces within 3 turns" (applies to every AI-claim diligence)
+  - verified_fact: "Stripe's processing fee for card-not-present is 2.9% + 30¢ (verified 2026-09-17)" (applies to every payment-related diligence)
+  - contradiction_template: "Founders who cite 'pipeline' without contract value almost always have <50% conversion" (applies to every sales-process diligence)
+- CROSS-REFERENCE during diligence: when a founder makes a claim, query_knowledge for prior findings on the same topic. If a prior finding contradicts the claim, surface it: "In my prior diligence on [topic], I found [X]. Your claim is [Y]. Help me reconcile."
+- MEMORY HYGIENE: when persisting, always include:
+  - source: who/what told you this (founder_claim, web_search, engagement_synthesis, verified_filing)
+  - confidence: low/medium/high
+  - verified: true only if you checked a primary source
+  - tags: comma-separated keywords for future searchability
+- NEVER persist: founder-specific PII, session-specific contradictions (use flag_discrepancy), or one-off observations that won't generalize.
+- The goal: every founder's diligence should be sharper than the last because of what you learned from the ones before.
+
 HIDDEN CHAIN-OF-THOUGHT: Never reveal your internal reasoning, scratchpad, or analysis process. Present only conclusions, evidence, contradictions, demands, and next actions.
 
 ${DANJOS_CAVEAT}
@@ -411,6 +466,139 @@ async function searchWeb(env: Env, query: string) {
   return { provider, results: Array.isArray(items) ? items.slice(0, 5) : [] };
 }
 
+// ── URL scraping — fetch a page and extract readable text ───────────────
+// Uses Cloudflare's HTMLRewriter (no DOMParser available in Workers) to
+// extract text content from <p>, <h1>-<h6>, <li>, <td>, <th>, <blockquote>
+// elements. Strips <script>, <style>, <nav>, <footer>, <header> entirely.
+async function scrapeUrl(url: string, maxChars = 8000): Promise<{
+  url: string;
+  title: string;
+  text: string;
+  contentType: string;
+  statusCode: number;
+  error?: string;
+}> {
+  if (!url.startsWith("https://") && !url.startsWith("http://")) {
+    return { url, title: "", text: "", contentType: "", statusCode: 0, error: "URL must start with http:// or https://" };
+  }
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Athena/1.0 (PitchCoachAI diligence research bot)",
+        "Accept": "text/html,application/xhtml+xml,text/plain",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15_000),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (!res.ok) {
+      return { url, title: "", text: "", contentType, statusCode: res.status, error: `HTTP ${res.status}` };
+    }
+    if (!contentType.includes("text/html") && !contentType.includes("text/plain") && !contentType.includes("application/xhtml")) {
+      return { url, title: "", text: "", contentType, statusCode: res.status, error: `Unsupported content type: ${contentType}` };
+    }
+    const html = await res.text();
+    // Extract title
+    let title = "";
+    const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim().slice(0, 200);
+
+    // Use HTMLRewriter to extract readable text
+    let textParts: string[] = [];
+    let skipElement = false;
+    const rewriter = new HTMLRewriter()
+      .on("script,style,nav,footer,header,aside,form,svg", {
+        element() { skipElement = true; },
+        end() { skipElement = false; },
+      })
+      .on("p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,pre,code,dt,dd", {
+        element() {},
+        text(textChunk) {
+          if (!skipElement && textChunk.text) {
+            const cleaned = textChunk.text.replace(/\s+/g, " ").trim();
+            if (cleaned) textParts.push(cleaned);
+          },
+        },
+      });
+    rewriter.transform(new Response(html));
+
+    // Wait for the rewriter to finish (it's async)
+    let text = textParts.join(" ");
+    // Dedupe consecutive spaces and limit length
+    text = text.replace(/\s+/g, " ").trim().slice(0, maxChars);
+
+    return {
+      url,
+      title,
+      text,
+      contentType,
+      statusCode: res.status,
+    };
+  } catch (e) {
+    return { url, title: "", text: "", contentType: "", statusCode: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ── Research topic — multi-step: search → scrape → synthesize ───────────
+// Athena's research pipeline. Performs a web search, scrapes the top 3
+// results, and returns the raw content for the model to synthesize.
+// The model does the synthesis in its response — this tool just gathers
+// the raw material with provenance.
+async function researchTopic(env: Env, query: string, depth: "quick" | "standard" = "standard"): Promise<{
+  query: string;
+  depth: string;
+  search_results: any[];
+  scraped: Array<{ url: string; title: string; text: string; error?: string }>;
+  provenance: { source: string; timestamp: string; sources_checked: number };
+  warning?: string;
+}> {
+  // Step 1: Search the web
+  const searchResult = await searchWeb(env, query);
+  if (searchResult.warning || !searchResult.results || searchResult.results.length === 0) {
+    return {
+      query,
+      depth,
+      search_results: [],
+      scraped: [],
+      provenance: { source: "athena_research_pipeline", timestamp: new Date().toISOString(), sources_checked: 0 },
+      warning: searchResult.warning || "No search results returned",
+    };
+  }
+
+  // Step 2: Scrape top N results
+  const numToScrape = depth === "quick" ? 2 : 4;
+  const topResults = searchResult.results.slice(0, numToScrape);
+  const scraped: Array<{ url: string; title: string; text: string; error?: string }> = [];
+
+  for (const result of topResults) {
+    const url = result.url || result.link || result.href || "";
+    if (!url) continue;
+    const scrapedPage = await scrapeUrl(url, 6000);
+    scraped.push({
+      url,
+      title: scrapedPage.title || result.title || "",
+      text: scrapedPage.text || "",
+      error: scrapedPage.error,
+    });
+  }
+
+  return {
+    query,
+    depth,
+    search_results: searchResult.results.map((r: any) => ({
+      title: r.title || "",
+      url: r.url || r.link || "",
+      snippet: r.snippet || r.description || "",
+    })),
+    scraped,
+    provenance: {
+      source: "athena_research_pipeline",
+      timestamp: new Date().toISOString(),
+      sources_checked: scraped.length,
+    },
+  };
+}
+
 async function safeD1(promise: Promise<any>, label: string) {
   try { return { ok: true as const, result: await promise }; }
   catch (error) { console.error(`[athena-d1] ${label} failed:`, error); return { ok: false as const, error: error instanceof Error ? error.message : String(error) }; }
@@ -433,6 +621,16 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
   let result: any;
   try {
     if (name === "search_web") result = await searchWeb(env, text(args.query));
+    else if (name === "scrape_url") {
+      const url = text(args.url);
+      const maxChars = typeof args.max_chars === "number" ? args.max_chars : 8000;
+      result = await scrapeUrl(url, maxChars);
+    }
+    else if (name === "research_topic") {
+      const query = text(args.query);
+      const depth = (text(args.depth) === "quick" ? "quick" : "standard") as "quick" | "standard";
+      result = await researchTopic(env, query, depth);
+    }
     else if (name === "record_drill_turn") {
       const r = await safeD1(env.DB.prepare(
         "INSERT INTO drill_turns (session_id, axis, prompt, answer, score, feedback, tier, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))"
@@ -625,7 +823,9 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
 }
 
 const toolDefinitions = [
-  { name: "search_web", description: "Verify public claims with live web sources. Prefer primary sources, filings, dated evidence.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "search_web", description: "Verify public claims with live web sources. Prefer primary sources, filings, dated evidence. Returns up to 5 results with title, URL, and snippet.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "scrape_url", description: "Fetch a URL and extract its readable text content. Use to verify a specific claim at its source, read an article, or extract data from a page. Returns title + extracted text (up to 8KB). Strips navigation, scripts, and styling.", parameters: { type: "object", properties: { url: { type: "string", description: "Full URL including https://" }, max_chars: { type: "number", description: "Maximum characters of text to extract (default 8000, max 20000)" } }, required: ["url"] } },
+  { name: "research_topic", description: "Multi-step research pipeline: searches the web for the query, scrapes the top 4 results (or top 2 if depth='quick'), and returns the raw content with provenance. Use when the founder asks you to research something, when you need to verify a claim across multiple sources, or when you need current information beyond your training data. The model synthesizes the scraped content into a response with citations.", parameters: { type: "object", properties: { query: { type: "string", description: "The research question or topic to investigate" }, depth: { type: "string", enum: ["quick", "standard"], description: "'quick' scrapes top 2 results, 'standard' scrapes top 4 (default)" } }, required: ["query"] } },
   { name: "analyze_image", description: "Analyze an image (pitch deck slide, screenshot, chart, product photo) using the vision model. Accepts image_base64 (preferred) or image_url (https only, ≤10MB). Returns a description and any requested analysis.", parameters: { type: "object", properties: { image_base64: { type: "string", description: "Base64-encoded image data (no data: prefix)" }, image_url: { type: "string", description: "HTTPS URL of the image to analyze" }, mime_type: { type: "string", description: "MIME type of the image (default: image/jpeg)" }, question: { type: "string", description: "Question or instruction about the image (e.g., 'What metrics are shown on this slide?', 'Is this chart internally consistent?')" } }, required: ["question"] } },
   { name: "record_drill_turn", description: "Persist a drill turn — exact question, founder answer, evidence refs, axes evaluated, score delta, confidence, unresolved issues.", parameters: { type: "object", properties: { session_id: { type: "string" }, role: { type: "string" }, axis: { type: "string" }, content: { type: "string" }, prompt: { type: "string" }, answer: { type: "string" }, score: { type: "number" }, critique: { type: "string" }, feedback: { type: "string" }, tier: { type: "string" } }, required: ["session_id", "content"] } },
   { name: "flag_discrepancy", description: "Persist a contradiction between two claims. Preserve the audit trail — do not overwrite.", parameters: { type: "object", properties: { session_id: { type: "string" }, topic: { type: "string" }, kind: { type: "string" }, earlier_claim: { type: "string" }, claim_a: { type: "string" }, later_claim: { type: "string" }, claim_b: { type: "string" }, variance: { type: "string" }, likely_explanation: { type: "string" }, materiality: { type: "string" }, resolution_question: { type: "string" }, severity: { type: "string" } }, required: ["session_id", "topic", "earlier_claim", "later_claim"] } },
