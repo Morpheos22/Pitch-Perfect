@@ -20,6 +20,10 @@ export interface Env extends SupabaseEnv {
   // Security team secret for /v1/security/incidents endpoint.
   // Set with: wrangler secret put SECURITY_TEAM_SECRET
   SECURITY_TEAM_SECRET?: string;
+  // Comma-separated list of allowed origins for CORS.
+  // Default: https://pitchcoachai.tech,https://*.vercel.app
+  // Override with ALLOWED_ORIGINS env var.
+  ALLOWED_ORIGINS?: string;
 }
 
 type Json = Record<string, any>;
@@ -184,8 +188,88 @@ async function recordWarning(env: Env, sessionId: string, kind: BehaviorKind, de
   };
 }
 
-const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,Authorization" } });
+const json = (data: unknown, status = 200, request?: Request, env?: Env) => {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (request && env) Object.assign(headers, getCorsHeaders(request, env));
+  return new Response(JSON.stringify(data), { status, headers });
+};
 const text = (v: unknown) => typeof v === "string" ? v : JSON.stringify(v ?? "");
+
+// ── Security helpers ────────────────────────────────────────────────────
+
+// Default allowed origins: production + Vercel preview deploys.
+// Override via ALLOWED_ORIGINS env var (comma-separated).
+const DEFAULT_ALLOWED_ORIGINS = "https://pitchcoachai.tech,https://pitchcoachai.tech/*";
+
+function getAllowedOrigins(env: Env): string[] {
+  const raw = env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS;
+  return raw.split(",").map(s => s.trim()).filter(Boolean);
+}
+
+function isAllowedOrigin(request: Request, env: Env): boolean {
+  const origin = request.headers.get("origin") || request.headers.get("referer") || "";
+  if (!origin) return false;
+  const allowed = getAllowedOrigins(env);
+  // Support wildcard subdomains like https://*.vercel.app
+  for (const pattern of allowed) {
+    if (pattern.includes("*")) {
+      // Convert glob to regex: https://*.vercel.app -> https://[^.]+\.vercel\.app
+      const regex = "^" + pattern.replace(/\*/g, "[^.]+").replace(/\./g, "\\.") + ".*$";
+      if (new RegExp(regex, "i").test(origin)) return true;
+    } else if (origin === pattern || origin.startsWith(pattern + "/")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getCorsHeaders(request: Request, env: Env): Record<string, string> {
+  const origin = request.headers.get("origin") || "";
+  const headers: Record<string, string> = {
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "Content-Type,Authorization,x-security-team-secret",
+    "access-control-max-age": "86400",
+  };
+  if (isAllowedOrigin(request, env)) {
+    headers["access-control-allow-origin"] = origin;
+    headers["vary"] = "Origin";
+  } else {
+    // No ACAO header — browser blocks the response
+    headers["access-control-allow-origin"] = "null";
+  }
+  return headers;
+}
+
+// Block requests to internal/private IP ranges and metadata services.
+// Defense-in-depth — Cloudflare Workers can't reach internal networks,
+// but if the worker is ever moved to a different runtime (or the URL
+// resolves to a metadata service like 169.254.169.254), this prevents SSRF.
+function isInternalUrl(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname.toLowerCase();
+    // Block obvious internal hosts
+    if (host === "localhost" || host === "0.0.0.0" || host === "::1" || host === "[::1]") return true;
+    // Block metadata services
+    if (host === "169.254.169.254" || host === "metadata.google.internal") return true;
+    // Block .local, .internal, .localhost TLDs
+    if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) return true;
+    // Block private IP ranges
+    const parts = host.split(".").map(Number);
+    if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+      const [a, b] = parts;
+      if (a === 10) return true; // 10.0.0.0/8
+      if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+      if (a === 192 && b === 168) return true; // 192.168.0.0/16
+      if (a === 127) return true; // 127.0.0.0/8 (loopback)
+      if (a === 169 && b === 254) return true; // 169.254.0.0/16 (link-local + metadata)
+      if (a === 0) return true; // 0.0.0.0/8
+    }
+    return false;
+  } catch {
+    return true; // Invalid URL — treat as internal (block)
+  }
+}
 const readBody = async (r: Request): Promise<Json> => { try { return await r.json(); } catch { return {}; } };
 
 const DILIGENCE_KEYWORDS = /\b(evaluate|score|analy[sz]e|diligence|readiness|investment|investor|vc|capital|raise|pitch|deck|memo|ic memo|investment committee|cac|ltv|tam|sam|som|churn|retention|runway|moat|founder|market size|traction|business model|go-to-market|go to market|problem|solution|competitive|advantage|drill|verdict|asses|unit econom|gross margin|payback|conversion|funnel|arr|mrr|cohort|segment|persona|buyer|positioning|pricing)\b/i;
@@ -520,6 +604,10 @@ async function scrapeUrl(url: string, maxChars = 8000): Promise<{
   if (!url.startsWith("https://") && !url.startsWith("http://")) {
     return { url, title: "", text: "", contentType: "", statusCode: 0, error: "URL must start with http:// or https://" };
   }
+  // SSRF defense — block internal IPs and metadata services
+  if (isInternalUrl(url)) {
+    return { url, title: "", text: "", contentType: "", statusCode: 0, error: "URL points to an internal or blocked address" };
+  }
   try {
     const res = await fetch(url, {
       headers: {
@@ -753,6 +841,8 @@ async function d1Tool(env: Env, name: string, args: Json, sessionId = "system") 
         const imgUrl = text(args.image_url);
         if (!imgUrl.startsWith("https://")) {
           result = { error: "Only https:// image URLs are accepted" };
+        } else if (isInternalUrl(imgUrl)) {
+          result = { error: "Image URL points to an internal or blocked address" };
         } else {
           try {
             const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(10_000) });
@@ -1076,7 +1166,7 @@ async function voiceStream(env: Env, text: string, sessionId: string): Promise<R
       "content-type": "audio/mpeg",
       "cache-control": "no-cache, no-transform",
       "connection": "keep-alive",
-      "access-control-allow-origin": "*",
+      ...(isAllowedOrigin(request, env) ? { "access-control-allow-origin": request.headers.get("origin") || "" } : {}),
       "x-athena-session": sessionId,
       "x-athena-voice": voiceId,
     },
@@ -1097,11 +1187,29 @@ function validatePayload(input: any): { ok: boolean; error?: string } {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,Authorization", "access-control-max-age": "86400" } });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: getCorsHeaders(request, env) });
 
     try {
-      // GET /health — liveness + dependency health (spec §4.3, §4.4)
+      // GET /health — public minimal liveness check (no config details exposed)
       if (request.method === "GET" && url.pathname === "/health") {
+        // Minimal public check — just confirms the worker is alive.
+        // Does NOT expose: models, tools, endpoints, config status, internal errors.
+        // For detailed health (with config info), use GET /health?detailed=1
+        // with the SECURITY_TEAM_SECRET header.
+        const detailed = url.searchParams.get("detailed") === "1";
+        const secret = request.headers.get("x-security-team-secret");
+        const isTeam = secret && secret === env.SECURITY_TEAM_SECRET;
+
+        if (!detailed || !isTeam) {
+          // Public minimal — just status + timestamp
+          return json({
+            service: "athena-d1",
+            status: "ok",
+            timestamp: new Date().toISOString(),
+          }, 200, request, env);
+        }
+
+        // Protected detailed — full diagnostic info for the team
         const d1Probe = await safeD1(env.DB.prepare("SELECT 1 AS ok").first(), "health-d1-probe");
         let aiProbe: any = null;
         try { aiProbe = await env.AI.run(MODELS.conversational, { messages: [{ role: "user", content: "ping" }], max_tokens: 1 }); } catch (e) { aiProbe = { error: e instanceof Error ? e.message : String(e) }; }
@@ -1130,7 +1238,7 @@ export default {
           tools: toolDefinitions.map(t => t.name),
           endpoints: ["GET /health", "POST /v1/athena", "POST /v1/athena/voice", "POST /v1/tool", "GET /v1/drill-questions", "GET /v1/security/incidents", "PATCH /v1/security/incidents/:id"],
           timestamp: new Date().toISOString(),
-        });
+        }, 200, request, env);
       }
 
       // GET /v1/drill-questions — returns the 15 Athena diagnostic drill questions
@@ -1359,7 +1467,8 @@ export default {
         tools: toolDefinitions.map(t => t.name),
       });
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined }, 500);
+      const isDev = process.env.NODE_ENV === "development" || process.env.CF_PAGES === "1";
+      return json({ error: error instanceof Error ? error.message : String(error), ...(isDev ? { stack: error instanceof Error ? error.stack : undefined } : {}) }, 500);
     }
   },
 };
