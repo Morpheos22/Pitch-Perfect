@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square } from "lucide-react";
+import { Bot, Send, Sparkles, X, Loader2, ChevronDown, ChevronUp, Volume2, VolumeX, Mic, Square, MicOff } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -19,8 +19,7 @@ const TIER_LABELS: Record<string, string> = {
   deep: "IC Memo",
 };
 
-// Parse the Output Contract format (FINDING/EVIDENCE/GAP/IMPLICATION/DEMAND/SCORE/NEXT MOVE)
-// into structured fields for nicer rendering. If parsing fails, fall back to plain text.
+// Parse the Output Contract format into structured fields for nicer rendering.
 function parseOutputContract(raw: string): { sections: Array<{ label: string; body: string }>; raw: string } {
   const labels = ["FINDING", "EVIDENCE", "GAP", "IMPLICATION", "DEMAND", "SCORE", "NEXT MOVE", "FINAL VERDICT"];
   const sections: Array<{ label: string; body: string }> = [];
@@ -39,10 +38,9 @@ function parseOutputContract(raw: string): { sections: Array<{ label: string; bo
   return { sections, raw };
 }
 
-function AthenaMessage({ message, onSpeak, speaking }: { message: Message; onSpeak?: (text: string, idx: number) => void; speaking?: number | null }) {
+function AthenaMessage({ message }: { message: Message }) {
   const isUser = message.role === "user";
   const [expanded, setExpanded] = useState(false);
-  const [localIdx] = useState(() => Math.random().toString(36).slice(2));
   const parsed = !isUser ? parseOutputContract(message.content) : null;
 
   if (isUser) {
@@ -50,24 +48,12 @@ function AthenaMessage({ message, onSpeak, speaking }: { message: Message; onSpe
   }
 
   const tier = message.tier ? TIER_LABELS[message.tier] || message.tier : null;
-  const canSpeak = !message.streaming && message.content && message.content.length > 0 && onSpeak;
   return (
     <div className="mr-8 rounded-lg bg-muted px-3 py-2 text-sm">
       <div className="mb-1 flex items-center gap-2 border-b border-border/50 pb-1 text-[10px] text-muted-foreground">
         {tier && <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">{tier}</span>}
         {message.extractedFacts ? <span className="text-amber-600">+{message.extractedFacts} fact{message.extractedFacts > 1 ? "s" : ""}</span> : null}
         {message.streaming && <span className="flex items-center gap-1 text-blue-600"><Loader2 className="h-3 w-3 animate-spin" />streaming</span>}
-        {canSpeak && (
-          <button
-            onClick={() => onSpeak && onSpeak(message.content, parseInt(localIdx, 36) || 0)}
-            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-primary hover:bg-primary/10"
-            aria-label="Play Athena voice"
-            title="Hear Athena speak"
-          >
-            {speaking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Volume2 className="h-3 w-3" />}
-            <span>{speaking ? "Speaking" : "Voice"}</span>
-          </button>
-        )}
       </div>
       {parsed && parsed.sections.length > 0 ? (
         <div className="space-y-1.5">
@@ -90,42 +76,43 @@ function AthenaMessage({ message, onSpeak, speaking }: { message: Message; onSpe
   );
 }
 
+const MAX_RECORDING_SECONDS = 15;
+
 export function AthenaWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
-  const [speaking, setSpeaking] = useState<number | null>(null);
-  // Voice mode defaults to ON — per the master prompt, Athena always replies
-  // with voice. The user can toggle it OFF via the header button.
+  const [speaking, setSpeaking] = useState(false);
   const [voiceMode, setVoiceMode] = useState<"auto" | "off">("auto");
   const [recording, setRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
+  const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hi, I'm Athena. Ask me anything about your pitch." }]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpokenIdxRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, loading, speaking]);
 
-  // Voice playback — calls /api/athena/voice which proxies to the
-  // worker's POST /v1/athena/voice endpoint (ElevenLabs streaming MP3).
-  const speak = useCallback(async (text: string, idx: number) => {
-    if (speaking === idx) {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      setSpeaking(null);
+  // Voice playback — calls /api/athena/voice (ElevenLabs streaming MP3).
+  const speak = useCallback(async (text: string) => {
+    // If already speaking, stop
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setSpeaking(false);
       return;
     }
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    setSpeaking(idx);
-    lastSpokenIdxRef.current = idx;
+    setSpeaking(true);
     try {
       const res = await fetch("/api/athena/voice", {
         method: "POST",
@@ -140,101 +127,161 @@ export function AthenaWidget() {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audioRef.current = audio;
-      audio.onended = () => { setSpeaking(null); URL.revokeObjectURL(url); audioRef.current = null; };
-      audio.onerror = () => { setSpeaking(null); URL.revokeObjectURL(url); audioRef.current = null; };
+      audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
+      audio.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
       await audio.play();
     } catch (e) {
       console.error("[Athena] voice playback failed:", e);
-      setSpeaking(null);
+      setSpeaking(false);
     }
-  }, [speaking, sessionId]);
+  }, [sessionId]);
+
+  // Stop speaking
+  const stopSpeaking = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setSpeaking(false);
+  }, []);
 
   // Auto-speak when voice mode is ON and a message finishes streaming
   useEffect(() => {
     if (voiceMode !== "auto") return;
-    // Find the last assistant message that just finished streaming
     const lastIdx = messages.length - 1;
     const lastMsg = messages[lastIdx];
     if (lastMsg && lastMsg.role === "assistant" && !lastMsg.streaming && lastMsg.content && lastSpokenIdxRef.current !== lastIdx) {
-      // Small delay to let the UI settle
+      lastSpokenIdxRef.current = lastIdx;
       const timer = setTimeout(() => {
-        speak(lastMsg.content, lastIdx);
+        speak(lastMsg.content);
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [messages, voiceMode, speak]);
 
-  // Microphone recording
-  const startRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      recordingChunksRef.current = [];
+  // Toggle voice mode
+  const toggleVoice = useCallback(() => {
+    setVoiceMode(v => {
+      const next = v === "auto" ? "off" : "auto";
+      if (next === "off") {
+        // Stop any current playback when turning off
+        stopSpeaking();
+      }
+      return next;
+    });
+  }, [stopSpeaking]);
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const blob = new Blob(recordingChunksRef.current, { type: "audio/webm" });
-        stream.getTracks().forEach(t => t.stop());
-
-        // Stop the timer
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-          recordingTimerRef.current = null;
-        }
-
-        // Transcribe via /api/athena/audio
-        setTranscribing(true);
-        try {
-          const formData = new FormData();
-          formData.append("audio", blob, "recording.webm");
-          formData.append("session_id", sessionId || "");
-          const res = await fetch("/api/athena/audio", {
-            method: "POST",
-            body: formData,
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || err.detail || `Audio API returned ${res.status}`);
-          }
-          const data = await res.json();
-          if (data.text && data.text.trim()) {
-            // Put the transcription in the input field for the user to review + send
-            setInput(data.text.trim());
-          } else {
-            setError("No speech detected in the recording. Try again.");
-          }
-        } catch (e) {
-          setError(e instanceof Error ? e.message : String(e));
-        } finally {
-          setTranscribing(false);
-          setRecordingTime(0);
-        }
-      };
-
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setRecording(true);
-      setRecordingTime(0);
-
-      // Start timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(t => {
-          if (t >= 60) {
-            // Auto-stop at 60 seconds
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-              mediaRecorderRef.current.stop();
-            }
-            return 60;
-          }
-          return t + 1;
-        });
-      }, 1000);
-    } catch (e) {
-      setError(e instanceof Error ? `Microphone access failed: ${e.message}` : String(e));
+  // Check mic permission on mount
+  useEffect(() => {
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: "microphone" as PermissionName }).then(result => {
+        setMicPermission(result.state as "granted" | "denied" | "unknown");
+        result.onchange = () => setMicPermission(result.state as "granted" | "denied" | "unknown");
+      }).catch(() => {
+        // permissions API not supported — leave as unknown
+      });
     }
+  }, []);
+
+  // Microphone recording — request permission first, then record
+  const startRecording = useCallback(async () => {
+    setError(null);
+    // Step 1: explicitly request permission
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      setMicPermission("granted");
+    } catch (e) {
+      setMicPermission("denied");
+      if (e instanceof DOMException) {
+        if (e.name === "NotAllowedError") {
+          setError("Microphone access denied. Click the mic icon again and allow access when your browser prompts you.");
+        } else if (e.name === "NotFoundError") {
+          setError("No microphone found. Connect a microphone and try again.");
+        } else {
+          setError(`Microphone error: ${e.message}`);
+        }
+      } else {
+        setError(`Microphone access failed: ${String(e)}`);
+      }
+      return;
+    }
+
+    // Step 2: set up the recorder
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream);
+    } catch {
+      setError("Your browser does not support audio recording. Try a modern browser (Chrome, Firefox, Safari, Edge).");
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    recordingChunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordingChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      const blob = new Blob(recordingChunksRef.current, { type: "audio/webm" });
+      // Stop the mic stream
+      stream.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+
+      // Stop the timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      // Step 3: transcribe via /api/athena/audio
+      setTranscribing(true);
+      try {
+        const formData = new FormData();
+        formData.append("audio", blob, "recording.webm");
+        formData.append("session_id", sessionId || "");
+        const res = await fetch("/api/athena/audio", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.detail || `Audio API returned ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.text && data.text.trim()) {
+          setInput(data.text.trim());
+        } else {
+          setError("No speech detected in the recording. Try speaking louder or closer to the microphone.");
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setTranscribing(false);
+        setRecordingTime(0);
+      }
+    };
+
+    // Step 4: start recording
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+    setRecording(true);
+    setRecordingTime(0);
+
+    // Step 5: start the 15-second countdown timer
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingTime(t => {
+        if (t + 1 >= MAX_RECORDING_SECONDS) {
+          // Auto-stop at 15 seconds
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+            mediaRecorderRef.current.stop();
+          }
+          return MAX_RECORDING_SECONDS;
+        }
+        return t + 1;
+      });
+    }, 1000);
   }, [sessionId]);
 
   const stopRecording = useCallback(() => {
@@ -244,10 +291,20 @@ export function AthenaWidget() {
     setRecording(false);
   }, []);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    };
+  }, []);
+
   const send = useCallback(async () => {
     const message = input.trim();
     if (!message || loading) return;
-    setInput(""); setError(null);
+    setInput("");
+    setError(null);
     setMessages((m) => [...m, { role: "user", content: message }]);
     setLoading(true);
 
@@ -333,6 +390,8 @@ export function AthenaWidget() {
 
   if (!open) return <button onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-110" aria-label="Open Athena"><Sparkles className="h-6 w-6" /></button>;
 
+  const secondsLeft = MAX_RECORDING_SECONDS - recordingTime;
+
   return (
     <div className="fixed bottom-4 right-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col rounded-2xl border border-border bg-background shadow-2xl" style={{ maxHeight: "70vh" }}>
       <div className="flex items-center justify-between rounded-t-2xl border-b border-border bg-primary/5 p-4">
@@ -344,21 +403,28 @@ export function AthenaWidget() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Voice toggle — ON = auto-speak every reply, OFF = text only */}
+          {/* Unified voice toggle — ON = auto-speak every reply, OFF = text only.
+              This is the SINGLE voice indicator. No per-message voice buttons. */}
           <button
-            onClick={() => setVoiceMode(v => v === "auto" ? "off" : "auto")}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors ${voiceMode === "auto" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`}
-            aria-label="Toggle auto-voice"
-            title={voiceMode === "auto" ? "Auto-voice ON — Athena speaks every reply" : "Auto-voice OFF — text only"}
+            onClick={toggleVoice}
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all ${
+              voiceMode === "auto"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted text-muted-foreground hover:bg-muted/80"
+            }`}
+            aria-label={voiceMode === "auto" ? "Voice on — click to mute" : "Voice off — click to enable"}
+            aria-pressed={voiceMode === "auto"}
+            title={voiceMode === "auto" ? "Voice ON — Athena speaks every reply. Click to mute." : "Voice OFF — text only. Click to enable voice."}
           >
-            {voiceMode === "auto" ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
+            {voiceMode === "auto" ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
             <span>{voiceMode === "auto" ? "Voice" : "Muted"}</span>
+            {speaking && voiceMode === "auto" && <Loader2 className="h-3 w-3 animate-spin ml-0.5" />}
           </button>
           <button onClick={() => setOpen(false)} aria-label="Close Athena" className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
       </div>
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((m, i) => <AthenaMessage key={i} message={m} onSpeak={speak} speaking={speaking === i ? i : null} />)}
+        {messages.map((m, i) => <AthenaMessage key={i} message={m} />)}
         {loading && messages[messages.length - 1]?.content === "" && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Connecting to the intelligence engine…</div>}
         {transcribing && <div className="rounded-lg bg-blue-500/10 px-3 py-2 text-sm text-blue-600 flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" />Transcribing audio…</div>}
         {error && <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
@@ -367,22 +433,27 @@ export function AthenaWidget() {
         {recording ? (
           <button
             onClick={stopRecording}
-            className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-2 text-white animate-pulse"
+            className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-white animate-pulse"
             aria-label="Stop recording"
             title="Stop recording"
           >
             <Square className="h-4 w-4" />
             <span className="text-xs font-mono">{recordingTime}s</span>
+            <span className="text-[10px] opacity-80">({secondsLeft}s left)</span>
           </button>
         ) : (
           <button
             onClick={startRecording}
             disabled={loading || transcribing}
-            className="flex items-center justify-center rounded-lg border border-input bg-background px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-50"
-            aria-label="Record audio"
-            title="Record audio (up to 60s)"
+            className={`flex items-center justify-center rounded-lg border px-3 py-2 disabled:opacity-50 ${
+              micPermission === "denied"
+                ? "border-red-500/50 text-red-500 hover:bg-red-500/10"
+                : "border-input bg-background text-muted-foreground hover:bg-muted"
+            }`}
+            aria-label="Record audio (15 seconds max)"
+            title={micPermission === "denied" ? "Microphone access denied — click to try again" : "Record audio (15 seconds max)"}
           >
-            <Mic className="h-4 w-4" />
+            {micPermission === "denied" ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           </button>
         )}
         <input
@@ -390,7 +461,7 @@ export function AthenaWidget() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !loading) void send(); }}
           disabled={loading}
-          placeholder={loading ? "Athena is responding…" : recording ? "Recording…" : "Ask about your pitch, traction, market, or runway…"}
+          placeholder={loading ? "Athena is responding…" : recording ? `Recording… ${secondsLeft}s left` : "Ask about your pitch, traction, market, or runway…"}
           className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
         <button onClick={() => void send()} disabled={loading || !input.trim()} className="rounded-lg bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50" aria-label="Send"><Send className="h-4 w-4" /></button>
