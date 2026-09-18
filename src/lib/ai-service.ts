@@ -539,8 +539,7 @@ export const MODULE_MODEL_MAP = {
   // CHATBOT — PitchCoach AI Assistant
   // ═══════════════════════════════════════════════════════════════════════
   // Cost-effective model for the embedded chatbot widget.
-  // Uses "glm-4-flash" label (same backend as glm-4-plus on gateway)
-  // for future cost tracking and differentiation.
+  // Uses FAILSAFE_TEXT (glm-4.7) — stable reasoning, low cost.
   // Max 512 tokens per response, 0.7 temperature for conversational tone.
   CHATBOT: {
     models: [AI_MODELS.GLM_FAST, AI_MODELS.FAILSAFE_TEXT],
@@ -639,9 +638,9 @@ export async function executeWithFallback(
   const config = MODULE_MODEL_MAP[moduleKey];
   const lastError: Error[] = [];
 
-  // Deduplicate model names — all text models currently resolve to glm-4-plus
-  // and vision models to glm-4.5v/glm-5v-turbo/glm-4.6v. Retrying the same
-  // model name is wasteful since it hits the identical server endpoint.
+  // Deduplicate model names — Z.ai's gateway may resolve multiple model
+  // labels to the same backend. Retrying the same model is wasteful since
+  // it hits the identical server endpoint.
   // Only try each unique model name once per strategy.
   const uniqueModels = Array.from(new Set(config.models));
 

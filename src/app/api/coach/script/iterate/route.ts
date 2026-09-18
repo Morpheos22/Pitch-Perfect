@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { analyzeScriptWithFallback } from "@/lib/ai-service";
+import { analyzeScriptWithFallback, AI_MODELS } from "@/lib/ai-service";
 import { extractTextFromUrl, extractFileText } from "@/lib/file-parser";
 import { requireModuleAccess } from "@/lib/entitlement";
 import { scriptIterateSchema } from "@/lib/validation/schemas";
@@ -175,7 +175,7 @@ async function handlePost(request: NextRequest) {
         userId: user.id,
         sessionId: savedKalIteration.id,
         module: 'e2',
-        model: 'glm-4-plus',
+        model: AI_MODELS.FAILSAFE_TEXT,
         error: 'All AI providers failed during iteration',
         inputPayload: scriptText,
         userEmail: (user as Record<string, unknown>).email as string || '',

@@ -1182,10 +1182,38 @@ async function autoExtractMemoryFacts(env: Env, sessionId: string, message: stri
 // all four passes in a single model invocation; the model is instructed to
 // follow the pipeline in the system prompt. Tools are available for the
 // model to persist intermediate artifacts.
-async function complete(env: Env, tier: Tier, messages: Message[], stream = false, sessionId = "system") {
+async function complete(
+  env: Env,
+  tier: Tier,
+  messages: Message[],
+  stream = false,
+  sessionId = "system",
+  opts?: { maxTokensOverride?: number; reasoningEffort?: string }
+): Promise<any> {
   let current = [...messages];
   const useTools = tier !== "conversational";
-  const runOpts: any = { messages: current, stream, max_tokens: MAX_TOKENS[tier] };
+
+  // Personality override: if the upstream caller (the /api/athena/chat route)
+  // passed a personality_max_tokens, use it instead of the hardcoded
+  // MAX_TOKENS[tier]. This is the fix for Bug 3 — the "increase her reasoning
+  // token to rival that of even the best AI" directive was dead code until now.
+  //
+  // reasoning_effort is also honored: "maximum" or "high" → use the override
+  // value; "medium" → use the tier default; "low" → halve the tier default.
+  // (Cloudflare Workers AI doesn't have a native reasoning_effort param —
+  // this is the closest semantic equivalent via token budget.)
+  let maxTokens: number;
+  if (opts?.maxTokensOverride && opts.maxTokensOverride > 0) {
+    maxTokens = opts.maxTokensOverride;
+  } else if (opts?.reasoningEffort === "maximum" || opts?.reasoningEffort === "high") {
+    maxTokens = Math.max(MAX_TOKENS[tier], 8192); // Reasoning-heavy → bigger budget
+  } else if (opts?.reasoningEffort === "low") {
+    maxTokens = Math.floor(MAX_TOKENS[tier] / 2);
+  } else {
+    maxTokens = MAX_TOKENS[tier];
+  }
+
+  const runOpts: any = { messages: current, stream, max_tokens: maxTokens };
   if (useTools) runOpts.tools = toolDefinitions;
 
   const maxIters = useTools ? 6 : 1;
@@ -1208,16 +1236,24 @@ async function complete(env: Env, tier: Tier, messages: Message[], stream = fals
     runOpts.messages = current;
   }
   // Fallback: if tool loop hits the cap, do one final tool-less completion.
-  const finalResult: any = await env.AI.run(MODELS[tier], { messages: current, stream, max_tokens: MAX_TOKENS[tier] });
+  const finalResult: any = await env.AI.run(MODELS[tier], { messages: current, stream, max_tokens: maxTokens });
   if (stream) return finalResult;
   const finalChoice = finalResult.choices?.[0]?.message || finalResult.message || finalResult.response || finalResult;
   const raw = text(finalChoice.content ?? finalResult.response ?? finalResult);
   return stripCoT(raw) || raw;
 }
 
-// ── SSE streaming (unchanged from previous) ───────────────────────────────
-async function streamSSE(env: Env, tier: Tier, messages: Message[], sessionId: string) {
-  const upstream: any = await complete(env, tier, messages, true, sessionId);
+// ── SSE streaming ────────────────────────────────────────────────────────
+// Passes personality opts through to complete() so streaming responses
+// also honor max_tokens + reasoning_effort overrides.
+async function streamSSE(
+  env: Env,
+  tier: Tier,
+  messages: Message[],
+  sessionId: string,
+  opts?: { maxTokensOverride?: number; reasoningEffort?: string }
+) {
+  const upstream: any = await complete(env, tier, messages, true, sessionId, opts);
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start: async (controller) => {
@@ -1468,11 +1504,46 @@ export default {
 
         const turns = Array.isArray(input.turns) ? input.turns : [];
         const founderId = text(input.founder_id || input.user_id || "");
+
+        // ── Personality + memory layer injection (from /api/athena/chat upstream) ──
+        // The Next.js app's chat route queries the DB for the active personality
+        // (system prompt, voice ID, reasoning effort, max tokens) + active
+        // memories (36h TTL) + matching skills, then passes them as fields in
+        // the upstream payload. We fold them into the system prompt here.
+        //
+        // If the fields are absent (older caller, or DB unavailable), the
+        // hardcoded ATHENA_SYSTEM_PROMPT is used and the existing behavior
+        // is preserved.
+        const personalitySystemPrompt = typeof input.personality_system_prompt === "string"
+          ? input.personality_system_prompt
+          : "";
+        const memoryBlock = typeof input.memory_block === "string"
+          ? input.memory_block
+          : "";
+        const personalityMaxTokens = typeof input.personality_max_tokens === "number"
+          ? input.personality_max_tokens
+          : undefined;
+        const personalityReasoningEffort = typeof input.personality_reasoning_effort === "string"
+          ? input.personality_reasoning_effort
+          : undefined;
+
+        // Compose the full system prompt: personality override (if provided) +
+        // the hardcoded ATHENA_SYSTEM_PROMPT (kept as a fallback baseline) +
+        // memory block + session metadata.
+        const basePrompt = personalitySystemPrompt || ATHENA_SYSTEM_PROMPT;
+        const systemPrompt = `${basePrompt}\n\nSESSION ID: ${session}\nFOUNDER ID: ${founderId || "(anonymous)"}\nFOUNDER NAME: ${input.user_name || input.founder_name || "(unknown — address as 'founder')"}\nTIER: ${tier}\nMODEL: ${MODELS[tier]}\n\nSALUTATION RULE (critical): Address the founder by their first name at the start of every response. If FOUNDER NAME above is a real name (not "unknown"), use it. Examples:\n- "Hi David, I'm Athena. Let's begin with..."\n- "David, you did not answer the question. The unanswered question is:..."\n- "David, my verdict is CONDITIONAL DILIGENCE..."\nNever open a response without the founder's name. If unknown, use "founder" (lowercase).\n\nMEMORY FACTS (previously verified):\n${context || "(none yet — this is a fresh drill)"}${extracted.length ? `\n\nAUTO-EXTRACTED THIS TURN (unverified — confirm before crediting):\n${extracted.map(f => `${f.fact}: ${f.value} [reported, confidence:medium]`).join("\n")}` : ""}${memoryBlock ? `\n\n${memoryBlock}` : ""}`;
+
         const messages: Message[] = [
-          { role: "system", content: `${ATHENA_SYSTEM_PROMPT}\n\nSESSION ID: ${session}\nFOUNDER ID: ${founderId || "(anonymous)"}\nFOUNDER NAME: ${input.user_name || input.founder_name || "(unknown — address as 'founder')"}\nTIER: ${tier}\nMODEL: ${MODELS[tier]}\n\nSALUTATION RULE (critical): Address the founder by their first name at the start of every response. If FOUNDER NAME above is a real name (not "unknown"), use it. Examples:\n- "Hi David, I'm Athena. Let's begin with..."\n- "David, you did not answer the question. The unanswered question is:..."\n- "David, my verdict is CONDITIONAL DILIGENCE..."\nNever open a response without the founder's name. If unknown, use "founder" (lowercase).\n\nMEMORY FACTS (previously verified):\n${context || "(none yet — this is a fresh drill)"}${extracted.length ? `\n\nAUTO-EXTRACTED THIS TURN (unverified — confirm before crediting):\n${extracted.map(f => `${f.fact}: ${f.value} [reported, confidence:medium]`).join("\n")}` : ""}` },
+          { role: "system", content: systemPrompt },
           ...turns,
           { role: "user", content: userMessage },
         ];
+
+        // opts to pass through to complete() — personality overrides
+        const completeOpts = {
+          maxTokensOverride: personalityMaxTokens,
+          reasoningEffort: personalityReasoningEffort,
+        };
 
         // Auto-fetch founder deck if founder_id supplied
         if (founderId && !input.deck_loaded) {
@@ -1486,11 +1557,11 @@ export default {
 
         // SSE streaming
         if (input.stream === true || (tier === "deep" && input.stream !== false)) {
-          return streamSSE(env, tier, messages, session);
+          return streamSSE(env, tier, messages, session, completeOpts);
         }
 
         // Non-streaming: complete + log
-        const response = await complete(env, tier, messages, false, session);
+        const response = await complete(env, tier, messages, false, session, completeOpts);
 
         // Persist the user turn + the assistant response
         try {

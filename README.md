@@ -106,20 +106,49 @@ src/
     ├── use-unsaved-changes-warning.ts  # Shared beforeunload hook
     ├── with-auth.ts             # Auth middleware helper
     ├── db.ts                    # Prisma client (lazy singleton)
-    ├── storage.ts               # Multi-backend file storage (SSRF-protected)
-    ├── blob-upload.ts           # Vercel Blob client-side upload (with progress)
-    ├── blob-signature.ts        # Blob URL signing
+    ├── storage.ts               # Cloudflare R2 storage (SSRF-protected, proxy-gated)
+    ├── cloudflare-storage.ts    # R2 helpers: upload/download/delete/purge + SigV4 signer
+    ├── blob-upload.ts           # Re-export of R2 upload (legacy name)
+    ├── blob-signature.ts        # Blob URL utilities (legacy name, R2-backed)
     ├── file-parser.ts           # PDF/PPTX/DOCX parsing
-    ├── vertex-ai.ts             # Google Vertex AI (secondary)
-    ├── zoho-crm.ts              # Zoho CRM integration
-    ├── email.ts                 # Zoho CRM email (SendMail API)
-    └── validation/schemas.ts    # Zod validation schemas
+    ├── email.ts                 # Transactional email (nodemailer + Supabase SMTP)
+    ├── ai-service.ts            # Z.ai gateway + Kal Agent fallback + AI dispatch
+    ├── ai-utils.ts              # JSON parsing + score clamping helpers
+    ├── athena-memory.ts         # Athena adaptive memory layer (sessions + 36h TTL)
+    ├── athena-mcp.ts            # Athena MCP client (Supabase + GitHub + browser tools)
+    ├── athena-agent.ts          # Athena agent logic
+    ├── athena-quota.ts          # Tiered Athena chat quota (anon vs auth)
+    ├── cloudflare-ai.ts         # Cloudflare Workers AI client
+    ├── prompt-security.ts       # Prompt-injection sanitization (used by Athena chat)
+    ├── prompt-injection-guard.ts # Regex-based injection pattern detection
+    ├── payment-service.ts       # Stripe + Paystack checkout session creation
+    ├── entitlement.ts           # Module access (E1-E5) gating
+    ├── rate-limit.ts            # Upstash Redis rate limiting with circuit breaker
+    ├── file-validation.ts       # File type + size validation
+    ├── dev-auth.ts              # Developer email allowlist
+    ├── security.ts              # IP blocklist, device fingerprint, geo-block
+    ├── validation/schemas.ts    # Zod validation schemas
+    └── logger.ts                # Structured logger (env-gated)
 prisma/
-├── schema.prisma                # 17 models, 9 enums
+├── schema.prisma                # 21 models (incl. athena_sessions, athena_messages,
+│                                #        athena_memory, athena_personalities,
+│                                #        purge_audit_log — added Batch 2 + 5)
 └── migrations/
-    └── 0_init/migration.sql     # Single consolidated baseline migration
+    ├── 0_init/migration.sql
+    ├── 1_add_device_tracking/migration.sql
+    ├── 2_add_job_queue_and_webhook_idempotency/migration.sql
+    ├── 3_drop_zoho/migration.sql                # Batch 1: removed Zoho schema
+    └── 4_athena_memory/migration.sql            # Batch 2: Athena memory + purge audit log
 scripts/
 └── vercel-build.sh              # Build pipeline: prisma generate → migrate deploy → next build
+athena-skills/                   # .md files with YAML front-matter, loaded at runtime
+├── pitch-coaching.md            # Default mode — direct founder feedback, scoring format
+├── founder-mode.md              # Strategic decision mode — contrarian reasoning
+└── teaching.md                  # Socratic mode — asks questions rather than lecturing
+workers/
+├── athena-d1/                   # Athena chat engine Worker (deployed separately)
+├── athena-memory-cron/          # NEW (Batch 5) — hourly cron: summarize + purge
+└── (athena-union-alpha-worker)  # Sidecar in deck analysis — NOT in this repo, separately deployed
 ```
 
 ---

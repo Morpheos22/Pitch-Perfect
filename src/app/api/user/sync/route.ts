@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
             const ATHENA_SECRET = process.env.ATHENA_SECRET_KEY || "";
             const POKE_KEY = process.env.POKE_API_KEY || "";
 
-            // Mark as 'warming' in DB
+            // Mark as 'warming' in DB (synchronous — fast DB write)
             await prisma.$executeRaw`
                 INSERT INTO public.ai_service_health ("userId", "clerkId", status, "warmedAt", "lastPingAt")
                 VALUES (${user.id}, ${clerkId}, 'warming', now(), now())
@@ -185,60 +185,72 @@ export async function POST(request: NextRequest) {
                 SET status = 'warming', "warmedAt" = now(), "lastPingAt" = now(), "updatedAt" = now()
             `;
 
-            // Fire three warm-up pings in parallel (fire-and-forget, max 5s)
-            const warmupTasks: Promise<void>[] = [];
+            // ── Fire warm-up in the background (DO NOT AWAIT) ──────────────────
+            // Previously this block used `await Promise.race([...warmupTasks, 5000ms])`
+            // which BLOCKED the sync response for up to 5 seconds on every cold
+            // dashboard load — the "session hydration kills sign-in" bottleneck.
+            //
+            // Now: fire the three warm-up pings as a single background Promise.
+            // The sync response returns immediately. The Promise resolves in
+            // the background (Vercel may kill the function early, but the warmup
+            // is non-critical — next visit will re-warm). The DB write to mark
+            // 'warm' happens at the end of the background Promise.
+            const warmupBackgroundWork = (async () => {
+                const warmupTasks: Promise<void>[] = [];
 
-            // 1. Preload endpoint — authenticates the AI service layer
-            warmupTasks.push(
-                fetch(`${APP_URL}/api/athena/preload`, {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${ATHENA_SECRET}` },
-                }).then(() => {}).catch(() => {}),
-            );
-
-            // 2. Poke API — warm the agent's context
-            if (POKE_KEY) {
+                // 1. Preload endpoint — authenticates the AI service layer
                 warmupTasks.push(
-                    fetch("https://poke.com/api/v1/inbound/api-message", {
+                    fetch(`${APP_URL}/api/athena/preload`, {
                         method: "POST",
-                        headers: { "Authorization": `Bearer ${POKE_KEY}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            message: `System: User ${email} loaded the dashboard. Warm up your context. They may ask about pitch scores, usage, or platform features.`,
-                        }),
+                        headers: { "Authorization": `Bearer ${ATHENA_SECRET}` },
                     }).then(() => {}).catch(() => {}),
                 );
-            }
 
-            // 3. MCP server — initialize DurableObject (eliminates cold start)
-            let mcpSession: string | null = null;
-            warmupTasks.push(
-                fetch("https://athena-mcp-server.morphylee22.workers.dev/mcp", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
-                    body: JSON.stringify({
-                        jsonrpc: "2.0", method: "initialize",
-                        params: { protocolVersion: "2025-01-01", capabilities: {}, clientInfo: { name: "dashboard-warmup", version: "1.0" } },
-                        id: 1,
-                    }),
-                }).then(async (res) => {
-                    mcpSession = res.headers.get("mcp-session-id");
-                    // Mark as warm after MCP initializes
-                    await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSession}, ${!!POKE_KEY})`;
-                }).catch(() => {}),
-            );
+                // 2. Poke API — warm the agent's context
+                if (POKE_KEY) {
+                    warmupTasks.push(
+                        fetch("https://poke.com/api/v1/inbound/api-message", {
+                            method: "POST",
+                            headers: { "Authorization": `Bearer ${POKE_KEY}`, "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                message: `System: User ${email} loaded the dashboard. Warm up your context. They may ask about pitch scores, usage, or platform features.`,
+                            }),
+                        }).then(() => {}).catch(() => {}),
+                    );
+                }
 
-            // Race: max 5s, then mark warm regardless (partial warmth > cold)
-            await Promise.race([
-                Promise.allSettled(warmupTasks),
-                new Promise(resolve => setTimeout(resolve, 5000)),
-            ]).then(async () => {
-                // Ensure we mark warm even if some tasks timed out
+                // 3. MCP server — initialize DurableObject (eliminates cold start)
+                let mcpSession: string | null = null;
+                warmupTasks.push(
+                    fetch("https://athena-mcp-server.morphylee22.workers.dev/mcp", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+                        body: JSON.stringify({
+                            jsonrpc: "2.0", method: "initialize",
+                            params: { protocolVersion: "2025-01-01", capabilities: {}, clientInfo: { name: "dashboard-warmup", version: "1.0" } },
+                            id: 1,
+                        }),
+                    }).then(async (res) => {
+                        mcpSession = res.headers.get("mcp-session-id");
+                    }).catch(() => {}),
+                );
+
+                // Wait for all warmup tasks (no race — let them complete in background)
+                await Promise.allSettled(warmupTasks);
+
+                // Mark as warm after all tasks complete (or fail)
                 try {
-                    await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSession}, true)`;
+                    await prisma.$executeRaw`SELECT public.mark_athena_warm(${user.id}, ${mcpSession}, ${!!POKE_KEY})`;
                 } catch {}
-            });
+            })();
 
-            console.log(`[User Sync] Athena warm-up fired for ${email}`);
+            // Detach the background work — do NOT await.
+            // Vercel/Cloudflare will keep the function alive briefly after the
+            // response is sent. If the runtime kills it early, the warmup
+            // fails silently (next visit will re-warm).
+            warmupBackgroundWork.catch(() => {/* non-fatal */});
+
+            console.log(`[User Sync] Athena warm-up fired (background) for ${email}`);
         } else {
             console.log(`[User Sync] Athena already warm for ${email} (status=${warm.status})`);
         }

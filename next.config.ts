@@ -17,12 +17,9 @@ const nextConfig: any = {
     dynamic: 30,
   },
 
-  // Ensure @vercel/blob/client is properly transpiled for browser usage.
-  // The client subpath uses Node.js modules (undici, crypto) that must be
-  // replaced with browser-compatible versions via the package's "browser" field.
-  // LEGACY: @vercel/blob is no longer used (R2 is sole backend). Kept for safety
-  // in case any old client bundle still imports it.
-  transpilePackages: ["@vercel/blob"],
+  // (Removed transpilePackages: ["@vercel/blob"] — verified no @vercel/blob
+  // imports remain in src/. Vercel Blob was stubbed out in Batch 1 and is
+  // fully replaced by Cloudflare R2.)
 
   // ── Redirects — Replacing dead page components with server-level redirects ──
   // These replace the zombie /coach/deck, /coach/script, /coach/live pages

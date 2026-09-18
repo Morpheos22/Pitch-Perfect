@@ -490,6 +490,25 @@ export function AthenaWidget() {
       } else {
         setMessages((m) => m.map((msg, i) => i === assistantIdx ? { ...msg, streaming: false } : msg));
       }
+      // ── Stream complete — POST the full assembled assistant text to /api/athena/log ─────
+      // The chat route logged a placeholder for streaming responses. We now
+      // replace it with the real content so the 36h summarizer cron has
+      // accurate text to extract memories from. Fire-and-forget — non-blocking.
+      // Uses the session ID from the worker's meta event (preferred) or
+      // falls back to the local sessionId state.
+      const finalSessionId = meta?.session_id || sessionId;
+      if (finalSessionId && accumulated) {
+        fetch("/api/athena/log", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId: finalSessionId,
+            content: accumulated,
+            model: meta?.model,
+            tokensOut: undefined, // Worker doesn't stream token counts in meta
+          }),
+        }).catch(() => {/* non-fatal — the placeholder stays if this fails */});
+      }
     } catch (e) {
       const text = e instanceof Error ? e.message : String(e);
       setError(text);

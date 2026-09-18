@@ -74,3 +74,8 @@ ngrok
 agent/
 skills-lock.json
 .agents/
+
+# Cloudflare Worker build artifacts (should never be committed — rebuilt via `wrangler deploy`)
+workers/*/dist/
+athena-mcp-worker/dist/
+.wrangler/

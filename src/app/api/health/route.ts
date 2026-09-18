@@ -213,10 +213,9 @@ export async function GET(request: NextRequest) {
     warnings.push('Kal Agent (Strategy 2 fallback) not configured — set KAL_AGENT_URL and KAL_API_KEY for E2 fallback.');
   }
 
-  // Google AI / Vertex AI — REMOVED from fallback chain.
-  // The Gemini API is 403 SERVICE_DISABLED on our GCP project.
-  // Z.ai (glm-4-plus) is primary, Kal Agent is the sole fallback.
-  // No longer importing vertex-ai to avoid dead dependency in health check.
+  // Google AI / Vertex AI — removed from fallback chain (Gemini API 403).
+  // Z.ai (glm-5.1 flagship) is primary, Kal Agent is sole fallback.
+  // The vertex-ai.ts module is deleted from the repo.
   (checks as any).googleAI = {
     configured: false,
     role: 'removed-from-chain',

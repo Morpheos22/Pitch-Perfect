@@ -59,11 +59,20 @@ export async function getActiveMemories(userId: string): Promise<AthenaMemoryEnt
     });
 
     // Bump recall stats (fire-and-forget — non-blocking)
+    // Also refresh the TTL on recalled memories so frequently-recalled
+    // entries stay alive longer than 36 hours. This is the "adaptive
+    // learning" mechanism: memories that get used get their lifetime extended.
     if (memories.length > 0) {
       const now = new Date();
+      const newExpiresAt = new Date(now.getTime() + MEMORY_TTL_HOURS * 60 * 60 * 1000);
       prisma.athenaMemory.updateMany({
         where: { id: { in: memories.map(m => m.id) } },
-        data: { timesRecalled: { increment: 1 }, lastRecalledAt: now },
+        data: {
+          timesRecalled: { increment: 1 },
+          lastRecalledAt: now,
+          // Refresh TTL so frequently-recalled memories stay alive
+          expiresAt: newExpiresAt,
+        },
       }).catch(() => {/* non-fatal */});
     }
 
@@ -306,6 +315,113 @@ export async function endSession(sessionId: string): Promise<void> {
     });
   } catch (err) {
     console.warn("[athena-memory] endSession failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+// ── Inline memory extraction ─────────────────────────────────────────────
+// High-confidence pattern detection on user messages. Catches signals that
+// are clear enough to persist immediately, rather than waiting for the 36h
+// cron summarizer. The cron handles the subtler extraction.
+
+interface ExtractedSignal {
+  kind: "preference" | "fact" | "skill" | "correction" | "intent";
+  content: string;
+  confidence: number;
+}
+
+const PREFERENCE_PATTERNS: RegExp[] = [
+  /^(?:I|we)\s+(?:prefer|would rather|always want|never want|like|don't like|prefer to|always|never)\b/i,
+  /\b(?:always|never)\s+(?:use|give|respond|start|end|format)\b/i,
+  /\b(?:don't|do not|never)\s+(?:use|give|start|ask|include)\b/i,
+  /\b(?:shorter|longer|faster|slower|more|less)\s+(?:responses|answers|detail)\b/i,
+];
+
+const CORRECTION_PATTERNS: RegExp[] = [
+  /^(?:stop|don't|do not|never)\s+(?:do|say|use|ask|include)\s+(?:that|this|it)\s*(?:again)?/i,
+  /^(?:you\s+)?(?:were|are)\s+wrong\s+(?:about|on)/i,
+  /^(?:no|that's wrong|that's not right|incorrect|not exactly)/i,
+  /^(?:actually|actually,|in fact|correction:)/i,
+];
+
+const INTENT_PATTERNS: RegExp[] = [
+  /^(?:I'm|I am)\s+(?:working on|building|creating|launching|raising|looking for|trying to|planning to)\b/i,
+  /^(?:my goal|the goal|our goal|what I'm trying to|what we want to)\s+(?:is|to)\b/i,
+  /^(?:I want to|I need to|we need to|we want to)\b/i,
+];
+
+const FACT_PATTERNS: RegExp[] = [
+  /^(?:I'm|I am)\s+(?:the\s+)?(?:founder|CEO|CTO|COO|CFO|CMo|owner|creator|author|developer|engineer|designer)\s+(?:of|at)\b/i,
+  /^(?:I|we)\s+(?:work|worked)\s+(?:at|on|for|with)\b/i,
+  /\b(?:my|our)\s+(?:company|startup|business|product|service|platform|app)\s+(?:is|was|called|named)\b/i,
+];
+
+const SKILL_PATTERNS: RegExp[] = [
+  /\b(?:I want to learn|teach me|how do I|how to|what is|explain)\b/i,
+  /\b(?:I'm learning|I am learning|I want to get better at)\b/i,
+];
+
+/**
+ * Detect high-confidence memory signals in a user message.
+ * Returns up to 3 signals (to avoid memory pollution).
+ *
+ * Patterns are conservative — only catches messages that strongly match
+ * a known shape. Subtler extraction is left to the 36h cron.
+ */
+export function extractMemorySignals(message: string): ExtractedSignal[] {
+  if (!message || message.length < 10) return [];
+  const signals: ExtractedSignal[] = [];
+  const seen = new Set<string>();
+
+  const tryMatch = (patterns: RegExp[], kind: ExtractedSignal["kind"], confidence: number) => {
+    if (signals.length >= 3) return;
+    for (const pattern of patterns) {
+      if (pattern.test(message)) {
+        // Extract the relevant clause — take the first sentence containing the match
+        const firstSentence = message.split(/[.!?]/)[0].trim();
+        const content = firstSentence.slice(0, 200); // cap content length
+        const key = `${kind}:${content}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          signals.push({ kind, content, confidence });
+        }
+        return;
+      }
+    }
+  };
+
+  // Order matters — corrections are highest priority, then preferences, then
+  // intents, then facts, then skills.
+  tryMatch(CORRECTION_PATTERNS, "correction", 0.9);
+  tryMatch(PREFERENCE_PATTERNS, "preference", 0.85);
+  tryMatch(INTENT_PATTERNS, "intent", 0.8);
+  tryMatch(FACT_PATTERNS, "fact", 0.75);
+  tryMatch(SKILL_PATTERNS, "skill", 0.7);
+
+  return signals;
+}
+
+/**
+ * Extract + persist memory signals from a user message, in the context of
+ * the current session. Non-blocking — never throws, never blocks the chat
+ * response. Used by /api/athena/chat after sanitization + before forwarding.
+ */
+export async function extractAndPersistSignals(
+  userId: string,
+  sessionId: string,
+  userMessage: string,
+): Promise<void> {
+  const signals = extractMemorySignals(userMessage);
+  if (signals.length === 0) return;
+
+  for (const signal of signals) {
+    try {
+      await addMemory(userId, signal.kind, signal.content, {
+        sessionId,
+        confidence: signal.confidence,
+      });
+    } catch (err) {
+      console.warn("[athena-memory] signal persist failed:", err instanceof Error ? err.message : err);
+    }
   }
 }
 

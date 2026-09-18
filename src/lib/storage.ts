@@ -72,12 +72,30 @@ export function isVercelBlobConfigured(): boolean {
   return false; // Vercel Blob removed — using R2
 }
 
-// Legacy function — downloads a file and returns its content as text/buffer
+// Legacy function — downloads a file and returns its content as text/buffer.
+// Handles BOTH URL formats that appear in the DB:
+//   1. The proxy URL returned by getR2PublicUrl():  /api/blob/download?pathname=...
+//   2. The internal R2 URL used during upload:       https://<bucket>.<account>.r2.cloudflarestorage.com/<key>
+// The old version only handled case 2 — broke when given a proxy URL (which
+// is what getR2PublicUrl() returns). Now extracts the `pathname` query
+// parameter from either URL format.
 export async function getFileContent(url: string): Promise<Buffer> {
   const { downloadFromR2 } = await import('./cloudflare-storage');
-  // Extract key from URL
-  const urlObj = new URL(url);
-  const key = urlObj.pathname.slice(1);
+  const urlObj = new URL(url, 'http://localhost'); // base for relative URLs
+
+  let key: string;
+  // Case 1: proxy URL with ?pathname= query param
+  if (urlObj.searchParams.has('pathname')) {
+    key = urlObj.searchParams.get('pathname')!;
+  } else {
+    // Case 2: internal R2 URL — extract key from pathname (strip leading /)
+    key = urlObj.pathname.slice(1);
+  }
+
+  if (!key) {
+    throw new Error(`getFileContent: could not extract R2 key from URL: ${url.slice(0, 100)}`);
+  }
+
   const { data } = await downloadFromR2(key);
   return data;
 }

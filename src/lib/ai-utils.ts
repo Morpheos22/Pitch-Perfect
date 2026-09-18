@@ -1,7 +1,8 @@
 // Shared AI Utility Functions for PitchCoach Ai × Athena Agentic
 //
-// Previously duplicated across ai-service.ts and vertex-ai.ts.
-// Now consolidated here as the single source of truth.
+// Single source of truth for AI response parsing helpers.
+// (The legacy src/lib/vertex-ai.ts file was removed when Google AI / Vertex AI
+// was taken out of the AI fallback chain — see README "Removed (Dead Code)".)
 //
 // Contents:
 //   - extractJsonFromContent  — Extract JSON from AI response text

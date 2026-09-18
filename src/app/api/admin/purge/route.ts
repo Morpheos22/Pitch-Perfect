@@ -48,7 +48,6 @@ export async function POST(request: NextRequest) {
   // purged manually via SQL or a separate admin tool.
   const ALLOWED_PREFIXES = [
     "uploads/temp/",
-    "uploads/temp/",
     "tmp/",
     "scratch/",
   ];
@@ -76,7 +75,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/admin/purge — list recent purge runs from audit log.
+ * GET /api/admin/purge — status + recent runs from audit log.
+ *
+ * Returns:
+ *   - lastRun: the most recent purge audit log row (or null if never run)
+ *   - r2Configured: whether R2 credentials are set on the env
+ *   - retentionDays: the configured retention window (6 days per spec)
+ *   - cronSchedule: the cron trigger pattern (hourly)
+ *   - allowedPrefixes: the whitelist of purgable R2 prefixes
+ *   - recentRuns: the last 20 purge audit log rows
  */
 export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-athena-secret");
@@ -87,9 +94,35 @@ export async function GET(request: NextRequest) {
 
   // Lazy import to avoid circular deps in module init
   const { prisma } = await import("@/lib/db");
-  const recent = await prisma.purgeAuditLog.findMany({
-    orderBy: { runAt: "desc" },
-    take: 20,
+  const { isR2Configured } = await import("@/lib/cloudflare-storage");
+
+  let lastRun: Awaited<ReturnType<typeof prisma.purgeAuditLog.findFirst>> = null;
+  let recentRuns: Awaited<ReturnType<typeof prisma.purgeAuditLog.findMany>> = [];
+  let dbError: string | undefined;
+
+  try {
+    [lastRun, recentRuns] = await Promise.all([
+      prisma.purgeAuditLog.findFirst({
+        orderBy: { runAt: "desc" },
+      }),
+      prisma.purgeAuditLog.findMany({
+        orderBy: { runAt: "desc" },
+        take: 20,
+      }),
+    ]);
+  } catch (err) {
+    // DB may be unreachable — return what we can without DB
+    dbError = err instanceof Error ? err.message : String(err);
+  }
+
+  return NextResponse.json({
+    status: lastRun ? "ok" : "never_run",
+    lastRun,
+    recentRuns,
+    r2Configured: isR2Configured(),
+    retentionDays: 6,
+    cronSchedule: "0 * * * * (hourly)",
+    allowedPrefixes: ["uploads/temp/", "tmp/", "scratch/"],
+    dbError,
   });
-  return NextResponse.json({ runs: recent });
 }

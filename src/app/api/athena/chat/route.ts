@@ -9,6 +9,7 @@ import {
   logAssistantMessage,
   getActivePersonality,
   getActiveSkillsForMessage,
+  extractAndPersistSignals,
 } from "@/lib/athena-memory";
 import { sanitizePromptInput } from "@/lib/prompt-security";
 
@@ -106,6 +107,10 @@ export async function POST(request: NextRequest) {
   // cron later). Raw input is gone after sanitization.
   if (sessionId) {
     logUserMessage(sessionId, sanitizedMessage).catch(() => {/* non-fatal */});
+    // Inline memory extraction — non-blocking, never throws
+    if (internalUserId) {
+      extractAndPersistSignals(internalUserId, sessionId, sanitizedMessage).catch(() => {/* non-fatal */});
+    }
   }
 
   const upstreamPayload: Record<string, unknown> = {
@@ -143,11 +148,14 @@ export async function POST(request: NextRequest) {
     }
 
     // For streaming responses, we cannot reliably capture the assistant's
-    // full output for logging without buffering the entire stream. Instead,
-    // we send the session ID back via a header so the client can later POST
-    // a /api/athena/log endpoint with the full assistant text if desired.
-    // For now, the assistant message is logged as "[streaming]" placeholder;
-    // a follow-up batch will add a proper streaming log collector.
+    // full output without buffering the entire stream (which kills the
+    // streaming benefit). Instead:
+    //   1. Log a placeholder here (so the message ordering is preserved)
+    //   2. The client assembles the SSE chunks into full text after the
+    //      stream completes
+    //   3. The client POSTs the assembled text to /api/athena/log, which
+    //      REPLACES this placeholder with the real content
+    // See src/app/api/athena/log/route.ts (Batch 3).
     if (sessionId) {
       logAssistantMessage(sessionId, "[streaming response — see client-side capture]", {
         model: upstream.headers.get("x-athena-model") ?? undefined,

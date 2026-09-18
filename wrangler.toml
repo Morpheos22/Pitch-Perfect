@@ -1,0 +1,73 @@
+# Cloudflare Pages configuration for PitchCoach Ai
+#
+# This is the Cloudflare-native deployment target for the Next.js app.
+# The app currently deploys to Vercel — this file prepares for the migration.
+#
+# Two migration paths:
+#   1. Cloudflare Pages with @cloudflare/next-on-pages adapter (current approach)
+#   2. Cloudflare Workers with opennextjs-cloudflare (newer, recommended for Next 16+)
+#
+# This wrangler.toml is configured for path 1 (Pages). When path 2 is ready,
+# change `pages_build_output_dir` to `main = ".open-next/dist"`.
+#
+# Required env vars (set via `wrangler pages secret put` or dashboard):
+#   - DATABASE_URL              — Supabase pooled conn (port 6543)
+#   - DIRECT_URL                — Supabase direct conn (port 5432, for migrations)
+#   - NEXT_PUBLIC_SUPABASE_URL
+#   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   - SUPABASE_SERVICE_ROLE_KEY
+#   - SUPABASE_ACCESS_TOKEN     — Athena MCP token (separate from above)
+#   - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+#   - CLERK_SECRET_KEY
+#   - CLERK_WEBHOOK_SECRET
+#   - ZAI_API_KEY, ZAI_BASE_URL, ZAI_TOKEN
+#   - CLOUDFLARE_ACCOUNT_ID
+#   - CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY
+#   - CLOUDFLARE_R2_BUCKET_NAME
+#   - CLOUDFLARE_AI_TOKEN (optional, used by /api/athena/debug)
+#   - STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_*
+#   - PAYSTACK_SECRET_KEY, PAYSTACK_WEBHOOK_SECRET
+#   - UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+#   - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_EMAIL, SMTP_FROM_NAME
+#   - ELEVENLABS_API_KEY
+#   - KAL_AGENT_URL, KAL_API_KEY
+#   - ATHENA_UNION_ALPHA_WORKER_URL, UNION_ALPHA_ENABLED, WORKER_AUTH_SECRET
+#   - ATHENA_SECRET_KEY          — shared with cron worker for /api/admin/purge auth
+#   - HEALTH_CHECK_SECRET
+#   - DEVELOPER_EMAILS
+
+name = "pitchcoachai"
+pages_build_output_dir = ".next/static"  # Path 1: Pages adapter output
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Limits — matches the previous Vercel config
+limits = { cpu_ms = 30000, memory_mb = 1024 }
+
+# Smart placement — closer to Supabase eu-west-2 if the visitor is in EU
+[placement]
+mode = "smart"
+
+# Bindings — Cloudflare-native services the app can call directly
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "pitch-perfect"
+
+[[d1_databases]]
+binding = "D1"
+database_name = "athena-d1"
+database_id = "your-d1-database-id-here"  # Set after `wrangler d1 create`
+
+[ai]
+binding = "AI"
+
+[vars]
+NEXT_PUBLIC_APP_URL = "https://pitchcoachai.tech"
+NODE_ENV = "production"
+
+# Cron triggers — keep the existing athena-memory-cron worker for the trigger,
+# but the Pages app also can have its own cron if needed. Currently none.
+
+# Observability
+[observability]
+enabled = true

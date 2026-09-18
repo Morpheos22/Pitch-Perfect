@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/with-auth';
 import { isAdminEmail } from '@/lib/dev-auth';
+import { AI_MODELS } from '@/lib/ai-service';
 
 // IMPORTANT: Import polyfills BEFORE any test that loads pdf-parse
 // The DOMMatrix polyfill must be installed at module level, before
@@ -124,7 +125,7 @@ async function testZaiGateway(): Promise<TestResult> {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: 'glm-4-plus',
+        model: AI_MODELS.FAILSAFE_TEXT,
         messages: [{ role: 'user', content: 'Say hello' }],
         temperature: 0.1,
         max_tokens: 32,
@@ -192,7 +193,7 @@ async function testZaiSdkInit(): Promise<TestResult> {
 
     // Quick SDK liveness check
     const resp = await zai.chat.completions.create({
-      model: 'glm-4-plus',
+      model: AI_MODELS.FAILSAFE_TEXT,
       messages: [{ role: 'user', content: 'Say "sdk_ok"' }],
       temperature: 0.1,
       max_tokens: 10,
