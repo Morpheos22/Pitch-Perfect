@@ -10,6 +10,7 @@ import {
   getActivePersonality,
   getActiveSkillsForMessage,
 } from "@/lib/athena-memory";
+import { sanitizePromptInput } from "@/lib/prompt-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,16 @@ export async function POST(request: NextRequest) {
   try { parsed = JSON.parse(body); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   const input = parsed as { message?: unknown; tier?: unknown; stream?: unknown; session_id?: unknown; turns?: unknown; user_name?: unknown };
   if (typeof input.message !== "string" || !input.message.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
+
+  // ── Prompt-injection sanitization ──────────────────────────────────────
+  // Apply sanitization BEFORE logging to DB and BEFORE forwarding upstream.
+  // This neutralizes "ignore previous instructions", "reveal system prompt",
+  // role manipulation, and other known prompt-injection patterns.
+  // See src/lib/prompt-security.ts for the pattern list.
+  const sanitizedMessage = sanitizePromptInput(input.message);
+  if (!sanitizedMessage.trim()) {
+    return NextResponse.json({ error: "Message rejected by prompt security filter" }, { status: 400 });
+  }
 
   // Identify the founder (Clerk userId + firstName) so Athena can address
   // them by name and fetch their deck from Supabase.
@@ -71,7 +82,7 @@ export async function POST(request: NextRequest) {
       const [memories, personality, skillsBlock] = await Promise.all([
         getActiveMemories(internalUserId),
         getActivePersonality(),
-        getActiveSkillsForMessage(input.message),
+        getActiveSkillsForMessage(sanitizedMessage),
       ]);
       memoryBlock = formatMemoriesForPrompt(memories);
       personalitySystemPrompt = personality.systemPrompt;
@@ -90,12 +101,15 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Log user message (non-blocking) ───────────────────────────────────
+  // Log the SANITATED message — never store raw user input in the DB
+  // (could contain injection patterns that might confuse the summarizer
+  // cron later). Raw input is gone after sanitization.
   if (sessionId) {
-    logUserMessage(sessionId, input.message).catch(() => {/* non-fatal */});
+    logUserMessage(sessionId, sanitizedMessage).catch(() => {/* non-fatal */});
   }
 
   const upstreamPayload: Record<string, unknown> = {
-    message: input.message,
+    message: sanitizedMessage,
     tier: typeof input.tier === "string" ? input.tier : undefined,
     stream: input.stream === true || input.stream === "true",
     session_id: sessionId || (typeof input.session_id === "string" ? input.session_id : undefined),

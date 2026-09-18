@@ -487,12 +487,14 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)",
   "/api/health",
   "/api/contact",
-  // Athena chat + quota + debug endpoints are public so anonymous visitors can
+  // Athena chat + quota are public so anonymous visitors can
   // interact with the widget up to the strict per-IP cap enforced inside
   // the route (src/lib/athena-quota.ts). Signed-in users get a higher cap.
   "/api/athena/chat",
   "/api/athena/quota",
-  "/api/athena/debug",
+  // NOTE: /api/athena/debug REMOVED from public routes — it was leaking
+  // token prefixes (GitHub PAT prefix, Supabase token presence) to anyone.
+  // Now requires HEALTH_CHECK_SECRET token OR admin email auth.
   // greet + speak + warmth require auth() — they're not public
   // but we skip rate limiting on them
   // NOTE: /api/user/onboarding and /api/user/sync removed from public routes.
@@ -731,7 +733,6 @@ export default clerkMiddleware(async (auth, request) => {
     // not differentiate anon from auth — skip it here so the route owns the cap.
     '/api/athena/chat',
     '/api/athena/quota',
-    '/api/athena/debug',
     '/api/athena/greet',
     '/api/athena/speak',
     '/api/athena/activate',

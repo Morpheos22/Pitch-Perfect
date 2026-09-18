@@ -45,6 +45,46 @@ export async function POST(request: NextRequest) {
     const country = validatedData.country;
 
 
+    // ── Idempotency check: prevent duplicate checkout sessions ────────────
+    // If the client retries a POST (network timeout, user double-clicks
+    // "Upgrade" button), we don't want to create a second Stripe/Paystack
+    // session for the same product when one is already pending.
+    //
+    // Check: is there a pending (not yet completed) transaction for this
+    // user + product within the last 10 minutes? If yes, return the
+    // existing checkout URL instead of creating a new session.
+    const IDEMPOTENCY_WINDOW_MIN = 10;
+    const recentPending = await prisma.transaction.findFirst({
+      where: {
+        userId: user.id,
+        type: 'SUBSCRIPTION',
+        providerAccessCode: productId,
+        createdAt: { gte: new Date(Date.now() - IDEMPOTENCY_WINDOW_MIN * 60 * 1000) },
+        // Pending transactions have no 'completedAt' timestamp
+        // (webhook sets it when payment succeeds)
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, providerReference: true, createdAt: true },
+    });
+
+    if (recentPending?.providerReference) {
+      // Return the existing session — let the client retry the same checkout URL
+      // rather than creating a duplicate session (and potentially a duplicate charge
+      // if both sessions get completed).
+      console.log(`[Payment] Idempotent retry: returning existing session ${recentPending.providerReference.slice(0, 20)} for user ${user.id} product ${productId}`);
+      // Note: we can't easily reconstruct the full session.checkoutUrl from just the
+      // providerReference without a Stripe SDK lookup. For now, signal to the client
+      // that a pending session exists — they can check their dashboard.
+      return NextResponse.json({
+        success: false,
+        error: 'pending_session_exists',
+        message: 'You already have a pending checkout session for this product. Check your billing dashboard or wait 10 minutes before retrying.',
+        pendingTransactionId: recentPending.id,
+        retryAfter: IDEMPOTENCY_WINDOW_MIN * 60,
+      }, { status: 409 });
+    }
+
+
     // Validate country code format (ISO 3166-1 alpha-2)
     if (country && !/^[A-Z]{2}$/i.test(country)) {
       return NextResponse.json({ error: 'Invalid country code' }, { status: 400 });

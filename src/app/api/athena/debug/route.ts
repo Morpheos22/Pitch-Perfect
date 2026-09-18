@@ -2,12 +2,18 @@
  * GET /api/athena/debug
  *
  * Diagnostic endpoint that tests the function-calling pipeline end-to-end.
- * Accessible via secret token (HEALTH_CHECK_SECRET) OR admin auth.
+ * Requires either:
+ *   1. A valid HEALTH_CHECK_SECRET token (passed via ?token= or x-health-token header)
+ *   2. Authenticated admin user (via Clerk auth + DEVELOPER_EMAILS check)
+ *
+ * This endpoint exposes token prefixes + tool-call internals — never public.
  *
  * Usage: https://pitchcoachai.tech/api/athena/debug?token=YOUR_SECRET
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { isAdminEmail } from "@/lib/dev-auth";
 import { getAvailableTools, toolsToFunctionSchema, callTool } from "@/lib/athena-mcp";
 
 export const runtime = "nodejs";
@@ -15,15 +21,41 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
-  // Allow access via secret token OR Clerk auth
-  const token = request.nextUrl.searchParams.get("token");
+  // ── Auth: secret token OR admin email ──────────────────────────────────
   const HEALTH_CHECK_SECRET = process.env.HEALTH_CHECK_SECRET || "";
+  const token =
+    request.nextUrl.searchParams.get("token") ||
+    request.headers.get("x-health-token");
 
+  let authorized = false;
+
+  // Path 1: secret token
   if (HEALTH_CHECK_SECRET && token === HEALTH_CHECK_SECRET) {
-    // Secret token auth — proceed
-  } else {
-    // Fall back to no auth for debugging (temporary — remove after fixing)
-    // Actually, just let anyone access it for now so we can debug
+    authorized = true;
+  }
+
+  // Path 2: Clerk auth + admin email
+  if (!authorized) {
+    try {
+      const { userId } = await auth();
+      if (userId) {
+        const client = await clerkClient();
+        const clerkUser = await client.users.getUser(userId);
+        const email = clerkUser.emailAddresses[0]?.emailAddress;
+        if (email && isAdminEmail(email)) {
+          authorized = true;
+        }
+      }
+    } catch {
+      // Auth failure — fall through to 401
+    }
+  }
+
+  if (!authorized) {
+    return NextResponse.json(
+      { error: "Unauthorized", message: "This endpoint requires HEALTH_CHECK_SECRET token or admin auth." },
+      { status: 401 },
+    );
   }
 
   const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || "";
