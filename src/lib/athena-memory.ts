@@ -308,3 +308,166 @@ export async function endSession(sessionId: string): Promise<void> {
     console.warn("[athena-memory] endSession failed:", err instanceof Error ? err.message : err);
   }
 }
+
+// ── Skills loader (.md files in athena-skills/) ──────────────────────────
+
+export interface AthenaSkill {
+  name: string;
+  description: string;
+  triggers: string[];
+  enabled: boolean;
+  body: string; // The full markdown body, after the front-matter
+}
+
+/**
+ * Skills cache — loaded once at process startup, then refreshed every 5 min.
+ * The .md files rarely change, so we don't re-scan the filesystem per request.
+ */
+let skillsCache: AthenaSkill[] | null = null;
+let skillsCacheAt = 0;
+const SKILLS_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Load all enabled skills from the athena-skills/ directory.
+ * Each skill is a .md file with YAML front-matter:
+ *   ---
+ *   name: pitch-coaching
+ *   description: ...
+ *   triggers: [pitch, deck, investor]
+ *   enabled: true
+ *   ---
+ *   # Body content
+ *
+ * Files are read at runtime using Node's fs module. The directory is
+ * /home/z/my-project/repos/Pitch-Perfect/athena-skills/ in dev, or
+ * process.cwd()/athena-skills/ in production (Next.js standalone build).
+ *
+ * Returns an empty array on any error — non-fatal, Athena still works.
+ */
+export async function loadSkills(): Promise<AthenaSkill[]> {
+  // Cache hit
+  if (skillsCache && Date.now() - skillsCacheAt < SKILLS_TTL_MS) {
+    return skillsCache;
+  }
+
+  try {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+
+    const skillsDir = path.join(process.cwd(), "athena-skills");
+    let files: string[];
+    try {
+      files = await fs.readdir(skillsDir);
+    } catch {
+      // Directory doesn't exist or unreadable — return empty
+      skillsCache = [];
+      skillsCacheAt = Date.now();
+      return [];
+    }
+
+    const mdFiles = files.filter(f => f.endsWith(".md"));
+    const loaded: AthenaSkill[] = [];
+
+    for (const file of mdFiles) {
+      try {
+        const content = await fs.readFile(path.join(skillsDir, file), "utf8");
+        const skill = parseSkillFile(content, file);
+        if (skill && skill.enabled) loaded.push(skill);
+      } catch (err) {
+        console.warn(`[athena-memory] skill load failed for ${file}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    skillsCache = loaded;
+    skillsCacheAt = Date.now();
+    return loaded;
+  } catch (err) {
+    console.warn("[athena-memory] loadSkills failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+/**
+ * Parse a .md skill file with YAML-like front-matter.
+ * Lightweight parser — doesn't need a full YAML library for the simple
+ * structure we use (name, description, triggers as array, enabled as bool).
+ */
+function parseSkillFile(content: string, filename: string): AthenaSkill | null {
+  // Front-matter is delimited by --- at the start
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!fmMatch) {
+    // No front-matter — treat whole file as body, derive name from filename
+    return {
+      name: filename.replace(/\.md$/, ""),
+      description: "",
+      triggers: [],
+      enabled: true,
+      body: content.trim(),
+    };
+  }
+
+  const frontMatter = fmMatch[1];
+  const body = fmMatch[2].trim();
+
+  // Lightweight YAML parse — handles the simple key: value / key: [a, b, c] / key: bool format
+  const fields: Record<string, unknown> = {};
+  for (const line of frontMatter.split("\n")) {
+    const match = line.match(/^(\w+):\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    let value: unknown = match[2];
+
+    // Array: [a, b, c]
+    if (typeof value === "string" && value.startsWith("[") && value.endsWith("]")) {
+      value = value.slice(1, -1).split(",").map(s => s.trim()).filter(Boolean);
+    }
+    // Boolean
+    else if (typeof value === "string" && (value === "true" || value === "false")) {
+      value = value === "true";
+    }
+
+    fields[key] = value;
+  }
+
+  return {
+    name: String(fields.name ?? filename.replace(/\.md$/, "")),
+    description: String(fields.description ?? ""),
+    triggers: Array.isArray(fields.triggers) ? fields.triggers.map(String) : [],
+    enabled: fields.enabled !== false, // default true if not specified
+    body,
+  };
+}
+
+/**
+ * Find skills whose triggers match the user's message.
+ * Returns matching skill bodies (formatted as a single block for system prompt).
+ *
+ * Matching is case-insensitive word-boundary match. A skill matches if ANY
+ * of its trigger words appear in the user's message.
+ */
+export async function getActiveSkillsForMessage(userMessage: string): Promise<string> {
+  const skills = await loadSkills();
+  if (skills.length === 0) return "";
+
+  const message = userMessage.toLowerCase();
+  const matched: AthenaSkill[] = [];
+
+  for (const skill of skills) {
+    if (skill.triggers.length === 0) continue;
+    const isMatch = skill.triggers.some(trigger => {
+      const t = trigger.toLowerCase();
+      // Word-boundary: trigger "pitch" should not match "pitching-pending"
+      const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      return re.test(message);
+    });
+    if (isMatch) matched.push(skill);
+  }
+
+  if (matched.length === 0) return "";
+
+  // Format as a system-prompt block
+  const blocks = matched.map(s => {
+    return `--- SKILL: ${s.name} ---\n${s.body}`;
+  });
+  return `\n=== ACTIVE SKILLS ===\n${blocks.join("\n\n")}\n=== END SKILLS ===\n`;
+}

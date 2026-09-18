@@ -8,6 +8,7 @@ import {
   logUserMessage,
   logAssistantMessage,
   getActivePersonality,
+  getActiveSkillsForMessage,
 } from "@/lib/athena-memory";
 
 export const runtime = "nodejs";
@@ -64,9 +65,13 @@ export async function POST(request: NextRequest) {
 
   if (internalUserId) {
     try {
-      const [memories, personality] = await Promise.all([
+      // Load memories + personality + matching skills in parallel — all
+      // non-fatal on failure, all injected into the upstream payload as
+      // context blocks for the Athena worker to fold into the system prompt.
+      const [memories, personality, skillsBlock] = await Promise.all([
         getActiveMemories(internalUserId),
         getActivePersonality(),
+        getActiveSkillsForMessage(input.message),
       ]);
       memoryBlock = formatMemoriesForPrompt(memories);
       personalitySystemPrompt = personality.systemPrompt;
@@ -74,6 +79,11 @@ export async function POST(request: NextRequest) {
       personalityReasoningEffort = personality.reasoningEffort;
       personalityMaxTokens = personality.maxTokens;
       sessionId = await startOrResumeSession(internalUserId, typeof input.session_id === "string" ? input.session_id : undefined);
+      // Skills block is appended to memory block — the upstream worker should
+      // inject both as context for the system prompt.
+      if (skillsBlock) {
+        memoryBlock = memoryBlock ? `${memoryBlock}\n${skillsBlock}` : skillsBlock;
+      }
     } catch (err) {
       console.warn("[athena/chat] memory layer init failed:", err instanceof Error ? err.message : err);
     }

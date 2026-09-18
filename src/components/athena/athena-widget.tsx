@@ -161,7 +161,15 @@ export function AthenaWidget() {
   // performs a gesture that successfully resolves getUserMedia({ audio: true }).
   // This satisfies the browser autoplay policy (user gesture + media access)
   // and ensures we never attempt audio.play() before permission is granted.
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  //
+  // PERSISTENCE: Once unlocked in a session, we persist the flag in
+  // sessionStorage so subsequent page navigations within the same browser
+  // session don't require re-clicking "Unlock Voice". A new browser session
+  // (new tab, closed browser) re-requires the unlock gesture.
+  const [audioUnlocked, setAudioUnlocked] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("athena-voice-unlocked") === "true";
+  });
   const [requestingAccess, setRequestingAccess] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -191,6 +199,9 @@ export function AthenaWidget() {
       // grant to satisfy the autoplay policy and unlock audio playback.
       stream.getTracks().forEach((t) => t.stop());
       setAudioUnlocked(true);
+      // Persist to sessionStorage so subsequent page loads in this browser
+      // session skip the unlock gesture. Cleared when the tab closes.
+      try { sessionStorage.setItem("athena-voice-unlocked", "true"); } catch {}
       setRequestingAccess(false);
       return true;
     } catch (e) {
