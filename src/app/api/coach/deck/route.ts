@@ -11,6 +11,192 @@ import { requireAuth } from "@/lib/with-auth";
 import { createLogger } from '@/lib/logger';
 const log = createLogger('E1');
 export const dynamic = 'force-dynamic';
+import { auth } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+
+// === Existing Athena Worker (Z.ai/Gemini path) ===
+const workerUrl = () =>
+  process.env.ATHENA_WORKER_URL || "https://pitchcoach-athena-d1.workers.dev";
+
+// === Union Alpha Worker (new path, feature-flagged) ===
+const unionAlphaUrl = () =>
+  process.env.ATHENA_UNION_ALPHA_WORKER_URL ||
+  "https://athena-union-alpha-worker.morphylee22.workers.dev";
+const unionAlphaEnabled = () => process.env.UNION_ALPHA_ENABLED === "true";
+
+// HMAC token signer — mirrors the verifier in src/auth.ts of the Worker
+async function signAthenaToken(uid: string, route: string): Promise<string> {
+  const secret = process.env.WORKER_AUTH_SECRET;
+  if (!secret) throw new Error("WORKER_AUTH_SECRET not set");
+  const payload = JSON.stringify({ ts: Date.now(), uid, route });
+  const body = new TextEncoder().encode(payload);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, body);
+  const b64url = (buf: Uint8Array | ArrayBuffer) => {
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let s = "";
+    for (const b of bytes) s += String.fromCharCode(b);
+    return Buffer.from(s, "binary")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  };
+  return `${b64url(body)}.${b64url(sig)}`;
+}
+
+// Call the union-alpha Worker
+async function callUnionAlpha(
+  userId: string,
+  body: Record<string, unknown>
+): Promise<{ ok: boolean; status: number; json: () => Promise<any> }> {
+  const token = await signAthenaToken(userId, "greet");
+  return (await fetch(`${unionAlphaUrl()}/greet`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Athena-Auth": token,
+      Origin: "https://pitchcoachai.tech",
+    },
+    body: JSON.stringify({
+      messages: body.messages ?? [],
+      max_tokens: body.max_tokens ?? 1024,
+      stream: false,
+    }),
+    cache: "no-store",
+  }).catch((error) => ({
+    ok: false,
+    status: 502,
+    json: async () => ({
+      error: error instanceof Error ? error.message : "union-alpha unavailable",
+    }),
+  }))) as any;
+}
+
+// === Existing helpers (unchanged) ===
+async function founderContext(userId: string) {
+  const url = process.env.SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return { founder_id: userId, source: "session" };
+  const response = await fetch(
+    `${url.replace(/\/$/, "")}/rest/v1/pitch_decks?founder_id=eq.${encodeURIComponent(
+      userId
+    )}&order=created_at.desc&limit=1`,
+    {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: "no-store",
+    }
+  );
+  if (!response.ok) return { founder_id: userId, source: "session" };
+  const decks = await response.json();
+  return {
+    founder_id: userId,
+    deck: Array.isArray(decks) ? decks[0] ?? null : null,
+    source: "supabase",
+  };
+}
+
+async function warmSession(
+  userId: string,
+  sessionId: string,
+  body: Record<string, unknown>
+) {
+  try {
+    const response = await fetch(`${workerUrl()}/v1/session/warmup`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(process.env.ATHENA_WORKER_TOKEN
+          ? { authorization: `Bearer ${process.env.ATHENA_WORKER_TOKEN}` }
+          : {}),
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        session_id: sessionId,
+        ttl_seconds: 86400,
+        state: body,
+      }),
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId)
+    return NextResponse.json(
+      { error: "Unauthorized", retryable: true },
+      { status: 401 }
+    );
+
+  const body = await request.json().catch(() => ({}));
+  const sessionId =
+    typeof body.session_id === "string" && body.session_id
+      ? body.session_id
+      : crypto.randomUUID();
+  const context = await founderContext(userId);
+  await warmSession(userId, sessionId, body);
+
+  // === Union Alpha path (new, feature-flagged) ===
+  if (unionAlphaEnabled()) {
+    const upstream = await callUnionAlpha(userId, body);
+    const result = await upstream
+      .json()
+      .catch(() => ({ error: "Invalid union-alpha response" }));
+    return NextResponse.json(
+      { ...result, session_id: sessionId, provider: "union-alpha" },
+      { status: upstream.ok ? 200 : upstream.status || 502 }
+    );
+  }
+
+  // === Existing Athena path (default, unchanged) ===
+  const upstream = await fetch(`${workerUrl()}/v1/athena`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(process.env.ATHENA_WORKER_TOKEN
+        ? { authorization: `Bearer ${process.env.ATHENA_WORKER_TOKEN}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      ...body,
+      session_id: sessionId,
+      user_id: userId,
+      founder_context: context,
+    }),
+    cache: "no-store",
+  }).catch((error) => ({
+    ok: false,
+    status: 502,
+    json: async () => ({
+      error: error instanceof Error ? error.message : "Athena unavailable",
+    }),
+  }));
+
+  const result = await upstream
+    .json()
+    .catch(() => ({ error: "Invalid Athena response" }));
+  return NextResponse.json(
+    { ...result, session_id: sessionId, provider: "athena-classic" },
+    { status: upstream.ok ? 200 : upstream.status || 502 }
+  );
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
+}
 
 export const maxDuration = 60;
 
