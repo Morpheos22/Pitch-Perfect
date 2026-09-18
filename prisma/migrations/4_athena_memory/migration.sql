@@ -139,3 +139,27 @@ VALUES (
 );
 
 SELECT 'athena memory layer created + default personality seeded' AS status;
+
+-- ============================================
+-- 5. PURGE AUDIT LOG (added to same migration)
+-- ============================================
+-- One row per cron-triggered purge run. The athena-memory-cron worker
+-- inserts a row here after each hourly purge cycle.
+
+CREATE TABLE "purge_audit_log" (
+    "id" TEXT NOT NULL,
+    "runAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "messagesDeleted" INTEGER NOT NULL DEFAULT 0,
+    "sessionsDeleted" INTEGER NOT NULL DEFAULT 0,
+    "memoriesDeleted" INTEGER NOT NULL DEFAULT 0,
+    "r2Scanned" INTEGER NOT NULL DEFAULT 0,
+    "r2Deleted" INTEGER NOT NULL DEFAULT 0,
+    "r2Errors" JSONB,
+    "details" JSONB,
+
+    CONSTRAINT purge_audit_log_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX purge_audit_log_runAt_idx ON "purge_audit_log"("runAt");
+
+SELECT 'purge audit log table created' AS status;

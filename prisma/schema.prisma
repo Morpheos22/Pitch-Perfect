@@ -937,3 +937,24 @@ model AthenaPersonality {
 
   @@map("athena_personalities")
 }
+
+// ============================================
+// PURGE AUDIT LOG — 6-day data retention automation
+// ============================================
+// One row per cron-triggered purge run. Records what was deleted, when,
+// and any errors encountered. Useful for forensic + compliance purposes.
+
+model PurgeAuditLog {
+  id               String   @id @default(cuid())
+  runAt            DateTime @default(now())
+  messagesDeleted  Int      @default(0)
+  sessionsDeleted  Int      @default(0)
+  memoriesDeleted  Int      @default(0)
+  r2Scanned        Int      @default(0)
+  r2Deleted        Int      @default(0)
+  r2Errors         Json?
+  details          Json?    // {source, retention_days, prefix, etc.}
+
+  @@index([runAt])
+  @@map("purge_audit_log")
+}

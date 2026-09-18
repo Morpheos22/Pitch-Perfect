@@ -292,3 +292,213 @@ export function getR2PublicUrl(key: string): string {
 export function isR2Configured(): boolean {
   return !!(CF_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME);
 }
+
+// ── R2 list + bulk-delete (for purge automation) ───────────────────────────
+// Uses the S3-compatible ListObjectsV2 + DeleteObjects APIs.
+
+interface R2Object {
+  key: string;
+  size: number;
+  lastModified: Date;
+}
+
+/**
+ * List objects in R2 under a given prefix.
+ * Returns up to 1000 objects per call (S3 ListObjectsV2 limit).
+ * Caller should paginate via continuationToken if more objects exist.
+ */
+export async function listR2Objects(
+  prefix: string,
+  continuationToken?: string
+): Promise<{ objects: R2Object[]; nextContinuationToken?: string }> {
+  if (!isR2Configured()) {
+    throw new Error("Cloudflare R2 not configured");
+  }
+
+  const queryParams = new URLSearchParams({
+    "list-type": "2",
+    prefix,
+    "max-keys": "1000",
+  });
+  if (continuationToken) queryParams.set("continuation-token", continuationToken);
+
+  const url = new URL(`${R2_BASE_URL}?${queryParams.toString()}`);
+  const { amzDate } = getAmzDate();
+
+  const headers: Record<string, string> = {
+    "Host": url.host,
+    "x-amz-date": amzDate,
+    "x-amz-content-sha256": createHash("sha256").update("").digest("hex"),
+  };
+
+  const authorization = sigV4Sign(
+    "GET",
+    url,
+    headers,
+    "",
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    "auto",
+    "s3"
+  );
+  headers["Authorization"] = authorization;
+
+  const response = await fetch(url.toString(), { method: "GET", headers });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`R2 list failed ${response.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const xmlText = await response.text();
+  // Lightweight XML parsing — S3 ListObjectsV2 returns a predictable structure.
+  // We extract <Key>, <Size>, <LastModified> for each <Contents> entry.
+  const objects: R2Object[] = [];
+  const contentsRegex = /<Contents>([\s\S]*?)<\/Contents>/g;
+  let match: RegExpExecArray | null;
+  while ((match = contentsRegex.exec(xmlText)) !== null) {
+    const block = match[1];
+    const key = block.match(/<Key>([^<]+)<\/Key>/)?.[1];
+    const sizeMatch = block.match(/<Size>([^<]+)<\/Size>/);
+    const lastModified = block.match(/<LastModified>([^<]+)<\/LastModified>/)?.[1];
+    if (key) {
+      objects.push({
+        key,
+        size: sizeMatch ? parseInt(sizeMatch[1], 10) : 0,
+        lastModified: lastModified ? new Date(lastModified) : new Date(0),
+      });
+    }
+  }
+
+  const nextToken = xmlText.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1];
+
+  return { objects, nextContinuationToken: nextToken };
+}
+
+/**
+ * Delete multiple objects from R2 in a single request.
+ * S3 DeleteObjects API accepts up to 1000 keys per call.
+ *
+ * Returns the count of successfully deleted objects.
+ */
+export async function deleteR2ObjectsByKeys(keys: string[]): Promise<{ deleted: number; errors: string[] }> {
+  if (!isR2Configured()) {
+    throw new Error("Cloudflare R2 not configured");
+  }
+  if (keys.length === 0) return { deleted: 0, errors: [] };
+  if (keys.length > 1000) {
+    throw new Error("Cannot delete more than 1000 objects per call — paginate");
+  }
+
+  const url = new URL(`${R2_BASE_URL}?delete=`);
+  const { amzDate } = getAmzDate();
+
+  // Build the DeleteObjects XML body
+  const xmlBody = `<?xml version="1.0" encoding="UTF-8"?>\n<Delete>\n${keys.map(k => `<Object><Key>${escapeXml(k)}</Key></Object>`).join("\n")}\n</Delete>`;
+  const bodyHash = createHash("sha256").update(xmlBody).digest("hex");
+
+  const headers: Record<string, string> = {
+    "Host": url.host,
+    "x-amz-date": amzDate,
+    "x-amz-content-sha256": bodyHash,
+    "Content-Type": "application/xml",
+    "Content-MD5": createHash("md5").update(xmlBody).digest("base64"),
+  };
+
+  const authorization = sigV4Sign(
+    "POST",
+    url,
+    headers,
+    xmlBody,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    "auto",
+    "s3"
+  );
+  headers["Authorization"] = authorization;
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+    body: xmlBody,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`R2 bulk delete failed ${response.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const responseXml = await response.text();
+  const errors: string[] = [];
+  // Extract any <Error> entries
+  const errorRegex = /<Error>([\s\S]*?)<\/Error>/g;
+  let errMatch: RegExpExecArray | null;
+  while ((errMatch = errorRegex.exec(responseXml)) !== null) {
+    const block = errMatch[1];
+    const key = block.match(/<Key>([^<]+)<\/Key>/)?.[1] ?? "unknown";
+    const code = block.match(/<Code>([^<]+)<\/Code>/)?.[1] ?? "unknown";
+    const message = block.match(/<Message>([^<]+)<\/Message>/)?.[1] ?? "";
+    errors.push(`${key}: ${code} ${message}`.slice(0, 200));
+  }
+
+  // Count <Deleted> entries
+  const deletedCount = (responseXml.match(/<Deleted>/g) || []).length;
+
+  return { deleted: deletedCount, errors };
+}
+
+/**
+ * Delete all R2 objects under a given prefix that are older than `olderThanDays`.
+ * Used by the 6-day data retention automation.
+ *
+ * Paginates through ListObjectsV2 results, filters by LastModified, and
+ * issues bulk DeleteObjects calls in batches of 1000.
+ *
+ * Returns a summary: total objects scanned, total deleted, errors.
+ */
+export async function purgeR2ByAge(
+  prefix: string,
+  olderThanDays: number
+): Promise<{ scanned: number; deleted: number; errors: string[] }> {
+  if (!isR2Configured()) {
+    return { scanned: 0, deleted: 0, errors: ["R2 not configured"] };
+  }
+
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  let scanned = 0;
+  let deleted = 0;
+  const errors: string[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const listResult = await listR2Objects(prefix, continuationToken);
+    scanned += listResult.objects.length;
+
+    // Filter by age
+    const toDelete = listResult.objects
+      .filter(o => o.lastModified < cutoff)
+      .map(o => o.key);
+
+    if (toDelete.length > 0) {
+      try {
+        const result = await deleteR2ObjectsByKeys(toDelete);
+        deleted += result.deleted;
+        errors.push(...result.errors);
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    continuationToken = listResult.nextContinuationToken;
+  } while (continuationToken);
+
+  return { scanned, deleted, errors };
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}

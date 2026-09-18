@@ -271,7 +271,7 @@ async function generateSessionSummary(env: Env, transcript: string): Promise<str
 
 // ── 2. Purge old data (6-day retention) ──────────────────────────────────
 
-async function purgeOldData(env: Env): Promise<{ messagesDeleted: number; sessionsDeleted: number; memoriesDeleted: number }> {
+async function purgeOldData(env: Env): Promise<{ messagesDeleted: number; sessionsDeleted: number; memoriesDeleted: number; r2Purged: PurgeR2Result | null }> {
   const client = await getPg(env);
   const cutoff = new Date(Date.now() - DATA_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
@@ -293,11 +293,80 @@ async function purgeOldData(env: Env): Promise<{ messagesDeleted: number; sessio
     [cutoff],
   );
 
-  console.log(`[athena-cron] purged: messages=${messagesResult.rowCount}, sessions=${sessionsResult.rowCount}, memories=${memoriesResult.rowCount}`);
+  // ── R2 temp uploads purge ──────────────────────────────────────────────
+  // Per user spec: "draft a data storage and purging automation for 6 days"
+  // Also purge any R2 objects under the uploads/temp/ prefix older than 6 days.
+  // These are abandoned uploads (user uploaded a file but didn't complete the
+  // analysis flow — orphaned blobs).
+  //
+  // NOTE: The Cloudflare Worker can't directly call the Next.js app's R2 helpers.
+  // Instead, the Worker issues raw S3-compatible API calls. For now, this is a
+  // placeholder that logs intent — the actual R2 purge should be triggered via
+  // an HTTP call to /api/admin/purge (a new admin-only route on the main app
+  // that uses the proper R2 helpers from src/lib/cloudflare-storage.ts).
+  //
+  // This is the right architecture: the Worker is the trigger (cron), the app
+  // is the executor (has proper R2 credentials + helpers).
+  let r2PurgeResult: PurgeR2Result | null = null;
+  try {
+    const purgeResponse = await fetch(`${env.APP_URL}/api/admin/purge`, {
+      method: "POST",
+      headers: {
+        "x-athena-secret": env.ATHENA_SECRET_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        prefix: "uploads/temp/",
+        older_than_days: DATA_RETENTION_DAYS,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (purgeResponse.ok) {
+      r2PurgeResult = await purgeResponse.json() as PurgeR2Result;
+    } else {
+      console.warn(`[athena-cron] R2 purge endpoint returned ${purgeResponse.status}`);
+    }
+  } catch (err) {
+    console.warn("[athena-cron] R2 purge failed:", err instanceof Error ? err.message : err);
+  }
+
+  console.log(`[athena-cron] purged: messages=${messagesResult.rowCount}, sessions=${sessionsResult.rowCount}, memories=${memoriesResult.rowCount}, r2_deleted=${r2PurgeResult?.deleted ?? 0}`);
+
+  // ── Audit log ─────────────────────────────────────────────────────────
+  // Insert a row into purge_audit_log so there's a permanent record of
+  // what was purged when. Useful for forensic + compliance purposes.
+  try {
+    await client.query(
+      `INSERT INTO purge_audit_log (id, run_at, messages_deleted, sessions_deleted, memories_deleted, r2_scanned, r2_deleted, r2_errors, details)
+       VALUES (gen_random_uuid(), now(), $1, $2, $3, $4, $5, $6, $7)`,
+      [
+        messagesResult.rowCount,
+        sessionsResult.rowCount,
+        memoriesResult.rowCount,
+        r2PurgeResult?.scanned ?? 0,
+        r2PurgeResult?.deleted ?? 0,
+        r2PurgeResult ? JSON.stringify(r2PurgeResult.errors) : null,
+        JSON.stringify({ source: "cron", retention_days: DATA_RETENTION_DAYS }),
+      ],
+    );
+  } catch (err) {
+    console.warn("[athena-cron] audit log insert failed:", err);
+  }
 
   return {
     messagesDeleted: messagesResult.rowCount,
     sessionsDeleted: sessionsResult.rowCount,
     memoriesDeleted: memoriesResult.rowCount,
+    r2Purged: r2PurgeResult,
   };
 }
+
+interface PurgeR2Result {
+  prefix: string;
+  scanned: number;
+  deleted: number;
+  errors: string[];
+}
+
+// Placed at end of file so the type is hoisted properly for both
+// the purgeOldData function signature above and any future caller.
