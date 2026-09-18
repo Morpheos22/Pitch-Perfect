@@ -20,6 +20,8 @@ const nextConfig: any = {
   // Ensure @vercel/blob/client is properly transpiled for browser usage.
   // The client subpath uses Node.js modules (undici, crypto) that must be
   // replaced with browser-compatible versions via the package's "browser" field.
+  // LEGACY: @vercel/blob is no longer used (R2 is sole backend). Kept for safety
+  // in case any old client bundle still imports it.
   transpilePackages: ["@vercel/blob"],
 
   // ── Redirects — Replacing dead page components with server-level redirects ──
@@ -48,9 +50,7 @@ const nextConfig: any = {
 
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'blob.vercel-storage.com' },
-      { protocol: 'https', hostname: 'public.blob.vercel-storage.com' },
-      { protocol: 'https', hostname: 'workdrive.zoho.com' },
+      { protocol: 'https', hostname: 'r2.cloudflarestorage.com' },
       { protocol: 'https', hostname: 'clerk.pitchcoachai.tech' },
       { protocol: 'https', hostname: 'img.clerk.com' },
     ],
@@ -61,16 +61,15 @@ const nextConfig: any = {
     "pdf-parse",
     "mammoth",
     "jszip",
-    "resend",
   ],
 
   // ── Body size limits for large file uploads ──
-  // proxyClientMaxBodySize handles proxy/middleware body size (replaces deprecated middlewareClientMaxBodySize).
-  // serverActions.bodySizeLimit is a top-level config in Next.js 16+ (no longer under experimental).
+  // Hard cap at 10MB per user request — applies to proxy/middleware body size
+  // and server actions. Vercel Blob max file size is also configured here.
   experimental: {
-    proxyClientMaxBodySize: '50mb',
+    proxyClientMaxBodySize: '10mb',
     serverActions: {
-      bodySizeLimit: '35mb',
+      bodySizeLimit: '10mb',
     },
   },
 
@@ -104,7 +103,11 @@ const nextConfig: any = {
               "font-src 'self' https://fonts.gstatic.com",
               // Image sources: blobs, data URIs, any HTTPS (for deck screenshots)
               "img-src 'self' data: https: blob:",
-              // Connect sources: Clerk API, Z.ai, Vercel Blob, Google AI, Upstash, Zoho
+              // Connect sources: Clerk API, Z.ai AI gateway, Upstash Redis, Cloudflare challenge.
+              // DEAD DOMAINS REMOVED 2026-09-18:
+              //   - *.zoho.com (Zoho CRM stubbed out, no calls)
+              //   - blob.vercel-storage.com + variants (Vercel Blob hardcoded false, R2 is sole backend)
+              //   - generativelanguage.googleapis.com + *.aiplatform.googleapis.com (Google AI removed from chain)
               // SECURITY: Internal IP (172.25.x.x) only included in development.
               // Production uses ZAI_BASE_URL env var — never expose private IPs in CSP.
               "connect-src " + [
@@ -117,16 +120,8 @@ const nextConfig: any = {
                 'https://clerk.telemetry.cloudflare.com',
                 'https://clerk.com',
                 'https://z.ai',
-                // @vercel/blob client upload
-                'https://vercel.com',
-                'https://blob.vercel-storage.com',
-                'https://*.blob.vercel-storage.com',
-                'https://*.public.blob.vercel-storage.com',
-                'https://*.vercel-storage.com',
-                'https://generativelanguage.googleapis.com',
-                'https://*.aiplatform.googleapis.com',
+                // Upstash Redis (rate limiting)
                 'https://api.upstash.com',
-                'https://*.zoho.com',
                 // Cloudflare Turnstile CAPTCHA backend (Clerk uses smart widget)
                 'https://challenges.cloudflare.com',
               ].filter(Boolean).join(' '),

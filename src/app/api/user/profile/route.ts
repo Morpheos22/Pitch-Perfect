@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
-import { syncUserToCRM } from '@/lib/zoho-crm';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,28 +43,6 @@ export async function POST(req: NextRequest) {
         lastName: lastName || null,
       },
     });
-
-    // Sync to Zoho CRM as a lead
-    const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-      select: { id: true, email: true, firstName: true, lastName: true, country: true },
-    });
-
-    if (user) {
-      syncUserToCRM({
-        email: user.email,
-        firstName: user.firstName || undefined,
-        lastName: user.lastName || undefined,
-        country: user.country || undefined,
-        company: organization || undefined,
-        clerkId: userId,
-        username: username || undefined,
-        role: role || undefined,
-        socialUrl: socialUrl || undefined,
-      }).catch((crmErr) => {
-        console.warn('[Profile] CRM sync failed:', crmErr instanceof Error ? crmErr.message : crmErr);
-      });
-    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

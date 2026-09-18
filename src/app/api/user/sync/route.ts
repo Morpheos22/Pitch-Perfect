@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { isAdminEmail } from "@/lib/dev-auth";
-import { syncUserToCRM } from "@/lib/zoho-crm";
 import { getClientIp, getDeviceFingerprint } from "@/lib/security";
 export const dynamic = 'force-dynamic';
 
@@ -115,18 +114,6 @@ export async function POST(request: NextRequest) {
         lastSigninUserAgent: userAgent,
         lastSigninAt: now,
       },
-    });
-
-
-    // Sync to Zoho CRM (fire-and-forget — non-blocking)
-    syncUserToCRM({
-      email,
-      firstName: firstName || undefined,
-      lastName: lastName || undefined,
-      country: undefined, // Will be updated when user completes onboarding
-      clerkId,
-    }).catch((crmErr) => {
-      console.warn(`CRM sync failed for ${email}:`, crmErr instanceof Error ? crmErr.message : crmErr);
     });
 
 
@@ -261,7 +248,7 @@ export async function POST(request: NextRequest) {
     }
 
     // SECURITY: Return only safe fields — never expose internal IDs
-    // (zohoContactId, zohoAccountId, clerkId) to the client
+    // (clerkId) to the client
     return NextResponse.json({
       success: true,
       user: {

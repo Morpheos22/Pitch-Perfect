@@ -1,0 +1,22 @@
+name = "athena-memory-cron"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+account_id = "your_cloudflare_account_id"
+
+# Cron triggers — run hourly. Each invocation:
+#   - Finds sessions older than 36 hours that haven't been summarized yet
+#   - Calls Z.ai to summarize each session into compact memory entries
+#   - Writes the entries to athena_memory with 36-hour TTL
+#   - Marks the session as 'archived'
+#   - Optionally deletes raw messages older than 6 days (data purger)
+[triggers]
+crons = ["0 * * * *"]
+
+# Environment vars — set via `wrangler secret put`:
+#   DATABASE_URL          — pooled Supabase connection string (port 6543)
+#   ZAI_API_KEY           — Z.ai gateway key for summarization
+#   ZAI_BASE_URL          — https://api.z.ai/api/paas/v4
+#   ATHENA_SECRET_KEY     — internal secret required for the cron endpoint
+#                           (also set on the main Next.js app)
+[vars]
+APP_URL = "https://pitchcoachai.tech"

@@ -1,6 +1,6 @@
 // Dev Impersonate API — Development Mode Only
 // POST /api/dev/impersonate
-// Returns user subscription plan, usage stats, and Zoho contact ID for debugging.
+// Returns user subscription plan and usage stats for debugging.
 // This route is BLOCKED in production (returns 403).
 
 
@@ -95,8 +95,6 @@ export async function POST(request: NextRequest) {
             zaiTokensUsed: user.usage.zaiTokensUsed,
           }
         : null,
-      zohoContactId: user.zohoContactId ?? null,
-      zohoAccountId: user.zohoAccountId ?? null,
     });
   } catch (error: unknown) {
     console.error('[dev/impersonate]', error);

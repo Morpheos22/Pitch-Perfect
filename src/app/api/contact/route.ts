@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOrUpdateLead } from "@/lib/zoho-crm";
 import { contactSchema } from '@/lib/validation/schemas';
 import { withRateLimit } from '@/lib/rate-limit';
 export const dynamic = 'force-dynamic';
@@ -15,38 +14,6 @@ interface ContactFormData {
   subject?: string;
   message: string;
 }
-
-// ============================================
-// ZOHO CRM LEAD SYNC
-// ============================================
-// Contact form submissions are synced directly to Zoho CRM as leads.
-// Zoho Forms has been removed — CRM is the single source of truth.
-
-
-async function syncToZohoCRM(data: ContactFormData): Promise<{ success: boolean; leadId?: string; error?: string }> {
-  try {
-    const result = await createOrUpdateLead({
-      email: data.email,
-      firstName: data.name.split(" ")[0],
-      lastName: data.name.split(" ").slice(1).join(" ") || undefined,
-      company: data.company,
-      leadSource: "Website Contact Form",
-      leadStatus: "New",
-      description: `Subject: ${data.subject || "General Inquiry"}\n\n${data.message}`,
-    });
-
-
-    return {
-      success: true,
-      leadId: result.id,
-    };
-  } catch (error) {
-    console.error("Zoho CRM lead sync error:", error);
-    // Don't fail the entire request if CRM is down
-    return { success: true };
-  }
-}
-
 
 // ============================================
 // API ROUTE HANDLER
@@ -69,10 +36,6 @@ async function handlePost(request: NextRequest) {
       ...validatedData,
       company: (body as Record<string, unknown>).company as string | undefined,
     };
-
-
-    // Sync to Zoho CRM as a Lead (single source of truth)
-    const crmResult = await syncToZohoCRM(formData) as { success: boolean; leadId?: string; isNew?: boolean };
 
 
     return NextResponse.json({

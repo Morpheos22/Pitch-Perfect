@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { completeOnboardingInCRM } from "@/lib/zoho-crm";
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -128,24 +127,6 @@ export async function POST(req: NextRequest) {
       console.error("Failed to update Clerk metadata:", clerkError);
       // Non-fatal — the DB is updated, and we'll force a hard redirect
       // which will trigger a fresh JWT with updated claims
-    }
-
-
-    // ── 4. Complete onboarding in Zoho CRM + send welcome email ──
-    // On user.created webhook, the CRM got a bare lead (no country/useCase).
-    // Now that onboarding is complete, update the CRM lead with full data
-    // and send the onboarding welcome email via Zoho CRM's SendMail API.
-    if (userEmail) {
-      completeOnboardingInCRM({
-        email: userEmail,
-        firstName: userFirstName || undefined,
-        lastName: userLastName || undefined,
-        country,
-        clerkId: userId,
-        primaryUseCase,
-      }).catch((crmErr) => {
-        console.warn(`[Onboarding] CRM completion failed for ${userEmail}:`, crmErr instanceof Error ? crmErr.message : crmErr);
-      });
     }
 
 

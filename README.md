@@ -4,60 +4,57 @@ AI-powered pitch coaching platform for founders and entrepreneurs — built by A
 
 ---
 
-## Current Status (Last Updated: Session 7 — Security Hardening + Bug Fixes + E2E Verified)
+## Current Status (Last Updated: 2026-09-18 — Dead-code sanitization + config drift cleanup)
 
-**Deployment: LIVE** at [pitchcoachai.tech](https://pitchcoachai.tech)
+**Deployment:** LIVE at [pitchcoachai.tech](https://pitchcoachai.tech)
 **Health Check:** `{"status":"ok"}` at `/api/health`
 **TypeScript:** Zero errors (strict mode)
-**Completion:** ~97%
-**Last E2E Test:** Full browser test passed (DOCX + TXT upload, text input, AI analysis, iterate, version navigation)
+**Storage:** Cloudflare R2 (private, proxy-gated access)
+**Auth:** Clerk (custom FAPI domain `clerk.pitchcoachai.tech`, pk_live production key)
 
 ### What's Working
-- Full Next.js 16 deployment on Vercel (App Router + React 19)
-- Supabase PostgreSQL connected (eu-west-2 region, migration baselined)
+- Full Next.js 16 deployment on Vercel (App Router + React 19, Turbopack production build)
+- Supabase PostgreSQL connected (eu-west-2 region, PgBouncer pooled)
 - Clerk authentication (production live key, sign-in/sign-up pages working)
-- Z.ai AI Gateway (SDK + HTTP fallback, TTS + Web Search)
-- Kal Protocol 2.0 — fully implemented (10 contextual questions, 2 fallbacks, 8-step critical thinking)
-- Kal Adaptive Middleware client (RPC to `kal-middleware-morpheos255918280.adaptive.ai`)
-- Kal Chat Widget (interactive component with stabilized polling)
-- Vercel Blob storage (client-side direct upload with progress tracking)
+- Z.ai AI Gateway (glm-5.1 flagship + glm-4.5v vision, TTS + Web Search)
+- Kal Agent (E2 Script analysis fallback via `KAL_AGENT_URL`)
+- Cloudflare R2 file storage (private by default, accessed via `/api/blob/download` proxy)
 - 5 coaching modules: E1 Deck Analyser, E2 Script Coach, E3 Live Pitch, E4 Full Pitch, E5 Founder
 - Dual billing: Stripe (international) + Paystack (African markets)
-- Zoho CRM integration
-- 17 Prisma models, 9 enums, single baseline migration
-- Error boundaries (root + dashboard)
-- Structured logging (dev-only debug/info, production warn/error)
-- Rate limiting with Redis circuit breaker (auto-retry after outages)
-- Cancelled subscription grace period (access until period ends)
-- Stripe billing period fetched from API (not hardcoded)
+- Supabase SMTP for transactional email (via nodemailer)
+- Upstash Redis for rate limiting
+- Cloudflare Worker for Athena MCP server (Durable Object-backed)
+- Cloudflare WebMCP bridge (`.webmcp/bridge.js`, edge-level integration not in repo)
+
+### Removed (Dead Code)
+- Zoho CRM integration — stubbed no-op, now deleted
+- Zoho WorkDrive — never wired up in code, env vars removed
+- Vercel Blob storage — hardcoded `isVercelBlobConfigured() = false`, replaced by R2
+- Kal Middleware (legacy fallback) — stubbed no-op, now deleted
+- Google AI / Vertex AI — removed from AI fallback chain (Gemini 403 SERVICE_DISABLED)
+- Resend — never wired up in source code (env var removed from `.env.example`)
 
 ### What's NOT Working Yet
-- `CLERK_WEBHOOK_SECRET` missing — new user sign-ups won't auto-create DB records (user must create webhook in Clerk Dashboard)
-- Jest test suite has pre-existing Babel config issue (TypeScript syntax not parsed correctly)
-
-### Known Issues (Low Priority)
-- Z.ai model names: only `glm-4-plus` works; `glm-4-flash` and `glm-4` return errors. Mitigated by deduplication in `executeWithFallback()`.
-- Clerk deprecation warning: `afterSignUpUrl` prop should be replaced with `fallbackRedirectUrl`/`forceRedirectUrl`
-- `/api/billing/portal` has no UI trigger (feature addition, out of scope for current pass)
+- `CLERK_WEBHOOK_SECRET` missing — new user sign-ups won't auto-create DB records
+- `/api/athena/debug` is publicly accessible — leaks token prefixes (security issue, flagged for fix)
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui |
+|-------|------------|
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Turbopack |
 | Backend | Next.js API Routes, Prisma ORM 6 |
-| Database | PostgreSQL (Supabase — `iwbshmshegewmctfucaz` on eu-west-2) |
-| Storage | Vercel Blob (client-side direct upload) |
-| AI | Z.ai Gateway (GLM-4-Plus), Kal Protocol 2.0, Adaptive Middleware |
-| Auth | Clerk (pk_live_ production key) |
+| Database | PostgreSQL (Supabase — `iwbshmshegewmctfucaz` on eu-west-2, PgBouncer on :6543) |
+| Storage | Cloudflare R2 (S3-compatible, private, proxy-gated) |
+| AI | Z.ai Gateway (glm-5.1 text + glm-4.5v vision), Kal Agent fallback (E2 only) |
+| Auth | Clerk (custom FAPI domain `clerk.pitchcoachai.tech`, pk_live) |
 | Billing | Stripe + Paystack |
-| CRM | Zoho |
-| Email | Zoho CRM (SendMail API) |
+| Email | Supabase SMTP (via nodemailer) |
 | Cache | Upstash Redis (rate limiting) |
-| Logging | Structured logger (`src/lib/logger.ts`) — debug/info gated behind NODE_ENV |
-| Hosting | Vercel (project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`) |
+| Hosting | Vercel (project: `prj_yMCmXOgeQPWTqPVWwFSrz8uPuNf3`) + Cloudflare Workers |
+| Edge | Cloudflare WebMCP bridge (c2pa + mcp-server-client packs) |
 
 ---
 

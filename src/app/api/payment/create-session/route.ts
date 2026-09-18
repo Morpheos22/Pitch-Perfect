@@ -11,7 +11,6 @@ import {
   getPriceForCountry 
 } from '@/lib/payment-service';
 import { prisma } from '@/lib/db';
-import { syncUserToCRM } from '@/lib/zoho-crm';
 import { createSessionSchema } from '@/lib/validation/schemas';
 import { requireAuth } from '@/lib/with-auth';
 export const dynamic = 'force-dynamic';
@@ -74,16 +73,6 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
-
-
-    // Sync user to CRM (ensures lead exists)
-    await syncUserToCRM({
-      email: user.email,
-      firstName: user.firstName || undefined,
-      lastName: user.lastName || undefined,
-      country: userCountry,
-      clerkId: user.clerkId,
-    });
 
 
     // Create checkout session

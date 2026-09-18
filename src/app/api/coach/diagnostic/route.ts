@@ -443,42 +443,57 @@ async function testDatabase(): Promise<TestResult> {
 
 // ════════════════════════════════════════════════════════════════
 // TEST 6: Kal Agent Connectivity (Strategy 2 fallback)
-// Google AI / Vertex AI was removed from the fallback chain.
-// Kal Agent is now the sole fallback after Z.ai.
+// Kal Agent is invoked directly from src/lib/ai-service.ts via KAL_AGENT_URL.
+// The legacy Kal Middleware client has been removed; this test now reports
+// env-var presence + a single TCP-style reachability probe.
 // ════════════════════════════════════════════════════════════════
 async function testKalAgent(): Promise<TestResult> {
   const start = Date.now();
 
+  const kalAgentUrl = process.env.KAL_AGENT_URL || '';
+  const kalApiKey = process.env.KAL_API_KEY || '';
+
+  if (!kalAgentUrl || !kalApiKey) {
+    return {
+      test: '6. Kal Agent Connectivity (Strategy 2 fallback)',
+      status: 'SKIP',
+      durationMs: Date.now() - start,
+      detail: 'KAL_AGENT_URL or KAL_API_KEY not set — Kal Agent fallback disabled.',
+      error: 'not_configured',
+    };
+  }
+
   try {
-    const { isKalMiddlewareReady, getKalBackendInfo } = await import('@/lib/kal-middleware-client');
-    const kalInfo = getKalBackendInfo();
-    const kalHealth = await isKalMiddlewareReady();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
+    const res = await fetch(`${kalAgentUrl.replace(/\/$/, '')}/api/rpc/health`, {
+      method: 'GET',
+      headers: { 'x-kal-api-key': kalApiKey },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
 
     const detail = [
-      `Mode: ${kalInfo.mode}`,
-      `Active URL: ${kalInfo.activeUrl || '(not configured)'}`,
-      `Agent configured: ${kalInfo.agentConfigured}`,
-      `Agent has API key: ${kalInfo.agentHasApiKey}`,
-      `Middleware configured: ${kalInfo.middlewareConfigured}`,
-      `Ready: ${kalHealth.ready}`,
-      `Latency: ${kalHealth.latencyMs}ms`,
-      kalHealth.bridgeStatus ? `Bridge status: ${kalHealth.bridgeStatus}` : null,
-      kalHealth.error ? `Error: ${kalHealth.error}` : null,
-    ].filter(Boolean).join('\n');
+      `Mode: agent`,
+      `Active URL: ${kalAgentUrl}`,
+      `Agent has API key: yes`,
+      `HTTP status: ${res.status}`,
+      `Latency: ${Date.now() - start}ms`,
+    ].join('\n');
 
     return {
       test: '6. Kal Agent Connectivity (Strategy 2 fallback)',
-      status: kalHealth.ready ? 'PASS' : (kalInfo.agentConfigured || kalInfo.middlewareConfigured ? 'WARN' : 'SKIP'),
+      status: res.ok ? 'PASS' : 'WARN',
       durationMs: Date.now() - start,
       detail,
-      error: kalHealth.ready ? undefined : (kalHealth.error || 'Kal Agent not reachable'),
+      error: res.ok ? undefined : `HTTP ${res.status}`,
     };
   } catch (err: any) {
     return {
       test: '6. Kal Agent Connectivity (Strategy 2 fallback)',
       status: 'FAIL',
       durationMs: Date.now() - start,
-      detail: 'Could not test Kal Agent connectivity.',
+      detail: 'Could not reach Kal Agent endpoint.',
       error: err?.message || String(err),
     };
   }
@@ -516,26 +531,24 @@ async function testE2Pipeline(): Promise<TestResult> {
     }
 
     // Step 2b: Try Strategy 2 — Kal Agent (FALLBACK)
+    // Kal Agent is invoked directly via ai-service.ts:analyzeWithKalAgent()
+    // using KAL_AGENT_URL + KAL_API_KEY env vars.
     if (!analysis) {
       try {
-        const { isKalMiddlewareReady, kalMiddlewareAnalyze } = await import('@/lib/kal-middleware-client');
-        const kalHealth = await isKalMiddlewareReady();
-        if (kalHealth.ready) {
-          const kalResult = await kalMiddlewareAnalyze({
-            script: extractedText,
-            moduleType: 'e2',
-            targetAudience: 'investor',
-            targetDuration: 60,
-          });
-          if (kalResult && kalResult.success && kalResult.quickFeedback) {
-            // Kal middleware returned partial analysis — mark as Strategy 2
+        const { analyzeWithKalAgent } = await import('@/lib/ai-service');
+        const kalAgentUrl = process.env.KAL_AGENT_URL || '';
+        const kalApiKey = process.env.KAL_API_KEY || '';
+        if (kalAgentUrl && kalApiKey) {
+          const kalResult = await analyzeWithKalAgent(extractedText, 'investor', 60);
+          if (kalResult && typeof kalResult.overallScore === 'number') {
+            analysis = kalResult;
             strategyUsed = 'Strategy 2 (Kal Agent — FALLBACK)';
-            steps.push(`✅ Strategy 2 (Kal Agent): succeeded — got feedback response`);
+            steps.push(`✅ Strategy 2 (Kal Agent): succeeded — overall=${kalResult.overallScore}`);
           } else {
             steps.push(`⚠️ Strategy 2 (Kal Agent): reached but no useful analysis returned`);
           }
         } else {
-          steps.push(`⏭️ Strategy 2 (Kal Agent): skipped — not reachable (${kalHealth.error || 'unknown'})`);
+          steps.push(`⏭️ Strategy 2 (Kal Agent): skipped — KAL_AGENT_URL/KAL_API_KEY not set`);
         }
       } catch (kalErr: any) {
         steps.push(`❌ Strategy 2 (Kal Agent): failed — ${kalErr?.message?.slice(0, 150)}`);
@@ -663,7 +676,7 @@ export async function GET(request: NextRequest) {
         location: 'src/lib/storage.ts:getFileContent()',
         description: 'Vercel Blob URL detection only checks for "blob.vercel-storage.com". If the blob URL uses a different domain (e.g., a custom domain or regional endpoint), it falls through to the generic fetch which fails for private blobs since no auth token is sent.',
         severity: 'MEDIUM — Blob URLs from different regions/custom domains would fail',
-        fix: 'Expand URL detection or use @vercel/blob head() API to detect blob type.',
+        fix: 'Expand URL detection or use R2 head() API to detect blob type.',
       },
       {
         location: 'src/app/api/coach/script/route.ts:handlePost()',

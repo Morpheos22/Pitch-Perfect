@@ -1493,7 +1493,7 @@ export async function analyzeScriptWithFallback(
  *     tokensUsed, modelUsed
  *   }
  */
-async function analyzeWithKalAgent(
+export async function analyzeWithKalAgent(
   scriptText: string,
   targetAudience?: string,
   targetDuration?: number,

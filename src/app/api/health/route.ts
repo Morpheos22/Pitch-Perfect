@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkAIServiceHealth, getZaiConfigStatus } from '@/lib/ai-service';
-import { isKalMiddlewareReady, getKalBackendInfo } from '@/lib/kal-middleware-client';
 import { prisma } from '@/lib/db';
 import { isStorageConfigured, getStorageBackend, isVercelBlobConfigured } from '@/lib/storage';
 // isAdminEmail removed — not used in this route
@@ -178,56 +177,40 @@ export async function GET(request: NextRequest) {
   if (checks.ai.visionStatus === 'degraded') warnings.push('Vision model endpoint degraded — E1/E3/E4 may return poor results');
 
 
-  // Vercel Blob check — verify BLOB_READ_WRITE_TOKEN is set and blob store is reachable
-  const blobTokenSet = !!process.env.BLOB_READ_WRITE_TOKEN;
-  const blobTokenPrefix = process.env.BLOB_READ_WRITE_TOKEN?.substring(0, 10) || 'MISSING';
-  let blobStoreReachable = false;
-  let blobStoreError: string | undefined;
-
-  if (blobTokenSet) {
-    // Test blob store connectivity by listing blobs (0 results, just checks auth)
-    try {
-      const isR2Configured = (await import("@/lib/cloudflare-storage")).isR2Configured;
-      blobStoreReachable = isR2Configured();
-      blobStoreReachable = true;
-    } catch (err: unknown) {
-      blobStoreError = err instanceof Error ? err.message : String(err);
-    }
+  // Cloudflare R2 check — verify R2 credentials are set and bucket is reachable.
+  // The legacy Vercel Blob check was removed; R2 is the sole storage backend.
+  let r2Configured = false;
+  let r2Error: string | undefined;
+  try {
+    const { isR2Configured } = await import("@/lib/cloudflare-storage");
+    r2Configured = isR2Configured();
+  } catch (err: unknown) {
+    r2Error = err instanceof Error ? err.message : String(err);
   }
 
-  if (!blobTokenSet) warnings.push('BLOB_READ_WRITE_TOKEN not set — blob uploads will fail');
-  if (blobTokenSet && !blobStoreReachable) warnings.push(`BLOB_READ_WRITE_TOKEN is set (${blobTokenPrefix}...) but blob store is unreachable: ${blobStoreError || 'unknown error'}`);
+  if (!r2Configured) {
+    warnings.push(`Cloudflare R2 not configured — file uploads will fail: ${r2Error || 'set CLOUDFLARE_R2_* env vars'}`);
+  }
 
-  (checks.storage as any).blobTokenConfigured = blobTokenSet;
-  (checks.storage as any).blobTokenPrefix = blobTokenPrefix;
-  (checks.storage as any).blobStoreReachable = blobStoreReachable;
-  (checks.storage as any).blobStoreError = blobStoreError;
+  (checks.storage as any).r2Configured = r2Configured;
+  (checks.storage as any).r2Error = r2Error;
+  // Legacy BLOB_READ_WRITE_TOKEN is no longer checked — Vercel Blob is removed.
 
-  // Kal Agent / Middleware check — Strategy 2 fallback for E2 Script Check
-  // Kal Agent is the sole fallback (Strategy 2) when Z.ai fails.
-  // Google AI / Vertex AI has been removed from the fallback chain.
-  const kalBackendInfo = getKalBackendInfo();
-  // Kal health check with extended timeout for Vercel cold starts
-  // The default 5s timeout was too short — Kal Agent may need more time
-  // from Vercel serverless. We still use isKalMiddlewareReady() but with
-  // awareness that timeout from Vercel ≠ timeout from direct access.
-  const kalHealth = await isKalMiddlewareReady();
+  // Kal Agent (Strategy 2 fallback) — env-var presence check only.
+  // The full Kal Middleware client was removed; the live Kal Agent is invoked
+  // directly from src/lib/ai-service.ts:analyzeWithKalAgent() using KAL_AGENT_URL.
+  const kalAgentUrl = process.env.KAL_AGENT_URL || '';
+  const kalApiKey = process.env.KAL_API_KEY || '';
   (checks as any).kal = {
-    status: kalHealth.ready ? 'ok' : 'unhealthy',
-    mode: kalHealth.mode,
-    activeUrl: kalBackendInfo.activeUrl,
-    agentConfigured: kalBackendInfo.agentConfigured,
-    agentHasApiKey: kalBackendInfo.agentHasApiKey,
-    middlewareConfigured: kalBackendInfo.middlewareConfigured,
-    latencyMs: kalHealth.latencyMs,
-    bridgeStatus: kalHealth.bridgeStatus,
-    error: kalHealth.error,
-    role: 'strategy2-fallback', // Kal Agent is now Strategy 2 for E2 analysis
+    status: kalAgentUrl && kalApiKey ? 'ok' : 'unhealthy',
+    mode: kalAgentUrl ? 'agent' : 'not_configured',
+    activeUrl: kalAgentUrl || null,
+    agentConfigured: !!kalAgentUrl,
+    agentHasApiKey: !!kalApiKey,
+    role: 'strategy2-fallback',
   };
-  if (!kalHealth.ready) {
-    warnings.push(`Kal Agent (Strategy 2 fallback) unreachable from this environment — latency: ${kalHealth.latencyMs}ms, error: ${kalHealth.error || 'unknown'}. Script analysis will fall back to Kal Protocol chat.`);
-  } else if (kalHealth.mode === 'middleware') {
-    warnings.push('Kal Agent not configured (KAL_AGENT_URL not set) — using legacy middleware. Set KAL_AGENT_URL and KAL_API_KEY for authenticated access.');
+  if (!kalAgentUrl || !kalApiKey) {
+    warnings.push('Kal Agent (Strategy 2 fallback) not configured — set KAL_AGENT_URL and KAL_API_KEY for E2 fallback.');
   }
 
   // Google AI / Vertex AI — REMOVED from fallback chain.
