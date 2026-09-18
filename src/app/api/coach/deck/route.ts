@@ -270,6 +270,16 @@ async function handlePost(request: NextRequest) {
     }
 
 
+    // Optional Union Alpha sidecar; failures never block the existing analysis pipeline.
+    if (unionAlphaEnabled()) {
+      try {
+        const unionResponse = await callUnionAlpha(user.id, { messages: [{ role: "user", content: analysisContent }], max_tokens: 1024 });
+        if (!unionResponse.ok) log.warn("Union Alpha unavailable; continuing with existing analysis pipeline", { status: unionResponse.status });
+      } catch (unionError) {
+        log.warn("Union Alpha call failed; continuing with existing analysis pipeline", unionError);
+      }
+    }
+
     // Run AI analyses in parallel: content (text) + visual (vision)
     // Visual analysis requires a URL the AI gateway can fetch, or a data URI.
     // Blob URLs are converted to data URIs since the AI gateway may not be
