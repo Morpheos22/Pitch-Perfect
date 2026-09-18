@@ -12,7 +12,6 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('E1');
 export const dynamic = 'force-dynamic';
 import { auth } from "@clerk/nextjs/server";
-import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -131,67 +130,6 @@ async function warmSession(
   } catch {
     return false;
   }
-}
-
-export async function POST(request: NextRequest) {
-  const { userId } = await auth();
-  if (!userId)
-    return NextResponse.json(
-      { error: "Unauthorized", retryable: true },
-      { status: 401 }
-    );
-
-  const body = await request.json().catch(() => ({}));
-  const sessionId =
-    typeof body.session_id === "string" && body.session_id
-      ? body.session_id
-      : crypto.randomUUID();
-  const context = await founderContext(userId);
-  await warmSession(userId, sessionId, body);
-
-  // === Union Alpha path (new, feature-flagged) ===
-  if (unionAlphaEnabled()) {
-    const upstream = await callUnionAlpha(userId, body);
-    const result = await upstream
-      .json()
-      .catch(() => ({ error: "Invalid union-alpha response" }));
-    return NextResponse.json(
-      { ...result, session_id: sessionId, provider: "union-alpha" },
-      { status: upstream.ok ? 200 : upstream.status || 502 }
-    );
-  }
-
-  // === Existing Athena path (default, unchanged) ===
-  const upstream = await fetch(`${workerUrl()}/v1/athena`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(process.env.ATHENA_WORKER_TOKEN
-        ? { authorization: `Bearer ${process.env.ATHENA_WORKER_TOKEN}` }
-        : {}),
-    },
-    body: JSON.stringify({
-      ...body,
-      session_id: sessionId,
-      user_id: userId,
-      founder_context: context,
-    }),
-    cache: "no-store",
-  }).catch((error) => ({
-    ok: false,
-    status: 502,
-    json: async () => ({
-      error: error instanceof Error ? error.message : "Athena unavailable",
-    }),
-  }));
-
-  const result = await upstream
-    .json()
-    .catch(() => ({ error: "Invalid Athena response" }));
-  return NextResponse.json(
-    { ...result, session_id: sessionId, provider: "athena-classic" },
-    { status: upstream.ok ? 200 : upstream.status || 502 }
-  );
 }
 
 export async function OPTIONS() {
